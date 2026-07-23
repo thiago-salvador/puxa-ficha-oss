@@ -8,6 +8,11 @@ updates:
       time: "09:00"
       timezone: "America/Sao_Paulo"
     open-pull-requests-limit: 4
+    ignore:
+      # TypeScript 7.x e o port nativo em Go (preview), incompativel com o
+      # passo de typecheck do Next.js 16. Travar em 6.x ate suporte oficial.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       next-react:
         patterns:
