@@ -58,7 +58,7 @@ describe("Alerts contract", () => {
       const result = maskAlertEmail("eleitor@example.com")
       assert.ok(!result.includes("eleitor"), "local-part completo não deve aparecer")
       assert.ok(result.includes("@"), "deve conter @")
-      assert.ok(result.includes("example.com"), "domínio deve aparecer")
+      assert.ok(result.endsWith("@example.com"), "domínio deve aparecer")
     })
   })
 

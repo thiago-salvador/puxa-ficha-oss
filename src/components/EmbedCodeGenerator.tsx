@@ -33,7 +33,10 @@ export function EmbedCodeGenerator({ candidates }: { candidates: EmbedCodeGenera
     )
   }, [candidates, query])
 
-  const embedSrc = slug ? `${SITE_ORIGIN}/embed/${slug}` : ""
+  // Slug limitado ao charset de slug (letras, números, hífen), impedindo que
+  // qualquer caractere quebre o atributo src do iframe (gerado e copiado).
+  const safeSlug = slug.replace(/[^a-z0-9-]/gi, "")
+  const embedSrc = safeSlug ? `${SITE_ORIGIN}/embed/${safeSlug}` : ""
   const iframeHtml = `<iframe id="puxaficha-embed-iframe" src="${embedSrc}" width="400" height="480" style="max-width:100%;border:0" title="Puxa Ficha, resumo do candidato"></iframe>`
 
   const copy = useCallback(async (text: string, kind: "html" | "script") => {
