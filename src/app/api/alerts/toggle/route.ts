@@ -103,10 +103,18 @@ export function createToggleHandler(deps: ToggleDeps = defaultToggleDeps) {
       return NextResponse.json({ ok: true, following: false, candidateSlug: candidate.slug })
     }
 
-    const { error: insertError } = await supabase.from("alert_subscriptions").insert({
-      subscriber_id: subscriber.id,
-      candidato_id: candidate.id,
-    })
+    // Upsert idempotente: um duplo-clique (ou request concorrente) reincide no
+    // UNIQUE (subscriber_id, candidato_id) e virava 503 espurio. ignoreDuplicates
+    // trata a segunda escrita como no-op e mantem o resultado "seguindo".
+    const { error: insertError } = await supabase
+      .from("alert_subscriptions")
+      .upsert(
+        {
+          subscriber_id: subscriber.id,
+          candidato_id: candidate.id,
+        },
+        { onConflict: "subscriber_id,candidato_id", ignoreDuplicates: true },
+      )
 
     if (insertError) {
       deps.logAlertsApiExit("toggle", 503, "db_insert_subscription_failed")

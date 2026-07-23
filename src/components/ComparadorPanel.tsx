@@ -602,7 +602,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                             </span>
                           )}
                           {isMax && (
-                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground">
+                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
                               maior
                             </span>
                           )}
@@ -629,7 +629,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                             {value}
                           </span>
                           {isMax && (
-                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground">
+                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
                               maior
                             </span>
                           )}
@@ -664,7 +664,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                             </span>
                           )}
                           {isMax && (
-                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground">
+                            <span className="ml-1.5 inline-block rounded-full bg-foreground/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-muted-foreground">
                               maior
                             </span>
                           )}
@@ -688,7 +688,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                             {candidato.total_processos}
                           </span>
                           {isMax && (
-                            <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-destructive">
+                            <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-destructive">
                               maior
                             </span>
                           )}
@@ -726,7 +726,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                             {candidato.alertas_graves}
                           </span>
                           {isMax && (
-                            <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-destructive">
+                            <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-destructive">
                               maior
                             </span>
                           )}

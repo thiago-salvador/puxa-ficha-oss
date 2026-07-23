@@ -110,7 +110,10 @@ function aggregateMaioresDoadores(raw: unknown): AggregatedDoador[] {
       continue
     }
 
-    current.valor += valor
+    // Arredonda a cada passo para nao acumular drift de ponto flutuante ao somar
+    // muitas doacoes (valores monetarios de 2 casas). O display ja arredonda no
+    // fim, isto garante que a soma e a ordenacao usem o valor exato.
+    current.valor = roundCurrency(current.valor + valor)
     current.tipo = mergeTipos(current.tipo, tipo)
     if (cnpj) current.cnpjs.add(cnpj)
     if (cpf_hash) current.cpfHashes.add(cpf_hash)

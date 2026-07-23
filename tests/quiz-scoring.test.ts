@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { quizPerguntasOrdenadas, type RespostaLikert } from "../src/data/quiz/perguntas"
-import { buildMockQuizAlignmentDataset } from "../src/data/mock"
+import { buildMockQuizAlignmentDataset, MOCK_VOTOS } from "../src/data/mock"
 import {
   calcularAlinhamento,
   classificarPerfilUsuario,
@@ -294,8 +294,6 @@ describe("quiz dataset parity guard (fase 2 saneamento)", () => {
 
   it("votacao titles in mock match quiz canonical titles exactly (ensureVotacaoChave guard)", () => {
     const dataset = buildMockQuizAlignmentDataset()
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { MOCK_VOTOS } = require("../src/data/mock") as typeof import("../src/data/mock")
     const allTitles = new Set<string>()
     for (const votos of Object.values(MOCK_VOTOS)) {
       for (const v of votos) {

@@ -531,7 +531,7 @@ export function TimelineDesktop({
                             x={x0 + 10}
                             y={cy + 3}
                             textAnchor="start"
-                            className="pointer-events-none text-[8px] font-semibold"
+                            className="pointer-events-none text-[10px] font-semibold"
                             fill={textFill}
                             style={{ fontSize: 8 }}
                           >
@@ -658,7 +658,7 @@ export function TimelineDesktop({
                             y={badgeY + 14}
                             textAnchor="middle"
                             fill={theme.text}
-                            className="pointer-events-none text-[8px] font-bold"
+                            className="pointer-events-none text-[10px] font-bold"
                             style={{ fontSize: 8 }}
                           >
                             {badgeLabel}

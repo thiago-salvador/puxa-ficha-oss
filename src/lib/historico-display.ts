@@ -2,6 +2,10 @@ import { canonicalCargo } from "@/lib/cargo-utils"
 import { isHistoricoCandidaturaRow } from "@/lib/historico-tipo-evento"
 import type { HistoricoPolitico } from "@/lib/types"
 
+// MANUTENCAO: ano da eleicao em aberto. Marca candidaturas deste ano como
+// "em disputa" no historico. Precisa ser atualizado a cada ciclo eleitoral
+// (proxima revisao: apos a apuracao de 2026, subir para 2028). Se ficar defasado,
+// candidaturas ja decididas aparecem como indefinidas.
 const CURRENT_UNDECIDED_ELECTION_YEAR = 2026
 
 function normalizeObservation(value: string | null | undefined): string {

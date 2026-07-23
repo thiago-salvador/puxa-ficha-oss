@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server"
 import { after, NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
 import { createServiceRoleSupabaseClient } from "@/lib/supabase"
+import { secretsMatch } from "@/lib/crypto-utils"
 import {
   defaultNewsRefreshDeps,
   refreshCandidatosNews,
@@ -100,7 +101,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     const expectedSecret = process.env.CRON_SECRET?.trim()
     const providedSecret = getCronSecret(req)
 
-    if (!expectedSecret || providedSecret !== expectedSecret) {
+    if (!secretsMatch(providedSecret, expectedSecret)) {
       deps.log("unauthorized", {})
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

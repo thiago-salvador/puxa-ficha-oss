@@ -180,6 +180,7 @@ export function CandidatoGrid({
             <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-foreground" />
             <input
               type="search"
+              aria-label="Buscar candidatos por nome, partido ou estado"
               placeholder="Buscar por nome, partido ou estado..."
               className="w-full rounded-full border border-foreground bg-transparent px-4 py-2.5 pl-11 pr-10 text-[14px] font-medium text-foreground outline-none transition-colors placeholder:font-medium placeholder:text-foreground focus:border-foreground focus:ring-2 focus:ring-foreground/50"
               value={query}

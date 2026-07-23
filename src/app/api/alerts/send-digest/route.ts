@@ -11,6 +11,7 @@ import {
   type AlertDigestEmailCandidate,
 } from "@/lib/alerts-shared"
 import { logAlertsApiExit, logAlertsEvent } from "@/lib/alerts-log"
+import { secretsMatch } from "@/lib/crypto-utils"
 import { sendTransactionalEmail } from "@/lib/email"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 
@@ -99,7 +100,7 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
     const expectedSecret = process.env.CRON_SECRET?.trim()
     const providedSecret = getCronSecret(req)
 
-    if (!expectedSecret || providedSecret !== expectedSecret) {
+    if (!secretsMatch(providedSecret, expectedSecret)) {
       deps.logAlertsApiExit("send-digest", 401, "unauthorized")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
