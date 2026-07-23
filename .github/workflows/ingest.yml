@@ -33,10 +33,10 @@ jobs:
       contains(github.event.inputs.sources, 'senado') ||
       contains(github.event.inputs.sources, 'transparencia')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: "npm"
@@ -46,7 +46,17 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TRANSPARENCIA_API_KEY: ${{ secrets.TRANSPARENCIA_API_KEY }}
-        run: npx tsx scripts/ingest-all.ts ${{ github.event.inputs.sources || 'camara senado' }}
+          RAW_SOURCES: ${{ github.event.inputs.sources || 'camara senado' }}
+        run: |
+          set -euo pipefail
+          SAFE=""
+          for s in $RAW_SOURCES; do
+            case "$s" in
+              camara|senado|tse|transparencia|google-news) SAFE="$SAFE $s" ;;
+              *) echo "::error::fonte inválida: $s" ; exit 1 ;;
+            esac
+          done
+          npx tsx scripts/ingest-all.ts $SAFE
 
   ingest-tse:
     name: TSE CSV
@@ -54,15 +64,15 @@ jobs:
     timeout-minutes: 60
     if: contains(github.event.inputs.sources, 'tse')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: "npm"
       - name: Cache TSE downloads
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data/tse
           key: tse-downloads-${{ runner.os }}-v1
@@ -80,10 +90,10 @@ jobs:
     timeout-minutes: 15
     if: contains(github.event.inputs.sources, 'google-news')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           cache: "npm"
