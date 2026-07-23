@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/joshmcguigan/fallow/main/schemas/fallow-config.schema.json",
+  "ignoreDependencies": [
+    "react-dom",
+    "@cspell/dict-pt-br",
+    "shadcn",
+    "react-devtools-core"
+  ],
+  "ignorePatterns": [
+    "tests/**"
+  ],
+  "ignoreExports": [
+    {
+      "file": "scripts/lib/historico-manual-fix-contract.ts",
+      "exports": [
+        "SENSITIVE_MAJORITARIAN_CANDIDATURA_CARGOS",
+        "hasCandidaturaMarker"
+      ]
+    }
+  ],
+  "rules": {
+    "test-only-dependencies": "off"
+  }
+}

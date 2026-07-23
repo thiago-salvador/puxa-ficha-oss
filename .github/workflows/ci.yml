@@ -1,0 +1,49 @@
+name: CI
+
+# Roda em pushes e em PRs de qualquer fork. Não usa segredos, então
+# funciona para qualquer colaborador externo sem acesso à infra do projeto.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        # Valores de placeholder: o build não acessa o Supabase (as páginas
+        # são renderizadas sob demanda). Um fork usa os próprios valores.
+        env:
+          SUPABASE_URL: https://placeholder.supabase.co
+          SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+        run: npm run build

@@ -1,0 +1,57 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing / coverage
+/coverage
+.lighthouse-reports/
+test-results/
+playwright-report/
+/playwright/.cache/
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# production data downloads (large, regenerable via the ingest pipeline)
+data/tse/
+data/operations/
+tmp/
+
+# misc
+.DS_Store
+*.pem
+
+# env files
+.env
+.env*.local
+
+# local script state (regenerable)
+scripts/audit-factual-*.json
+scripts/tse-situacao-audit.json
+
+# typescript
+*.tsbuildinfo
+
+# vercel
+.vercel
+
+# supabase local files (migrations are tracked)
+supabase/.temp/
+supabase/.branches/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# AI assistant / local tooling (not part of the product)
+.claude/
+.codex/
+.cursor/
+CLAUDE.md
+AGENTS.md
