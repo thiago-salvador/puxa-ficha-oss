@@ -174,20 +174,30 @@ async function fetchWikiSocialLinks(title: string): Promise<Record<string, strin
     const links: string[] = (page?.extlinks ?? []).map((link) => link["*"] || link.url || "")
 
     const socials: Record<string, string> = {}
+    // Classifica pelo hostname real do link, não por substring (que aceitaria
+    // um domínio trapaceiro como evil.com/instagram.com/).
+    const hostMatches = (host: string, domain: string) =>
+      host === domain || host.endsWith(`.${domain}`)
     for (const link of links) {
-      if (link.includes("instagram.com/")) {
+      let host: string
+      try {
+        host = new URL(link).hostname.toLowerCase()
+      } catch {
+        continue
+      }
+      if (hostMatches(host, "instagram.com")) {
         const match = link.match(/instagram\.com\/([^/?]+)/)
         if (match) socials.instagram = match[1]
-      } else if (link.includes("twitter.com/") || link.includes("x.com/")) {
+      } else if (hostMatches(host, "twitter.com") || hostMatches(host, "x.com")) {
         const match = link.match(/(?:twitter|x)\.com\/([^/?]+)/)
         if (match && match[1] !== "intent" && match[1] !== "share") socials.twitter = match[1]
-      } else if (link.includes("facebook.com/")) {
+      } else if (hostMatches(host, "facebook.com")) {
         const match = link.match(/facebook\.com\/([^/?]+)/)
         if (match && match[1] !== "sharer") socials.facebook = match[1]
-      } else if (link.includes("youtube.com/")) {
+      } else if (hostMatches(host, "youtube.com")) {
         const match = link.match(/youtube\.com\/@?([^/?]+)/)
         if (match) socials.youtube = match[1]
-      } else if (link.includes("tiktok.com/")) {
+      } else if (hostMatches(host, "tiktok.com")) {
         const match = link.match(/tiktok\.com\/@?([^/?]+)/)
         if (match) socials.tiktok = match[1]
       }
@@ -251,9 +261,16 @@ function stripWikiMarkup(value: string): string {
     text = text.replace(/\{\{[^{}]*\}\}/g, "")
   }
 
-  return text
-    .replace(/'''?/g, "")
-    .replace(/<\/?[^>]+>/g, "")
+  // Remove tags HTML repetidamente até estabilizar: uma passada única deixaria
+  // resíduo em tags aninhadas/malformadas (ex.: "<scr<b>ipt>").
+  let cleaned = text.replace(/'''?/g, "")
+  let previous: string
+  do {
+    previous = cleaned
+    cleaned = cleaned.replace(/<\/?[^>]+>/g, "")
+  } while (cleaned !== previous)
+
+  return cleaned
     .replace(/\s+/g, " ")
     .replace(/\s*;\s*/g, "; ")
     .trim()
