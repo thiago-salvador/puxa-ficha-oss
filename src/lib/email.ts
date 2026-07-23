@@ -43,24 +43,42 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<{ i
     throw new Error("Missing RESEND_API_KEY")
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      // Resend blocks requests without User-Agent (403, error 1010). SDKs set this; raw fetch must too.
-      "User-Agent": "PuxaFicha/1.0 (+https://puxaficha.com.br)",
-    },
-    body: JSON.stringify({
-      from: resolveAlertsFromEmail(),
-      to: Array.isArray(input.to) ? input.to : [input.to],
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-      headers: input.headers,
-    }),
-    cache: "no-store",
-  })
+  let response: Response
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        // Resend blocks requests without User-Agent (403, error 1010). SDKs set this; raw fetch must too.
+        "User-Agent": "PuxaFicha/1.0 (+https://puxaficha.com.br)",
+      },
+      body: JSON.stringify({
+        from: resolveAlertsFromEmail(),
+        to: Array.isArray(input.to) ? input.to : [input.to],
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+        headers: input.headers,
+      }),
+      cache: "no-store",
+      // Sem timeout, uma conexao pendurada prende a rota sincrona de subscribe
+      // e consome o orcamento do lote de send-digest. Aborta em 10s.
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "TimeoutError"
+    const message = aborted
+      ? "Resend request timed out after 10s"
+      : `Resend request failed: ${error instanceof Error ? error.message : String(error)}`
+    logAlertsEvent({
+      route: "email-transport",
+      event: aborted ? "resend_request_timeout" : "resend_request_error",
+      level: "error",
+      detail: { message: message.slice(0, 300) },
+    })
+    throw new Error(message)
+  }
 
   const rawBody = await response.text()
   const parsed = (() => {

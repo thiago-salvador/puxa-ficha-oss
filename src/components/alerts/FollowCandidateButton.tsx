@@ -251,23 +251,37 @@ export function FollowCandidateButton({
     <form
       onSubmit={handleSubscribe}
       className={variant === "compact"
-        ? "basis-full mt-1 flex flex-col gap-3 sm:flex-row sm:items-center"
-        : "mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"}
+        ? "basis-full mt-1 flex flex-col gap-2"
+        : "mt-4 flex flex-col gap-2"}
     >
-      <Input
-        type="email"
-        inputMode="email"
-        autoComplete="email"
-        placeholder="seuemail@exemplo.com"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        required
-        className="h-10"
-      />
-      <Button type="submit" size="lg" disabled={submitting || email.trim().length === 0} className="w-full sm:w-auto">
-        {submitting ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}
-        Confirmar por email
-      </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          aria-label="Seu email para receber alertas"
+          placeholder="seuemail@exemplo.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+          className="h-10"
+        />
+        <Button type="submit" size="lg" disabled={submitting || email.trim().length === 0} className="w-full sm:w-auto">
+          {submitting ? <LoaderCircle className="size-4 animate-spin" /> : <Mail className="size-4" />}
+          Confirmar por email
+        </Button>
+      </div>
+      <p className="text-[length:var(--text-caption)] text-muted-foreground">
+        Ao confirmar, você concorda em receber alertas por email sobre este candidato. Usamos seu
+        email só para isso e você pode apagar quando quiser. Veja a{" "}
+        <Link
+          href="/privacidade"
+          className="text-foreground underline decoration-border underline-offset-4"
+        >
+          Política de Privacidade
+        </Link>
+        .
+      </p>
     </form>
   )
 

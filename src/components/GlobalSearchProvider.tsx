@@ -505,6 +505,7 @@ export function GlobalSearchProvider({
                     autoFocus
                     type="search"
                     role="combobox"
+                    aria-label="Buscar no site"
                     aria-expanded={totalCount > 0}
                     aria-controls="gsp-listbox"
                     aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}

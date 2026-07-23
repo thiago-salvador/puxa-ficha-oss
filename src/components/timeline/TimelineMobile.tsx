@@ -109,7 +109,7 @@ export function TimelineMobile({ events, selectedId, onSelectId, introKey }: Tim
                       ) : null}
                     </div>
                     {ev.contradicao && (
-                      <MetaBadge tone="caution" className="shrink-0 px-2 py-0.5 text-[9px]">
+                      <MetaBadge tone="caution" className="shrink-0 px-2 py-0.5 text-[11px]">
                         Contrad.
                       </MetaBadge>
                     )}

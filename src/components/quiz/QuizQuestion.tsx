@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { gsap } from "gsap"
 import type { QuizPergunta, RespostaLikert } from "@/data/quiz/perguntas"
 import { cn } from "@/lib/utils"
 
@@ -34,8 +33,17 @@ export function QuizQuestion({ pergunta, initialAnswer, onSubmit, onBack, reduce
 
   useEffect(() => {
     const el = rootRef.current
-    if (!el || reducedMotion) return
-    gsap.fromTo(el, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" })
+    if (!el || reducedMotion || typeof el.animate !== "function") return
+    // Entrada opacity+translateY via Web Animations API nativa. Evita carregar o
+    // gsap inteiro (~28KB gzip) no bundle desta rota quente so por um fade.
+    const animation = el.animate(
+      [
+        { opacity: 0, transform: "translateY(12px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 350, easing: "cubic-bezier(0.25, 0.46, 0.45, 0.94)", fill: "backwards" },
+    )
+    return () => animation.cancel()
   }, [pergunta.id, reducedMotion])
 
   const headingId = `quiz-pergunta-${pergunta.id}`

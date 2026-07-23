@@ -66,7 +66,7 @@ const LEGISLATION_HIGHLIGHT_CRITERIA =
 const COMPLETE_EXECUTIVE_HIGHLIGHT_SCOPE =
   "Este recorte cobre apenas o exercício de chefe do Executivo descrito no inventário completo de atos do Executivo no mandato; outros cargos públicos do candidato não estão refletidos nesta aba."
 
-export const COMPLETE_PARLAMENTAR_AUTHORSHIP_COVERAGE: Record<string, string> = {
+const COMPLETE_PARLAMENTAR_AUTHORSHIP_COVERAGE: Record<string, string> = {
   "ivan-moraes-recife-openlegis-completo-autoria-principal-pl-pelo-2017-2024-cutoff-20260512":
     "Inventário completo da autoria parlamentar: autoria principal de Ivan Moraes na Câmara Municipal do Recife/OpenLegis em PL e PELO no recorte 2017-2024, enumerada por @@materias por ano/tipo e confirmada por authorship firstAuthor=true, com cutoff em 12/05/2026. Este recorte cobre apenas autoria parlamentar principal na Câmara Municipal do Recife/OpenLegis; não cobre inventário global da vida política, atos do Executivo, Assembleia Legislativa, Câmara dos Deputados, campanhas, proposições fora de PL/PELO, proposições sem PDF/ementa/número/ano oficiais, nem superfícies fora do OpenLegis Recife.",
   "leandro-grass-cldf-ple-completo-autoria-principal-pl-2019-2022-cutoff-20260512":
@@ -227,7 +227,7 @@ export const COMPLETE_PARLAMENTAR_AUTHORSHIP_COVERAGE: Record<string, string> = 
     "Inventário completo da autoria parlamentar: autoria principal na Câmara dos Deputados em tipos legislativos canônicos (PDL, PEC, PL, PLP e PRC) no recorte 2015-2026, enumerada via Câmara Dados Abertos v2 por idDeputadoAutor e confirmada em /proposicoes/{id}/autores com ordemAssinatura=1, com cutoff em 09/05/2026. Este recorte cobre apenas autoria parlamentar principal na Câmara em tipos legislativos canônicos; não cobre inventário global da vida política, Senado, assembleias, prefeituras, governos estaduais, cargos executivos, atos do Executivo, requerimentos, indicações, emendas, pareceres ou demais atos procedimentais.",
 }
 
-export const COMPLETE_EXECUTIVE_LEGISLATION_COVERAGE: Record<string, string> = {
+const COMPLETE_EXECUTIVE_LEGISLATION_COVERAGE: Record<string, string> = {
   "eduardo-leite-rs-completo-leis-ordinarias-complementares-2019-2022-2023-2026-04-27":
     "Inventário completo de atos do Executivo no mandato: leis ordinárias e complementares do RS encontradas na ALRS com assinatura de Eduardo Leite confirmada no DOE-RS até 27/04/2026. Este recorte cobre apenas o exercício de Governador do RS; cargos públicos anteriores ou paralelos não estão refletidos nesta aba.",
   "lula-federal-atual-completo-leis-ordinarias-complementares-2023-2026-04-28":
@@ -477,7 +477,7 @@ function getParlamentarAuthorshipCoverageDescription(items: ProjetoLei[]) {
   return null
 }
 
-export function resolveParlamentarAuthorshipInventoryScope(
+function resolveParlamentarAuthorshipInventoryScope(
   projetosLei: ProjetoLei[]
 ): ExecutiveLegislationInventoryScope {
   if (projetosLei.length === 0) {

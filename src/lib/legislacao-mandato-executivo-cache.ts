@@ -5,7 +5,7 @@ import type { LegislacaoMandatoExecutivo } from "./types"
  * src/lib/api.ts:getCachedCandidatoBySlugResource). O valor precisa caber no
  * pior caso atual de inventario completo (GO, 3.600 atos) sem estourar 2 MB.
  */
-export const EMENTA_CACHE_CAP = 180
+const EMENTA_CACHE_CAP = 180
 
 /**
  * Aplica a politica de cache do payload publico LME apos o mapper publico

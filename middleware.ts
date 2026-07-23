@@ -201,13 +201,30 @@ function buildCleanRedirect(request: NextRequest) {
   return NextResponse.redirect(cleanUrl)
 }
 
+/**
+ * Comparação constante (runtime-agnóstica, sem node:crypto porque o middleware
+ * roda no edge). Evita o timing side-channel do `===` na verificação de token.
+ * Percorre até o maior comprimento e acumula diferenças por XOR; vaza igualdade
+ * de comprimento, nunca o conteúdo.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (!a || !b) return false
+  let diff = a.length ^ b.length
+  const len = Math.max(a.length, b.length)
+  for (let i = 0; i < len; i++) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
+  }
+  return diff === 0
+}
+
 function hasBootstrapToken(request: NextRequest, expectedToken: string) {
   const queryToken = request.nextUrl.searchParams.get("token")
-  return Boolean(queryToken && queryToken === expectedToken)
+  return Boolean(queryToken && constantTimeEqual(queryToken, expectedToken))
 }
 
 function hasCookieToken(request: NextRequest, cookieName: string, expectedToken: string) {
-  return request.cookies.get(cookieName)?.value === expectedToken
+  const cookieToken = request.cookies.get(cookieName)?.value
+  return Boolean(cookieToken && constantTimeEqual(cookieToken, expectedToken))
 }
 
 function setAccessCookie(response: NextResponse, name: string, value: string, path: string) {

@@ -26,6 +26,8 @@ tmp/
 # misc
 .DS_Store
 *.pem
+*.log
+logs/
 
 # env files
 .env

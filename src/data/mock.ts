@@ -1,13 +1,9 @@
 import { collectQuizVotacaoTitulos, QUIZ_PERGUNTAS } from "@/data/quiz/perguntas"
 import type {
   Candidato,
-  Patrimonio,
-  HistoricoPolitico,
   MudancaPartido,
-  Financiamento,
   VotoCandidato,
   ProjetoLei,
-  GastoParlamentar,
 } from "@/lib/types"
 import { normalizeVotoFromApi } from "@/lib/quiz-scoring"
 import type {
@@ -1115,91 +1111,8 @@ export const MOCK_CANDIDATOS: Candidato[] = [
   },
 ]
 
-// --- PATRIMONIO ---
-export const MOCK_PATRIMONIO: Record<string, Patrimonio[]> = {
-  lula: [
-    {
-      id: "p1", candidato_id: "1", ano_eleicao: 2022, valor_total: 7436049,
-      bens: [
-        { tipo: "Imovel", descricao: "Apartamento em São Bernardo do Campo", valor: 1200000 },
-        { tipo: "Veiculo", descricao: "Toyota Corolla 2020", valor: 150000 },
-        { tipo: "Aplicacao financeira", descricao: "Previdência privada", valor: 3500000 },
-        { tipo: "Aplicacao financeira", descricao: "CDB e fundos", valor: 2586049 },
-      ],
-    },
-    { id: "p2", candidato_id: "1", ano_eleicao: 2018, valor_total: 7986422, bens: [] },
-    { id: "p2b", candidato_id: "1", ano_eleicao: 2006, valor_total: 952032, bens: [] },
-    { id: "p2c", candidato_id: "1", ano_eleicao: 2002, valor_total: 422973, bens: [] },
-  ],
-  "flavio-bolsonaro": [
-    { id: "p4", candidato_id: "2", ano_eleicao: 2018, valor_total: 1686779, bens: [] },
-  ],
-  tarcisio: [
-    { id: "p5", candidato_id: "3", ano_eleicao: 2022, valor_total: 4684323.54, bens: [] },
-  ],
-  "tarcisio-gov-sp": [
-    { id: "p5b", candidato_id: "14", ano_eleicao: 2022, valor_total: 4684323.54, bens: [] },
-  ],
-  "ciro-gomes": [
-    { id: "p6", candidato_id: "4", ano_eleicao: 2022, valor_total: 2450000, bens: [] },
-    { id: "p7", candidato_id: "4", ano_eleicao: 2018, valor_total: 1800000, bens: [] },
-  ],
-}
-
-// --- HISTORICO POLITICO ---
-export const MOCK_HISTORICO: Record<string, HistoricoPolitico[]> = {
-  lula: [
-    { id: "h1", candidato_id: "1", cargo: "Presidente da Republica", periodo_inicio: 2023, periodo_fim: null, partido: "PT", estado: "", eleito_por: "Voto popular", observacoes: "3o mandato" },
-    { id: "h2", candidato_id: "1", cargo: "Presidente da Republica", periodo_inicio: 2007, periodo_fim: 2010, partido: "PT", estado: "", eleito_por: "Reeleicao", observacoes: null },
-    { id: "h3", candidato_id: "1", cargo: "Presidente da Republica", periodo_inicio: 2003, periodo_fim: 2006, partido: "PT", estado: "", eleito_por: "Voto popular", observacoes: null },
-  ],
-  "flavio-bolsonaro": [
-    { id: "h4", candidato_id: "2", cargo: "Senador", periodo_inicio: 2019, periodo_fim: null, partido: "PL", estado: "RJ", eleito_por: "Voto popular", observacoes: null },
-    { id: "h5", candidato_id: "2", cargo: "Deputado Estadual", periodo_inicio: 2003, periodo_fim: 2018, partido: "PSC/PL", estado: "RJ", eleito_por: "Voto popular", observacoes: "4 mandatos consecutivos" },
-  ],
-  tarcisio: [
-    { id: "h6", candidato_id: "3", cargo: "Governador de SP", periodo_inicio: 2023, periodo_fim: null, partido: "Republicanos", estado: "SP", eleito_por: "Voto popular", observacoes: null },
-    { id: "h7", candidato_id: "3", cargo: "Ministro da Infraestrutura", periodo_inicio: 2019, periodo_fim: 2022, partido: "sem partido", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Bolsonaro" },
-  ],
-  "romeu-zema": [
-    { id: "h7a", candidato_id: "7", cargo: "Governador de Minas Gerais", periodo_inicio: 2019, periodo_fim: null, partido: "NOVO", estado: "MG", eleito_por: "Voto popular", observacoes: "Reeleito em 2022" },
-  ],
-  "ciro-gomes": [
-    { id: "h8", candidato_id: "4", cargo: "Prefeito de Fortaleza", periodo_inicio: 1989, periodo_fim: 1990, partido: "PMDB", estado: "CE", eleito_por: "Voto popular", observacoes: "Renunciou para disputar o governo do Ceara" },
-    { id: "h9", candidato_id: "4", cargo: "Governador do Ceara", periodo_inicio: 1991, periodo_fim: 1994, partido: "PSDB", estado: "CE", eleito_por: "Voto popular", observacoes: null },
-    { id: "h10", candidato_id: "4", cargo: "Ministro da Fazenda", periodo_inicio: 1994, periodo_fim: 1995, partido: "PSDB", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Itamar Franco" },
-    { id: "h11", candidato_id: "4", cargo: "Ministro da Integracao Nacional", periodo_inicio: 2003, periodo_fim: 2006, partido: "PPS", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Lula 1" },
-    { id: "h12", candidato_id: "4", cargo: "Deputado Federal", periodo_inicio: 2007, periodo_fim: 2011, partido: "PSB", estado: "CE", eleito_por: "Voto popular", observacoes: null },
-  ],
-  "ciro-gomes-gov-ce": [
-    { id: "h8b", candidato_id: "66", cargo: "Prefeito de Fortaleza", periodo_inicio: 1989, periodo_fim: 1990, partido: "PMDB", estado: "CE", eleito_por: "Voto popular", observacoes: "Renunciou para disputar o governo do Ceara" },
-    { id: "h9b", candidato_id: "66", cargo: "Governador do Ceara", periodo_inicio: 1991, periodo_fim: 1994, partido: "PSDB", estado: "CE", eleito_por: "Voto popular", observacoes: null },
-    { id: "h10b", candidato_id: "66", cargo: "Ministro da Fazenda", periodo_inicio: 1994, periodo_fim: 1995, partido: "PSDB", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Itamar Franco" },
-    { id: "h11b", candidato_id: "66", cargo: "Ministro da Integracao Nacional", periodo_inicio: 2003, periodo_fim: 2006, partido: "PPS", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Lula 1" },
-    { id: "h12b", candidato_id: "66", cargo: "Deputado Federal", periodo_inicio: 2007, periodo_fim: 2011, partido: "PSB", estado: "CE", eleito_por: "Voto popular", observacoes: null },
-  ],
-  "ronaldo-caiado": [
-    { id: "h11", candidato_id: "5", cargo: "Governador de GO", periodo_inicio: 2019, periodo_fim: null, partido: "PSD", estado: "GO", eleito_por: "Voto popular", observacoes: "Reeleito em 2022 e filiado ao PSD em 2026" },
-    { id: "h12", candidato_id: "5", cargo: "Senador", periodo_inicio: 2003, periodo_fim: 2018, partido: "DEM", estado: "GO", eleito_por: "Voto popular", observacoes: "2 mandatos" },
-    { id: "h13", candidato_id: "5", cargo: "Deputado Federal", periodo_inicio: 1999, periodo_fim: 2002, partido: "PFL", estado: "GO", eleito_por: "Voto popular", observacoes: null },
-  ],
-  "ratinho-junior": [
-    { id: "h13a", candidato_id: "6", cargo: "Governador do Parana", periodo_inicio: 2019, periodo_fim: 2026, partido: "PSD", estado: "PR", eleito_por: "Voto popular", observacoes: "Dois mandatos consecutivos" },
-  ],
-  "eduardo-leite": [
-    { id: "h13b", candidato_id: "mock-eduardo-leite", cargo: "Governador do Rio Grande do Sul", periodo_inicio: 2023, periodo_fim: null, partido: "PSD", estado: "RS", eleito_por: "Voto popular", observacoes: "Retornou ao governo e migrou para o PSD em 2025" },
-    { id: "h13c", candidato_id: "mock-eduardo-leite", cargo: "Governador do Rio Grande do Sul", periodo_inicio: 2019, periodo_fim: 2022, partido: "PSDB", estado: "RS", eleito_por: "Voto popular", observacoes: null },
-    { id: "h13d", candidato_id: "mock-eduardo-leite", cargo: "Prefeito de Pelotas", periodo_inicio: 2013, periodo_fim: 2016, partido: "PSDB", estado: "RS", eleito_por: "Voto popular", observacoes: null },
-  ],
-  "aldo-rebelo": [
-    { id: "h13e", candidato_id: "mock-aldo-rebelo", cargo: "Ministro da Defesa", periodo_inicio: 2015, periodo_fim: 2016, partido: "PCdoB", estado: "", eleito_por: "Nomeacao", observacoes: "Governo Dilma Rousseff" },
-    { id: "h13f", candidato_id: "mock-aldo-rebelo", cargo: "Ministro do Esporte", periodo_inicio: 2011, periodo_fim: 2015, partido: "PCdoB", estado: "", eleito_por: "Nomeacao", observacoes: "Governos Lula e Dilma" },
-    { id: "h13g", candidato_id: "mock-aldo-rebelo", cargo: "Deputado Federal", periodo_inicio: 1991, periodo_fim: 1994, partido: "PCdoB", estado: "SP", eleito_por: "Voto popular", observacoes: "Primeiro mandato anterior a cobertura TSE estruturada; mandatos seguintes (1995-2015) vem das rows segmentadas da ingestao TSE (curadoria 2026-04-13)." },
-  ],
-}
-
 // --- MUDANCAS DE PARTIDO ---
-export const MOCK_MUDANCAS: Record<string, MudancaPartido[]> = {
+const MOCK_MUDANCAS: Record<string, MudancaPartido[]> = {
   lula: [
     { id: "m0", candidato_id: "1", partido_anterior: "Sem filiacao partidaria", partido_novo: "PT", data_mudanca: null, ano: 1980, contexto: "Fundador do Partido dos Trabalhadores" },
   ],
@@ -1245,47 +1158,6 @@ export const MOCK_MUDANCAS: Record<string, MudancaPartido[]> = {
     { id: "m8", candidato_id: "5", partido_anterior: "PFL", partido_novo: "DEM", data_mudanca: null, ano: 2007, contexto: "Refundacao do PFL como DEM" },
     { id: "m9", candidato_id: "5", partido_anterior: "DEM", partido_novo: "Uniao Brasil", data_mudanca: null, ano: 2022, contexto: "Fusao DEM + PSL" },
     { id: "m9b", candidato_id: "5", partido_anterior: "Uniao Brasil", partido_novo: "PSD", data_mudanca: null, ano: 2026, contexto: "Filiacao ao PSD para articular a disputa presidencial de 2026" },
-  ],
-}
-
-// --- FINANCIAMENTO ---
-export const MOCK_FINANCIAMENTO: Record<string, Financiamento[]> = {
-  lula: [
-    {
-      id: "f1", candidato_id: "1", ano_eleicao: 2022, total_arrecadado: 109742510,
-      total_fundo_partidario: 15000000, total_fundo_eleitoral: 84742510,
-      total_pessoa_fisica: 10000000, total_recursos_proprios: 0,
-      maiores_doadores: [
-        { nome: "Fundo Eleitoral PT", valor: 84742510, tipo: "fundo_eleitoral" },
-        { nome: "Fundo Partidario PT", valor: 15000000, tipo: "fundo_partidario" },
-      ],
-    },
-  ],
-  "flavio-bolsonaro": [
-    {
-      id: "f2", candidato_id: "2", ano_eleicao: 2018, total_arrecadado: 3200000,
-      total_fundo_partidario: 800000, total_fundo_eleitoral: 1600000,
-      total_pessoa_fisica: 800000, total_recursos_proprios: 0,
-      maiores_doadores: [
-        { nome: "Fundo Eleitoral PSL", valor: 1600000, tipo: "fundo_eleitoral" },
-      ],
-    },
-  ],
-  tarcisio: [
-    {
-      id: "f2b", candidato_id: "3", ano_eleicao: 2022, total_arrecadado: 77216377.38,
-      total_fundo_partidario: 0, total_fundo_eleitoral: 0,
-      total_pessoa_fisica: 0, total_recursos_proprios: 0,
-      maiores_doadores: [],
-    },
-  ],
-  "tarcisio-gov-sp": [
-    {
-      id: "f2c", candidato_id: "14", ano_eleicao: 2022, total_arrecadado: 77216377.38,
-      total_fundo_partidario: 0, total_fundo_eleitoral: 0,
-      total_pessoa_fisica: 0, total_recursos_proprios: 0,
-      maiores_doadores: [],
-    },
   ],
 }
 
@@ -1628,7 +1500,7 @@ const MOCK_QUIZ_POSICOES: Record<string, QuizPosicaoDeclarada[]> = {
 }
 
 // --- PROJETOS DE LEI ---
-export const MOCK_PROJETOS: Record<string, ProjetoLei[]> = {
+const MOCK_PROJETOS: Record<string, ProjetoLei[]> = {
   lula: [
     {
       id: "pl-l1",
@@ -1685,51 +1557,6 @@ export const MOCK_PROJETOS: Record<string, ProjetoLei[]> = {
       ementa: "Regulamenta o uso de agrotóxicos e altera a lei de defensivos agrícolas",
       tema: "Agronegocio", situacao: "tramitando", url_inteiro_teor: null,
       destaque: true, destaque_motivo: "Conhecido como 'PL do Veneno', amplia permissão de agrotóxicos", fonte: "Senado",
-    },
-  ],
-}
-
-// --- GASTOS PARLAMENTARES ---
-export const MOCK_GASTOS: Record<string, GastoParlamentar[]> = {
-  "flavio-bolsonaro": [
-    {
-      id: "g1", candidato_id: "2", ano: 2024, total_gasto: 892450,
-      detalhamento: [
-        { categoria: "Passagens aereas", valor: 312000 },
-        { categoria: "Divulgacao de atividade", valor: 245000 },
-        { categoria: "Alimentacao", valor: 89000 },
-        { categoria: "Combustivel", valor: 67000 },
-        { categoria: "Servicos postais", valor: 45000 },
-        { categoria: "Outros", valor: 134450 },
-      ],
-      gastos_destaque: [
-        { descricao: "18 viagens aéreas Rio-Brasília em janeiro", valor: 54000, categoria: "Passagens aereas" },
-      ],
-    },
-    {
-      id: "g2", candidato_id: "2", ano: 2023, total_gasto: 945200,
-      detalhamento: [
-        { categoria: "Passagens aereas", valor: 340000 },
-        { categoria: "Divulgacao de atividade", valor: 280000 },
-        { categoria: "Alimentacao", valor: 95000 },
-        { categoria: "Combustivel", valor: 72000 },
-        { categoria: "Outros", valor: 158200 },
-      ],
-      gastos_destaque: [],
-    },
-  ],
-  "ronaldo-caiado": [
-    {
-      id: "g3", candidato_id: "5", ano: 2017, total_gasto: 1120000,
-      detalhamento: [
-        { categoria: "Passagens aereas", valor: 480000 },
-        { categoria: "Divulgacao de atividade", valor: 320000 },
-        { categoria: "Alimentacao", valor: 120000 },
-        { categoria: "Outros", valor: 200000 },
-      ],
-      gastos_destaque: [
-        { descricao: "Gasto com divulgação 3x acima da média do Senado", valor: 320000, categoria: "Divulgacao de atividade" },
-      ],
     },
   ],
 }

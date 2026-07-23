@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { createServiceRoleSupabaseClient } from "@/lib/supabase"
+import { secretsMatch } from "@/lib/crypto-utils"
 import {
   analyzePublishedConsistency,
   probeAnonLeak,
@@ -42,7 +43,7 @@ function getBearer(req: NextRequest): string | null {
 export async function GET(req: NextRequest) {
   const expectedSecret = process.env.CRON_SECRET?.trim()
   const providedSecret = getBearer(req)
-  if (!expectedSecret || providedSecret !== expectedSecret) {
+  if (!secretsMatch(providedSecret, expectedSecret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

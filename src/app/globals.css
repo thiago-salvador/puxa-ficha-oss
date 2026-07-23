@@ -183,7 +183,10 @@
   .glass-nav {
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    background: var(--glass-bg-nav);
+    /* Header fixo: se o backdrop-filter nao renderizar (ancestral com transform),
+       0.75 deixava o texto do corpo vazar atras do logo/menu ao rolar. 0.9 mantem
+       o efeito glass onde o blur funciona e garante legibilidade onde nao. */
+    background: rgba(255, 255, 255, 0.9);
   }
 }
 
