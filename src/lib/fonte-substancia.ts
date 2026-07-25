@@ -131,10 +131,14 @@ function normalizarParaMarcador(texto: string): string {
  * de grandeza, não renderizar a página.
  */
 export function extrairTextoUtil(html: string): string {
+  // As tags de fechamento aceitam espaço antes do `>` (`</script >` é válido em
+  // HTML). Sem tolerar isso, o bloco não é removido e o corpo do script entra na
+  // contagem de texto útil, o que faria uma página sem conteúdo passar no piso de
+  // substância. Apontado pelo CodeQL (js/bad-tag-filter).
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style\s*>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;?/gi, " ")

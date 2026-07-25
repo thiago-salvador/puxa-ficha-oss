@@ -57,6 +57,16 @@ describe("extrairTextoUtil", () => {
   it("colapsa espaço e apara as bordas", () => {
     assert.equal(extrairTextoUtil("  <p>  a   \n  b  </p> "), "a b")
   })
+
+  it("descarta bloco cuja tag de fechamento tem espaço antes do >", () => {
+    // `</script >` é fechamento válido em HTML. Se a regex não tolerar o espaço,
+    // o corpo do script vira texto útil e uma página vazia passa no piso de
+    // substância, que é justamente o que o gate precisa barrar.
+    const corpo =
+      "<html><head><script>var x = 'a'.repeat(9000)</script ><style>a{b:c}</style >" +
+      "<noscript>ative o javascript</noscript ></head><body><h1>Titulo</h1></body></html>"
+    assert.equal(extrairTextoUtil(corpo), "Titulo")
+  })
 })
 
 describe("pareceVedacaoEleitoral", () => {
