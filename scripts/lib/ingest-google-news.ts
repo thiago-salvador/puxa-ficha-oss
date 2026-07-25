@@ -7,6 +7,7 @@ import {
   buildGoogleNewsSearchUrl,
   parseGoogleNewsRss,
 } from "../../src/lib/news/google-news"
+import { splitNewsByCandidateMention } from "../../src/lib/news/name-match"
 
 export async function ingestGoogleNews(): Promise<IngestResult[]> {
   const candidatos = loadCandidatos()
@@ -53,10 +54,26 @@ export async function ingestGoogleNews(): Promise<IngestResult[]> {
 
         const xml = await res.text()
         const { items, discardedUrls } = parseGoogleNewsRss(xml)
-        const newsItems = items.slice(0, 20)
+
+        // Guard de relevancia (auditoria 2026-07-24, etapa 1C): o Google News
+        // devolve materia de cobertura coletiva do pleito ("Quem sao os
+        // candidatos a governador do Maranhao") para a busca do nome de
+        // qualquer candidato pouco coberto. Ate aqui isso era gravado como
+        // noticia DELE. Medido no banco: 3.984 de 17.498 linhas (22,77%) sem
+        // nenhum token do nome no titulo. Agora o item so entra se o titulo
+        // citar o candidato.
+        const { mencionam, contextoDoPleito } = splitNewsByCandidateMention(items, cand)
+        const newsItems = mencionam.slice(0, 20)
 
         if (discardedUrls > 0) {
           warn("google-news", `  ${cand.slug}: ${discardedUrls} URL(s) descartada(s) por esquema invalido`)
+        }
+
+        if (contextoDoPleito.length > 0) {
+          warn(
+            "google-news",
+            `  ${cand.slug}: ${contextoDoPleito.length} noticia(s) descartada(s) por nao citar o candidato no titulo`,
+          )
         }
 
         if (newsItems.length === 0) {

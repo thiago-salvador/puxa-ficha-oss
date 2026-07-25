@@ -101,16 +101,38 @@ test("resolveCanonicalParty reconhece AGIR", () => {
 test("PMN e MOBILIZA são entradas canônicas distintas (não colapsam)", () => {
   // Regressão 2026-06-09: o alias "PMN" no MOBILIZA sobrescrevia a chave do PMN no
   // PARTY_INDEX e colapsava PMN -> MOBILIZA, reescrevendo histórico curado. PMN é
-  // histórico, MOBILIZA é o rebrand de 2022; a curadoria usa AMBOS.
+  // histórico, MOBILIZA é o nome atual da mesma legenda; a curadoria usa AMBOS.
+  // A continuidade entre as duas eras é resolvida no grupo histórico de
+  // src/lib/party-utils.ts, não colapsando as entradas aqui.
   assert.equal(resolveCanonicalParty("PMN")?.sigla, "PMN")
   assert.equal(resolveCanonicalParty("MOBILIZA")?.sigla, "MOBILIZA")
   assert.equal(canonicalPartiesEquivalent("PMN", "MOBILIZA"), false)
 })
 
-test("'Mobilizacao Nacional' resolve para PMN (espelha src/lib/party-utils)", () => {
-  assert.equal(resolveCanonicalParty("Mobilizacao Nacional")?.sigla, "PMN")
-  assert.equal(resolveCanonicalParty("Mobilização Nacional")?.sigla, "PMN")
+test("nomes de PMN e MOBILIZA seguem o registro do TSE", () => {
+  // Corrigido na etapa 2C da auditoria de 2026-07-24. Fonte oficial:
+  // https://www.tse.jus.br/partidos/partidos-politicos/partidos-registrados-no-tse
+  // (HTTP 200, acesso 2026-07-25), literal: "Partido da Mobilização Nacional
+  // (PMN) Mobilização Nacional (MOBILIZA) PetCiv nº 0001624-23.1996.6.00.0000
+  // 05/12/2023". Ou seja, "Mobilização Nacional" (sem "Partido da") é o nome da
+  // era MOBILIZA, e era o teste anterior que estava errado ao mapear para PMN.
+  assert.equal(resolveCanonicalParty("Partido da Mobilizacao Nacional")?.sigla, "PMN")
+  assert.equal(resolveCanonicalParty("Partido da Mobilização Nacional")?.sigla, "PMN")
+  assert.equal(resolveCanonicalParty("Mobilizacao Nacional")?.sigla, "MOBILIZA")
+  assert.equal(resolveCanonicalParty("Mobilização Nacional")?.sigla, "MOBILIZA")
   assert.equal(resolveCanonicalParty("Mobiliza")?.sigla, "MOBILIZA")
+})
+
+test("PATRI resolve para PATRIOTA e PCB/PRN/PRONA existem no registro", () => {
+  // Auditoria 2026-07-24: as quatro siglas não resolviam (null), o que fazia
+  // partiesEquivalent("PATRI", "PATRIOTA") ser falso e publicar a timeline do
+  // cabo-daciolo com PATRI e PATRIOTA como partidos diferentes.
+  assert.equal(resolveCanonicalParty("PATRI")?.sigla, "PATRIOTA")
+  assert.equal(resolveCanonicalParty("PATRIOTA")?.sigla, "PATRIOTA")
+  assert.equal(canonicalPartiesEquivalent("PATRI", "PATRIOTA"), true)
+  assert.equal(resolveCanonicalParty("PCB")?.sigla, "PCB")
+  assert.equal(resolveCanonicalParty("PRN")?.sigla, "PRN")
+  assert.equal(resolveCanonicalParty("PRONA")?.sigla, "PRONA")
 })
 
 test("canonicalPartiesEquivalent trata AGIR como equivalente a Agir 36", () => {

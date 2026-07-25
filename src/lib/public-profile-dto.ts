@@ -11,6 +11,10 @@ import type {
   SancaoAdministrativa,
   VotoCandidato,
 } from "@/lib/types"
+import {
+  buildCargoDisputadoProvenienceNote,
+  resolveCargoDisputadoProveniencia,
+} from "@/lib/candidatura-proveniencia"
 
 const DOCUMENT_LIKE_SEQUENCE_RE =
   /(^|[^\d])((?:\d{3}\.?\d{3}\.?\d{3}-?\d{2})|(?:\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|\d{11}|\d{14})(?=$|[^\d])/g
@@ -233,6 +237,9 @@ function publicNoticia(row: FichaCandidato["noticias"][number], index: number) {
     url: row.url,
     data_publicacao: row.data_publicacao,
     snippet: maskNullableText(row.snippet),
+    // Auditoria 2026-07-24, etapa 1C: quem consome a API precisa saber quando a
+    // materia e cobertura do pleito e nao noticia sobre o candidato.
+    contexto_do_pleito: row.contexto_do_pleito === true,
   }
 }
 
@@ -280,6 +287,8 @@ function publicSocialLinks(value: Record<string, unknown> | null | undefined) {
 }
 
 export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
+  const cargoProveniencia = resolveCargoDisputadoProveniencia(ficha)
+
   return {
     id: ficha.id,
     nome_completo: ficha.nome_completo,
@@ -297,6 +306,13 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     partido_sigla: ficha.partido_sigla,
     cargo_atual: ficha.cargo_atual,
     cargo_disputado: ficha.cargo_disputado,
+    // Achado A0.1 (auditoria 2026-07-24): o payload publico devolvia
+    // cargo_disputado/situacao_candidatura sem dizer de onde vem. Quem consome
+    // a API recebia declaracao editorial de pre-candidatura com cara de
+    // registro oficial. Os dois campos abaixo carregam a proveniencia junto do
+    // dado, na mesma regra usada na ficha.
+    cargo_disputado_proveniencia: cargoProveniencia,
+    cargo_disputado_proveniencia_nota: buildCargoDisputadoProvenienceNote(cargoProveniencia),
     estado: ficha.estado,
     status: ficha.status,
     situacao_candidatura: ficha.situacao_candidatura ?? null,

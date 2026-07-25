@@ -154,8 +154,10 @@ export default function MetodologiaPage() {
         <SectionLabel>03 Frescor</SectionLabel>
         <SectionTitle>Indicadores de frescor</SectionTitle>
         <p className="mt-4 max-w-2xl text-[length:var(--text-body-sm)] font-medium leading-relaxed text-muted-foreground sm:text-[length:var(--text-body)]">
-          Nos perfis de candidatos, cada seção de dados mostra um indicador de frescor. Veja o que
-          cada um significa:
+          Nos perfis de candidatos, oito blocos de dados mostram um indicador de frescor: perfil
+          atual, patrimônio, financiamento, gastos parlamentares, histórico político, mudanças de
+          partido, projetos de lei e votos. As abas Justiça e Alertas ainda não têm indicador, então
+          não afirmamos data de verificação para elas. Veja o que cada estado significa:
         </p>
         <div className="mt-6 max-w-2xl space-y-3 sm:mt-8">
           {FRESHNESS_INDICATORS.map((item) => {

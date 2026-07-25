@@ -1,0 +1,81 @@
+name: Link-check das fontes
+
+# Testa toda URL citada em pontos_atencao.fontes e reporta as que não
+# sustentam mais a afirmação publicada.
+#
+# Por que existe: a auditoria de 2026-07-24 encontrou 18 afirmações graves
+# publicadas cuja única fonte devolvia HTTP 404 (achado V1 de
+# docs/auditoria-integridade-2026-07-24.md). O gate SQL de 20260725160000
+# impede que uma claim grave nasça sem fonte utilizável, mas não impede que a
+# URL morra depois. Este job é a rede que pega isso.
+#
+# O QUE MUDOU NA ETAPA 5B (2026-07-25): status HTTP deixou de ser o critério.
+# O script agora mede também a substância do corpo, e o veredito de uma URL
+# tem cinco valores, dos quais só um autoriza despublicação:
+#
+#   viva            responde e entrega conteúdo legível
+#   sem_substancia  responde 200 mas entrega casca de SPA ou página de índice
+#                   (foi o caso de https://divulgacandcontas.tse.jus.br/divulga/,
+#                   200 com 46 caracteres, sustentando claim de gravidade alta)
+#   indisponivel    fora do ar temporariamente: bloqueio de robô, 5xx, timeout,
+#                   corpo vazio com 2xx, ou vedação eleitoral. NUNCA despublica
+#   morta           404, 410 ou DNS inexistente
+#   sem_caminho     domínio nu ou raiz de portal
+#
+# A vedação eleitoral é o motivo de o job separar "indisponível" de "morta".
+# Em 2026-07-25, agenciaminas.mg.gov.br responde 503 com aviso de legislação
+# eleitoral e páginas de notícia de goias.gov.br respondem 200 com o aviso no
+# lugar da matéria. Sem essa separação, o job despublicaria fonte legítima que
+# volta sozinha ao fim do período de vedação.
+#
+# SEMPRE em modo dry-run. Nenhuma execução automática escreve no banco: a
+# despublicação (`npm run data:link-check-fontes`) é decisão humana, rodada à
+# mão depois de olhar o relatório. O job falha quando encontra URL morta ou
+# claim publicada sem nenhuma fonte com conteúdo, e é a falha que serve de
+# alerta.
+#
+# Não roda em pull_request: usa SUPABASE_SERVICE_ROLE_KEY, e secret não é
+# exposto a PR de fork.
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+on:
+  schedule:
+    # Segundas às 09:00 UTC (06:00 em Brasília).
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-check-fontes
+  cancel-in-progress: false
+
+jobs:
+  link-check:
+    name: Fontes de pontos de atenção (dry-run)
+    runs-on: ubuntu-latest
+    # O script serializa as requisições por host com pausa entre elas, porque
+    # rajada contra noticias.stf.jus.br faz o servidor responder 202 com corpo
+    # vazio e o próprio robô fabricar o falso negativo. Isso custa tempo de
+    # relógio, daí a folga no timeout.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Link-check (dry-run, falha se houver URL morta ou claim sem fonte com conteúdo)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run data:link-check-fontes:gate

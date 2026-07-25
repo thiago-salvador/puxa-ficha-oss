@@ -14,6 +14,7 @@ import { logAlertsApiExit, logAlertsEvent } from "@/lib/alerts-log"
 import { secretsMatch } from "@/lib/crypto-utils"
 import { sendTransactionalEmail } from "@/lib/email"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
+import { formatCargoDisputadoPublicLabel } from "@/lib/ui-labels"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -272,11 +273,13 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
         if (changes.length === 0) continue
 
         const partyLabel = formatPartyPublicLabel(candidate.partido_sigla)
+        // O valor interno de cargo_disputado inclui o token "Nenhum", que
+        // vazava literal no email de digest. Passar pelo formatador publico
+        // e a mesma regra da ficha (auditoria 2026-07-24, etapa 2C).
+        const cargoLabel = formatCargoDisputadoPublicLabel(candidate.cargo_disputado)
         grouped.push({
           candidateName: candidate.nome_urna,
-          candidateMeta: partyLabel
-            ? `${partyLabel} · ${candidate.cargo_disputado}`
-            : candidate.cargo_disputado,
+          candidateMeta: [partyLabel || null, cargoLabel || null].filter(Boolean).join(" · "),
           changes,
         })
       }

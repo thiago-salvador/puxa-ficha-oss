@@ -57,3 +57,6 @@ supabase/.branches/
 .cursor/
 CLAUDE.md
 AGENTS.md
+
+# Saida temporaria do browser tooling (Playwright MCP)
+.playwright-mcp/

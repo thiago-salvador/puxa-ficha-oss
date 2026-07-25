@@ -62,7 +62,9 @@ async function defaultFetchCandidatoPage(args: { cursor: number; limit: number }
   const supabase = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
   const { data, error, count } = await supabase
     .from("candidatos_publico")
-    .select("id, slug, nome_urna, cargo_disputado", { count: "exact" })
+    // nome_completo entra so para o guard de relevancia de titulo
+    // (src/lib/news/name-match.ts); nao e gravado em noticias_candidato.
+    .select("id, slug, nome_urna, nome_completo, cargo_disputado", { count: "exact" })
     .order("slug", { ascending: true })
     .range(args.cursor, args.cursor + args.limit - 1)
 
@@ -166,6 +168,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       processed: summary.processed,
       withNews: summary.withNews,
       rowsUpserted: summary.rowsUpserted,
+      discardedByName: summary.discardedByName,
       errorCount: summary.errors.length,
       nextCursor: hasMore ? nextCursor : null,
       chainScheduled: hasMore && shouldChain,
@@ -182,6 +185,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       processed: summary.processed,
       withNews: summary.withNews,
       rowsUpserted: summary.rowsUpserted,
+      discardedByName: summary.discardedByName,
       errors: summary.errors,
       nextCursor: hasMore ? nextCursor : null,
       chainScheduled: hasMore && shouldChain,

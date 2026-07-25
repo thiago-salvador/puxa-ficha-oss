@@ -64,6 +64,7 @@ function createDeps(allCandidatos: FakeCandidato[]) {
         processed: candidatos.length,
         withNews: candidatos.length,
         rowsUpserted: candidatos.length * 20,
+        discardedByName: 0,
         errors: [] as Array<{ slug: string; error: string }>,
       }
     },

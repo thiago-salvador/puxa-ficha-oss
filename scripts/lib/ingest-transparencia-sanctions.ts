@@ -2,6 +2,7 @@ import { supabase } from "./supabase"
 import { loadCandidatos, fetchJSON, sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
+import { motivoRecusaDeFonte } from "../../src/lib/public-attention-point"
 
 const API = "https://api.portaldatransparencia.gov.br/api-de-dados"
 
@@ -138,6 +139,20 @@ async function upsertPontoAtencao(
     gravidade: "alta",
     verificado: false,
     gerado_por: "automatico",
+  }
+
+  // Guard de fonte (auditoria de 2026-07-24, achados V1 e A3). Mesmo caso do
+  // ingest-tcu: gravidade "alta" gravada sem nenhuma fonte, com gerado_por
+  // "automatico" escapando do gate antigo. O gate de 20260725160000 recusa
+  // este INSERT; aqui a gente para antes, com aviso legivel.
+  //
+  // Para religar: anexar em `fontes` a URL publica do Portal da Transparencia
+  // que mostra a sancao (a rota consultada e a API autenticada, entao a fonte
+  // exibida precisa ser a pagina publica equivalente, com caminho).
+  const recusa = motivoRecusaDeFonte(row.gravidade, undefined)
+  if (recusa) {
+    warn("transparencia-sanctions", `ponto de atencao nao gravado (${recusa}): ${titulo}`)
+    return
   }
 
   const existing = rows?.find((item) => item.titulo === titulo) ?? rows?.[0] ?? null

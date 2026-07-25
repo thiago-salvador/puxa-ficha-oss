@@ -5,6 +5,9 @@ import {
   createBackfillDepsFromClient,
   isAutoSource,
   closesMandate,
+  candidaturaClosesMandate,
+  isBackfillTarget,
+  resolvePeriodoFim,
   type HistoricoRow,
 } from "../scripts/backfill-historico-periodo-fim"
 import { HistoricoChainFixture } from "./helpers/historico-chain-fixture"
@@ -60,10 +63,128 @@ describe("closesMandate", () => {
   })
 })
 
+// --- Unit: candidaturaClosesMandate / isBackfillTarget ---
+
+describe("candidaturaClosesMandate (CF art. 14 par. 6)", () => {
+  it("Prefeito que disputa outro cargo renuncia", () => {
+    assert.equal(candidaturaClosesMandate("Prefeito", "Deputado Federal"), true)
+  })
+  it("Governador que disputa outro cargo renuncia", () => {
+    assert.equal(candidaturaClosesMandate("Governador", "Senador"), true)
+  })
+  it("reeleicao no mesmo cargo nao encerra o mandato", () => {
+    assert.equal(candidaturaClosesMandate("Prefeito", "Prefeito"), false)
+  })
+  it("legislador nao renuncia para disputar outro cargo", () => {
+    assert.equal(candidaturaClosesMandate("Deputado Estadual", "Prefeito"), false)
+    assert.equal(candidaturaClosesMandate("Vereador", "Deputado Estadual"), false)
+  })
+  it("vice nao esta na regra de renuncia", () => {
+    assert.equal(candidaturaClosesMandate("Vice-Prefeito", "Deputado Federal"), false)
+    assert.equal(candidaturaClosesMandate("Vice-Governador", "Governador"), false)
+  })
+  it("candidatura sem cargo nao fecha nada", () => {
+    assert.equal(candidaturaClosesMandate("Prefeito", null), false)
+  })
+})
+
+describe("isBackfillTarget", () => {
+  it("mandato e alvo", () => {
+    assert.equal(isBackfillTarget({ tipo_evento: "mandato" }), true)
+  })
+  it("tipo_evento ausente ou null conta como mandato", () => {
+    assert.equal(isBackfillTarget({ tipo_evento: null }), true)
+    assert.equal(isBackfillTarget({}), true)
+  })
+  it("candidatura nunca e alvo", () => {
+    assert.equal(isBackfillTarget({ tipo_evento: "candidatura" }), false)
+  })
+})
+
+// --- Regressao do bug V4: o teto de duracao vence a proximidade ---
+
+describe("bug V4: MAX_DURATION vence o fechamento por proximidade", () => {
+  it("mandato seguinte do mesmo cargo distante nao estica o anterior", () => {
+    // Caso cicero-lucena: Prefeito 2000 com proximo Prefeito so em 2020.
+    // Antes da correcao virava 2000-2020, vinte anos num cargo de quatro.
+    const record = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2000 })
+    const later = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2020 })
+    const resolved = resolvePeriodoFim(record, [record, later])
+    assert.equal(resolved?.ano, 2004)
+    assert.match(resolved!.reason, /cap/)
+  })
+
+  it("cargo incompativel distante tambem respeita o teto", () => {
+    // Caso daniel-vilela: Deputado Federal 2014 fechado por Vice-Governador 2022.
+    const record = row({ candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2014 })
+    const later = row({ candidato_id: "c1", cargo_canonico: "Vice-Governador", periodo_inicio: 2022 })
+    const resolved = resolvePeriodoFim(record, [record, later])
+    assert.equal(resolved?.ano, 2018)
+  })
+
+  it("fechamento dentro do teto continua vencendo o teto", () => {
+    // Nao-regressao: quando a proximidade cabe no teto, ela manda.
+    const record = row({ candidato_id: "c1", cargo_canonico: "Deputado Estadual", periodo_inicio: 2006 })
+    const later = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2009 })
+    const resolved = resolvePeriodoFim(record, [record, later])
+    assert.equal(resolved?.ano, 2009)
+    assert.doesNotMatch(resolved!.reason, /cap/)
+  })
+
+  it("Senador usa teto de 8 anos, nao de 4", () => {
+    const record = row({ candidato_id: "c1", cargo_canonico: "Senador", periodo_inicio: 2006 })
+    const later = row({ candidato_id: "c1", cargo_canonico: "Senador", periodo_inicio: 2020 })
+    const resolved = resolvePeriodoFim(record, [record, later])
+    assert.equal(resolved?.ano, 2014)
+  })
+
+  it("mandato que pode estar em curso continua aberto", () => {
+    const record = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2024 })
+    assert.equal(resolvePeriodoFim(record, [record]), null)
+  })
+
+  it("nenhuma proposta pode estourar o teto do cargo", () => {
+    const cargos = ["Prefeito", "Vereador", "Deputado Federal", "Deputado Estadual", "Governador", "Senador"]
+    for (const cargo of cargos) {
+      const record = row({ candidato_id: "c1", cargo_canonico: cargo, periodo_inicio: 1996 })
+      const later = row({ candidato_id: "c1", cargo_canonico: cargo, periodo_inicio: 2018 })
+      const resolved = resolvePeriodoFim(record, [record, later])
+      const max = cargo === "Senador" ? 8 : 4
+      assert.ok(resolved !== null, `${cargo} deveria fechar`)
+      assert.ok(resolved!.ano - 1996 <= max, `${cargo} estourou o teto: ${resolved!.ano}`)
+    }
+  })
+})
+
+describe("bug V4: visibilidade de candidatura e de tipo_evento NULL", () => {
+  it("candidatura a outro cargo encerra mandato de Prefeito", () => {
+    // Caso teresa-surita: Prefeito 2004 com candidatura a Senador em 2006.
+    const record = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2004 })
+    const cand = row({ candidato_id: "c1", cargo_canonico: "Senador", periodo_inicio: 2006, tipo_evento: "candidatura" })
+    const resolved = resolvePeriodoFim(record, [record, cand])
+    assert.equal(resolved?.ano, 2006)
+    assert.match(resolved!.reason, /desincompatibilizacao/)
+  })
+
+  it("candidatura perdida de deputado nao encerra o mandato dele", () => {
+    const record = row({ candidato_id: "c1", cargo_canonico: "Deputado Estadual", periodo_inicio: 2018 })
+    const cand = row({ candidato_id: "c1", cargo_canonico: "Prefeito", periodo_inicio: 2020, tipo_evento: "candidatura" })
+    const resolved = resolvePeriodoFim(record, [record, cand])
+    assert.equal(resolved?.ano, 2022, "fecha pelo teto de 4 anos, nao pela candidatura de 2020")
+  })
+
+  it("linha com tipo_evento NULL continua visivel como fechamento", () => {
+    const record = row({ candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2014 })
+    const later = row({ candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2018, tipo_evento: null })
+    const resolved = resolvePeriodoFim(record, [record, later])
+    assert.equal(resolved?.ano, 2018)
+  })
+})
+
 // --- Integration: runBackfillHistoricoPeriodoFim ---
 
 describe("backfill-historico-periodo-fim", () => {
-  it("Rule A: later same cargo closes earlier (dry-run)", async () => {
+  it("Rule A: fechador do mesmo cargo alem do teto capa em inicio+MAX_DURATION (dry-run)", async () => {
     idCounter = 0
     const rows: HistoricoRow[] = [
       row({ candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2014 }),
@@ -80,12 +201,12 @@ describe("backfill-historico-periodo-fim", () => {
 
     assert.equal(result.changes.length, 1)
     assert.equal(result.changes[0].id, "hp-1")
-    assert.equal(result.changes[0].newFim, 2022)
-    assert.match(result.changes[0].reason, /closed by later Deputado Federal/)
+    assert.equal(result.changes[0].newFim, 2018)
+    assert.match(result.changes[0].reason, /max duration 4yr cap/)
     assert.equal(result.applied, 0)
   })
 
-  it("Rule B: incompatibility closes lower cargo", async () => {
+  it("Rule B: cargo incompativel alem do teto tambem capa", async () => {
     idCounter = 0
     const rows: HistoricoRow[] = [
       row({ candidato_id: "c1", cargo_canonico: "Vereador", periodo_inicio: 2016 }),
@@ -102,8 +223,8 @@ describe("backfill-historico-periodo-fim", () => {
 
     assert.equal(result.changes.length, 1)
     assert.equal(result.changes[0].id, "hp-1")
-    assert.equal(result.changes[0].newFim, 2022)
-    assert.match(result.changes[0].reason, /closed by Deputado Estadual/)
+    assert.equal(result.changes[0].newFim, 2020)
+    assert.match(result.changes[0].reason, /max duration 4yr cap/)
   })
 
   it("Rule C: max duration fallback for old mandatos", async () => {
@@ -203,7 +324,7 @@ describe("backfill-historico-periodo-fim", () => {
     assert.equal(result.errors, 0)
     assert.equal(updates.length, 1)
     assert.equal(updates[0].id, "hp-1")
-    assert.equal(updates[0].periodoFim, 2022)
+    assert.equal(updates[0].periodoFim, 2018)
   })
 
   it("apply mode counts errors from updateRow failures", async () => {
@@ -228,7 +349,7 @@ describe("backfill-historico-periodo-fim", () => {
 // --- Chain-level: exercises the real SELECT/UPDATE Supabase chain via createBackfillDepsFromClient ---
 
 describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
-  it("SELECT chain filters tipo_evento=mandato, excludes null periodo_inicio, orders by periodo_inicio", async () => {
+  it("SELECT chain does NOT filter tipo_evento (candidatura vira contexto), excludes null periodo_inicio, orders by periodo_inicio", async () => {
     const fixture = new HistoricoChainFixture([
       {
         id: "hp-100",
@@ -250,7 +371,7 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
         tipo_evento: "mandato",
         candidatos: { slug: "fulano" },
       },
-      // Should be filtered out: tipo_evento != mandato
+      // Buscada (serve de contexto), mas nunca recebe periodo_fim
       {
         id: "hp-102",
         candidato_id: "c1",
@@ -277,16 +398,23 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
     const deps = createBackfillDepsFromClient(fixture.createClient(), { apply: false })
     const result = await runBackfillHistoricoPeriodoFim(deps)
 
-    // Only 2 mandato rows with non-null periodo_inicio should be fetched
-    assert.equal(result.totalRows, 2)
-    // hp-100 (2018) closed by hp-101 (2022) via Rule A
+    // 3 linhas com periodo_inicio nao nulo: 2 mandatos + 1 candidatura
+    assert.equal(result.totalRows, 3)
+    // A candidatura nao entra na fila de abertos nem recebe periodo_fim
+    assert.equal(result.openRows, 2)
+    assert.ok(!result.changes.some((c) => c.id === "hp-102"), "candidatura nunca recebe periodo_fim")
+    // hp-100 (2018) fechado por hp-101 (2022): 4 anos, dentro do teto do cargo
     assert.equal(result.changes.length, 1)
     assert.equal(result.changes[0].id, "hp-100")
     assert.equal(result.changes[0].newFim, 2022)
 
     // Verify the SELECT chain was built correctly
     assert.ok(fixture.queryLog.includes("from(historico_politico)"))
-    assert.ok(fixture.queryLog.some((l) => l.includes("eq(tipo_evento,mandato)")))
+    assert.ok(
+      !fixture.queryLog.some((l) => l.includes("eq(tipo_evento,mandato)")),
+      "o filtro por tipo_evento escondia candidaturas e linhas com tipo NULL; nao pode voltar"
+    )
+    assert.ok(fixture.queryLog.some((l) => l.includes("tipo_evento")), "tipo_evento precisa vir na projecao")
     assert.ok(fixture.queryLog.some((l) => l.includes("not(periodo_inicio,is,null)")))
     assert.ok(fixture.queryLog.some((l) => l.includes("order(periodo_inicio,asc=true)")))
   })
@@ -318,17 +446,17 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
     const deps = createBackfillDepsFromClient(fixture.createClient(), { apply: true })
     const result = await runBackfillHistoricoPeriodoFim(deps)
 
-    // Rule B: Vereador closed by Deputado Estadual
+    // Vereador 2016 com fechador em 2022: capa no teto de 4 anos, 2020
     assert.equal(result.applied, 1)
     assert.equal(result.errors, 0)
     assert.equal(fixture.updates.length, 1)
     assert.equal(fixture.updates[0].id, "hp-200")
-    assert.deepEqual(fixture.updates[0].payload, { periodo_fim: 2022 })
+    assert.deepEqual(fixture.updates[0].payload, { periodo_fim: 2020 })
 
     // Verify the UPDATE chain was built correctly
     const updateLogs = fixture.queryLog.filter((l) => l.startsWith("update("))
     assert.equal(updateLogs.length, 1)
-    assert.ok(updateLogs[0].includes('"periodo_fim":2022'))
+    assert.ok(updateLogs[0].includes('"periodo_fim":2020'))
   })
 
   it("candidatos!inner(slug) join shape: slug is extracted from nested candidatos object", async () => {
@@ -356,8 +484,8 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
 
   it("full cycle: apply mutates fixture DB state and final row values match expected", async () => {
     // Scenario: 3 candidates with various rules
-    // c1: Deputado Federal 2014 (open, auto) -> 2022 (open, auto) => Rule A closes 2014, 2022 stays open
-    // c2: Vereador 2016 (open, auto) -> Governador 2022 (open, auto) => Rule B closes Vereador
+    // c1: Deputado Federal 2014 (open, auto) -> 2022 (open, auto) => teto de 4 anos fecha em 2018, 2022 fica aberto
+    // c2: Vereador 2016 (open, auto) -> Governador 2022 (open, auto) => teto de 4 anos fecha em 2020
     // c3: Senador 2010 (open, auto) => Rule C: max 8yr => fim=2018
     // c4: Deputado Federal 2008 (open, manual/curadoria) => NOT auto-processed (manual queue)
     const fixture = new HistoricoChainFixture([
@@ -382,14 +510,14 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
     const rows = fixture.getRows()
     const byId = new Map(rows.map((r) => [r.id, r]))
 
-    // h1: Rule A closed by h2 (2014 -> fim=2022)
-    assert.equal(byId.get("h1")!.periodo_fim, 2022, "h1 closed by later same cargo")
+    // h1: fechador (h2, 2022) esta alem do teto de 4 anos do cargo; capa em 2018
+    assert.equal(byId.get("h1")!.periodo_fim, 2018, "h1 capped by MAX_DURATION, nao esticado ate 2022")
 
     // h2: stays open (no later same cargo, no incompatible, 2022 >= 2022 so no Rule C)
     assert.equal(byId.get("h2")!.periodo_fim, null, "h2 stays open")
 
-    // h3: Rule B closed by Governador h4 (2016 -> fim=2022)
-    assert.equal(byId.get("h3")!.periodo_fim, 2022, "h3 Vereador closed by Governador")
+    // h3: Governador (h4, 2022) esta alem do teto de 4 anos do Vereador; capa em 2020
+    assert.equal(byId.get("h3")!.periodo_fim, 2020, "h3 Vereador capped by MAX_DURATION")
 
     // h4: stays open (Governador 2022, no incompatible closer, no Rule C for 2022+)
     assert.equal(byId.get("h4")!.periodo_fim, null, "h4 Governador stays open")

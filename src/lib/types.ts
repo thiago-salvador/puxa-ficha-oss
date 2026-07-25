@@ -318,6 +318,14 @@ export interface NoticiaCandidato {
   url: string;
   data_publicacao: string;
   snippet: string | null;
+  /**
+   * Campo DERIVADO em tempo de leitura (não existe em `noticias_candidato`).
+   * `true` quando o título não cita o candidato: é cobertura coletiva do pleito
+   * devolvida pela busca por nome, não notícia sobre a pessoa. A ingestão passou
+   * a descartar esses itens (auditoria 2026-07-24, etapa 1C); a flag existe para
+   * rotular honestamente as 17.498 linhas que já estavam gravadas.
+   */
+  contexto_do_pleito?: boolean;
 }
 
 // --- Estado da fonte de dados ---
