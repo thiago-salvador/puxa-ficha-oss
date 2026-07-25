@@ -15,11 +15,14 @@ import {
   buildGoogleNewsSearchUrl,
   parseGoogleNewsRss,
 } from "@/lib/news/google-news"
+import { splitNewsByCandidateMention } from "@/lib/news/name-match"
 
 export interface NewsCandidato {
   id: string
   slug: string
   nome_urna: string
+  /** Usado só para casar o título da notícia com o candidato; não é gravado. */
+  nome_completo?: string | null
   cargo_disputado: string | null
 }
 
@@ -35,6 +38,11 @@ export interface NewsRefreshSummary {
   processed: number
   withNews: number
   rowsUpserted: number
+  /**
+   * Itens que o Google devolveu mas cujo título não cita o candidato: cobertura
+   * do pleito, não dele. Nunca são gravados (auditoria 2026-07-24, etapa 1C).
+   */
+  discardedByName: number
   errors: Array<{ slug: string; error: string }>
 }
 
@@ -67,6 +75,7 @@ export async function refreshCandidatosNews(
     processed: 0,
     withNews: 0,
     rowsUpserted: 0,
+    discardedByName: 0,
     errors: [],
   }
 
@@ -89,7 +98,13 @@ export async function refreshCandidatosNews(
 
       const xml = await res.text()
       const { items } = parseGoogleNewsRss(xml, deps.now)
-      const newsItems = items.slice(0, deps.newsLimit)
+
+      // Guard de relevancia (auditoria 2026-07-24, etapa 1C): so grava item
+      // cujo titulo cita o candidato. O que sobra e cobertura coletiva do
+      // pleito devolvida pela busca de nome, nao noticia sobre a pessoa.
+      const { mencionam, contextoDoPleito } = splitNewsByCandidateMention(items, cand)
+      summary.discardedByName += contextoDoPleito.length
+      const newsItems = mencionam.slice(0, deps.newsLimit)
 
       if (newsItems.length === 0) {
         continue

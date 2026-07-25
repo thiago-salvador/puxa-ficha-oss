@@ -29,6 +29,11 @@ import {
   formatCargoDisputadoPublicLabel,
 } from "@/lib/ui-labels"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
+import {
+  buildCargoDisputadoProvenienceLabel,
+  buildCargoDisputadoProvenienceNote,
+  resolveCargoDisputadoProveniencia,
+} from "@/lib/candidatura-proveniencia"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 
@@ -103,6 +108,20 @@ export async function CandidatoFichaView({
   const shareTitle = buildCandidateShareTitle(ficha.nome_urna, ficha.partido_sigla)
   const hasSocialLinks = Object.keys(ficha.redes_sociais ?? {}).length > 0 || Boolean(ficha.site_campanha)
 
+  // Achado A0.1 da auditoria de 2026-07-24: `cargo_disputado` e declaracao
+  // editorial de pre-candidatura, nao registro deferido pelo TSE, e estava
+  // sendo emitido como `jobTitle` do JSON-LD, ou seja, como fato estruturado
+  // para crawler. O `jobTitle` agora carrega apenas `cargo_atual`, que e o
+  // cargo verificável que a pessoa de fato ocupa, e some quando nao ha esse
+  // dado. O pleito continua visível na página, sempre com marcador de
+  // procedência ao lado.
+  const cargoDisputadoLabel = formatCargoDisputadoPublicLabel(ficha.cargo_disputado)
+  const cargoAtualLabel = ficha.cargo_atual ? sanitizePtBrText(ficha.cargo_atual) : ""
+  const jobTitle = cargoAtualLabel || undefined
+  const cargoProveniencia = resolveCargoDisputadoProveniencia(ficha)
+  const cargoProvenienciaLabel = buildCargoDisputadoProvenienceLabel(cargoProveniencia)
+  const cargoProvenienciaNota = buildCargoDisputadoProvenienceNote(cargoProveniencia)
+
   const schema =
     seoSubpath === "timeline"
       ? [
@@ -119,7 +138,7 @@ export async function CandidatoFichaView({
               name: ficha.nome_urna,
               alternateName: ficha.nome_completo,
               image: ficha.foto_url ?? undefined,
-              jobTitle: formatCargoDisputadoPublicLabel(ficha.cargo_disputado),
+              jobTitle,
             },
           },
           {
@@ -161,7 +180,7 @@ export async function CandidatoFichaView({
               name: ficha.nome_urna,
               alternateName: ficha.nome_completo,
               image: ficha.foto_url ?? undefined,
-              jobTitle: formatCargoDisputadoPublicLabel(ficha.cargo_disputado),
+              jobTitle,
             },
           },
           {
@@ -245,9 +264,20 @@ export async function CandidatoFichaView({
               className="text-[10px] font-bold uppercase tracking-[0.12em] text-foreground sm:text-[length:var(--text-eyebrow)]"
             >
               {partyPublicLabel
-                ? `${partyPublicLabel} · ${formatCargoDisputadoPublicLabel(ficha.cargo_disputado)}`
-                : formatCargoDisputadoPublicLabel(ficha.cargo_disputado)}
+                ? `${partyPublicLabel} · ${cargoDisputadoLabel}`
+                : cargoDisputadoLabel}
             </span>
+
+            {/* Marcador de procedência colado no dado (achado A0.1). O aviso
+                de pré-candidatura existia só no rodapé, longe do pleito. */}
+            <span
+              data-pf-hero-role-provenance={cargoProveniencia}
+              title={cargoProvenienciaNota}
+              className="mt-1.5 inline-flex w-fit items-center rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground"
+            >
+              {cargoProvenienciaLabel}
+            </span>
+            <span className="sr-only">{cargoProvenienciaNota}</span>
 
             <h1
               data-pf-hero-name

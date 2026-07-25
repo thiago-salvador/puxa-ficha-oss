@@ -45,7 +45,10 @@
     "apply:factual-fixes:dry-run": "tsx scripts/apply-current-factual-fixes.ts --dry-run",
     "persist:sq": "tsx scripts/persist-sq-candidato.ts",
     "data:recalc-financiamento-doadores": "tsx scripts/recalc-financiamento-maiores-doadores.ts --apply",
-    "data:recalc-financiamento-doadores:dry-run": "tsx scripts/recalc-financiamento-maiores-doadores.ts --dry-run"
+    "data:recalc-financiamento-doadores:dry-run": "tsx scripts/recalc-financiamento-maiores-doadores.ts --dry-run",
+    "data:link-check-fontes:dry-run": "tsx scripts/link-check-pontos-atencao.ts --dry-run",
+    "data:link-check-fontes:gate": "tsx scripts/link-check-pontos-atencao.ts --dry-run --fail-on-dead --fail-on-sem-substancia",
+    "data:link-check-fontes": "tsx scripts/link-check-pontos-atencao.ts --apply"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -80,7 +83,7 @@
     "fallow": "^2.88.3",
     "knip": "^6.15.0",
     "playwright": "^1.60.0",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.18",
     "react-devtools-core": "^7.0.1",
     "server-only": "^0.0.1",
     "shadcn": "^4.10.0",

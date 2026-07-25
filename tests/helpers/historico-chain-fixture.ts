@@ -10,7 +10,7 @@ interface RawRow {
   periodo_inicio: number
   periodo_fim: number | null
   observacoes: string | null
-  tipo_evento: string
+  tipo_evento: string | null
   candidatos: { slug: string }
 }
 

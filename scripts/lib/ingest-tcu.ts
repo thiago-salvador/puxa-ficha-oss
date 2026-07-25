@@ -2,6 +2,7 @@ import { supabase } from "./supabase"
 import { loadCandidatos, sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
+import { motivoRecusaDeFonte } from "../../src/lib/public-attention-point"
 
 const TCU_BASE = "https://contas.tcu.gov.br/ords"
 
@@ -74,6 +75,23 @@ async function upsertPontoAtencao(
     gravidade: "critica",
     verificado: false,
     gerado_por: "automatico",
+  }
+
+  // Guard de fonte (auditoria de 2026-07-24, achados V1 e A3).
+  //
+  // Esta rota grava gravidade "critica" sem nenhuma fonte, e "automatico" nao
+  // e "ia", entao o gate antigo deixava a claim ir ao ar mesmo com
+  // verificado = false. O gate de 20260725160000 recusa esse INSERT no banco.
+  // Aqui a gente para ANTES, com aviso legivel, em vez de deixar o pipeline
+  // estourar no meio.
+  //
+  // Para religar esta rota: anexar em `fontes` a URL publica do TCU que
+  // sustenta a inabilitacao, com caminho (dominio nu nao passa) e SEM CPF na
+  // query string, que e dado pessoal e `fontes` e superficie publica.
+  const recusa = motivoRecusaDeFonte(row.gravidade, undefined)
+  if (recusa) {
+    warn("tcu", `ponto de atencao nao gravado (${recusa}): ${titulo}`)
+    return
   }
 
   if (existing) {

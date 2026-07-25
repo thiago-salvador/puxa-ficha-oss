@@ -31,6 +31,11 @@ export function NewsSection({ noticias }: { noticias: NoticiaCandidato[] }) {
 
   const visible = expanded ? sorted : sorted.slice(0, VISIBLE_LIMIT)
   const hasMore = sorted.length > VISIBLE_LIMIT
+  // Auditoria 2026-07-24, etapa 1C: parte da cobertura de cada candidato é
+  // matéria coletiva do pleito devolvida pela busca por nome, sem citar a
+  // pessoa. A coleta passou a descartar essas linhas; as que já estavam
+  // gravadas ficam visíveis, mas rotuladas pelo que são.
+  const contextoCount = sorted.filter((n) => n.contexto_do_pleito).length
 
   return (
     <Card>
@@ -44,6 +49,9 @@ export function NewsSection({ noticias }: { noticias: NoticiaCandidato[] }) {
           </span>
           <span className="text-[12px] font-medium text-muted-foreground">
             {sorted.length} noticia{sorted.length !== 1 ? "s" : ""} recente{sorted.length !== 1 ? "s" : ""}
+            {contextoCount > 0
+              ? `, ${contextoCount} sem citar o nome do candidato`
+              : ""}
           </span>
         </div>
       </CardHeader>
@@ -57,6 +65,15 @@ export function NewsSection({ noticias }: { noticias: NoticiaCandidato[] }) {
                   {n.titulo}
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
+                  {n.contexto_do_pleito && (
+                    <span
+                      data-pf-news-contexto-pleito=""
+                      title="O título desta matéria não cita o candidato. É cobertura do pleito, não notícia sobre ele."
+                      className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground"
+                    >
+                      Contexto do pleito
+                    </span>
+                  )}
                   {n.fonte && (
                     <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
                       {n.fonte}

@@ -29,7 +29,7 @@ const INCOMPATIBILITY: Record<string, string[]> = {
   "Deputado Distrital": ["Vereador"],
 }
 
-const MAX_DURATION: Record<string, number> = {
+export const MAX_DURATION: Record<string, number> = {
   Presidente: 4, "Vice-Presidente": 4,
   Governador: 4, "Vice-Governador": 4,
   Prefeito: 4, "Vice-Prefeito": 4,
@@ -37,6 +37,20 @@ const MAX_DURATION: Record<string, number> = {
   "Deputado Federal": 4, "Deputado Estadual": 4, "Deputado Distrital": 4,
   Vereador: 4,
 }
+
+/**
+ * CF art. 14, paragrafo 6: Presidente, Governador e Prefeito que queiram
+ * concorrer a OUTRO cargo precisam renunciar ate seis meses antes do pleito.
+ * So esses tres. Vices nao renunciam para disputar outro cargo, e no
+ * Legislativo tambem nao ha renuncia: perder uma eleicao no meio do mandato
+ * nao interrompe o mandato de deputado ou vereador.
+ */
+const RESIGN_TO_RUN_CARGOS = new Set(["Presidente", "Governador", "Prefeito"])
+
+/** Ano de referencia do "hoje" usado para decidir se um mandato ja terminou. */
+export const REFERENCE_YEAR = 2026
+/** Mandatos iniciados a partir daqui podem estar em curso; nao se fecha por teto. */
+const ONGOING_CUTOFF_YEAR = 2022
 
 export interface HistoricoRow {
   id: string
@@ -46,6 +60,8 @@ export interface HistoricoRow {
   periodo_inicio: number
   periodo_fim: number | null
   observacoes: string | null
+  /** "mandato" | "candidatura" | null. Ausente ou null e tratado como mandato. */
+  tipo_evento?: string | null
 }
 
 export interface BackfillChange {
@@ -75,6 +91,8 @@ export interface BackfillDeps {
   writeCSV?: (path: string, content: string) => void
   log: (message: string) => void
   warn: (message: string) => void
+  /** Ano de "hoje" para decidir se o mandato ja terminou. Default REFERENCE_YEAR. */
+  referenceYear?: number
 }
 
 export function isAutoSource(obs: string | null): boolean {
@@ -87,17 +105,122 @@ export function closesMandate(newCargo: string, existingCargo: string): boolean 
   return INCOMPATIBILITY[newCargo]?.includes(existingCargo) ?? false
 }
 
+/** Linhas sem tipo_evento sao tratadas como mandato (era o default do schema). */
+export function eventKind(row: Pick<HistoricoRow, "tipo_evento">): string {
+  return row.tipo_evento ?? "mandato"
+}
+
+/** So mandatos recebem periodo_fim. Candidatura e evento pontual, nao mandato. */
+export function isBackfillTarget(row: Pick<HistoricoRow, "tipo_evento">): boolean {
+  return eventKind(row) === "mandato"
+}
+
+/**
+ * Uma candidatura posterior so encerra o mandato anterior no caso do art. 14,
+ * paragrafo 6: quem esta em mandato de Presidente, Governador ou Prefeito e
+ * registra candidatura a cargo DIFERENTE teve de renunciar. Reeleicao (mesmo
+ * cargo) nao encerra nada.
+ */
+export function candidaturaClosesMandate(recordCargo: string, candidaturaCargo: string | null): boolean {
+  if (!candidaturaCargo) return false
+  if (!RESIGN_TO_RUN_CARGOS.has(recordCargo)) return false
+  return candidaturaCargo !== recordCargo
+}
+
+export interface CloserHit {
+  ano: number
+  reason: string
+}
+
+/**
+ * Primeiro evento posterior que encerra o mandato de `record`, varrendo a
+ * linha do tempo do candidato em ordem crescente de periodo_inicio.
+ */
+export function findCloser(record: HistoricoRow, sorted: HistoricoRow[]): CloserHit | null {
+  for (const other of sorted) {
+    if (other.id === record.id) continue
+    if (other.periodo_inicio <= record.periodo_inicio) continue
+
+    if (eventKind(other) === "candidatura") {
+      if (candidaturaClosesMandate(record.cargo_canonico, other.cargo_canonico)) {
+        return {
+          ano: other.periodo_inicio,
+          reason: `closed by candidatura ${other.cargo_canonico} (${other.periodo_inicio}), desincompatibilizacao`,
+        }
+      }
+      continue
+    }
+
+    if (other.cargo_canonico === record.cargo_canonico) {
+      return {
+        ano: other.periodo_inicio,
+        reason: `closed by later ${record.cargo_canonico} (${other.periodo_inicio})`,
+      }
+    }
+
+    if (
+      ELECTIVE_CARGOS.has(record.cargo_canonico) &&
+      ELECTIVE_CARGOS.has(other.cargo_canonico) &&
+      closesMandate(other.cargo_canonico, record.cargo_canonico)
+    ) {
+      return {
+        ano: other.periodo_inicio,
+        reason: `closed by ${other.cargo_canonico} (${other.periodo_inicio})`,
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Regra corrigida (bug V4): o teto de duracao do cargo vence a proximidade.
+ * Antes, qualquer evento posterior fechava o mandato no ano dele, por mais
+ * distante que fosse, e o teto so era consultado quando nao havia evento
+ * nenhum. Era assim que saiam periodos como "Prefeito 2000-2020".
+ */
+export function resolvePeriodoFim(
+  record: HistoricoRow,
+  sorted: HistoricoRow[],
+  referenceYear: number = REFERENCE_YEAR
+): CloserHit | null {
+  const maxDur = MAX_DURATION[record.cargo_canonico]
+  const cap = maxDur === undefined ? null : record.periodo_inicio + maxDur
+  const closer = findCloser(record, sorted)
+
+  if (closer && (cap === null || closer.ano <= cap)) return closer
+
+  const mandateIsOver =
+    maxDur !== undefined &&
+    record.periodo_inicio < ONGOING_CUTOFF_YEAR &&
+    referenceYear - record.periodo_inicio > maxDur
+
+  if (cap !== null && mandateIsOver) {
+    return {
+      ano: cap,
+      reason: closer
+        ? `max duration ${maxDur}yr cap (${record.cargo_canonico}, started ${record.periodo_inicio}); ` +
+          `proximity closer at ${closer.ano} exceeds the cap`
+        : `max duration ${maxDur}yr (${record.cargo_canonico}, started ${record.periodo_inicio})`,
+    }
+  }
+
+  return null
+}
+
 export async function runBackfillHistoricoPeriodoFim(deps: BackfillDeps): Promise<BackfillResult> {
   const { apply, fetchRows, updateRow, log: logFn, warn: warnFn } = deps
 
   logFn(`Mode: ${apply ? "APPLY" : "DRY-RUN"}`)
 
   const rows = await fetchRows()
-  const openRows = rows.filter((r) => r.periodo_fim === null)
+  // Candidaturas entram no fetch para servir de contexto na linha do tempo,
+  // mas nunca sao alvo de backfill nem entram nas filas de revisao.
+  const backfillable = rows.filter(isBackfillTarget)
+  const openRows = backfillable.filter((r) => r.periodo_fim === null)
   const autoQueue = openRows.filter((r) => isAutoSource(r.observacoes))
   const manualQueue = openRows.filter((r) => !isAutoSource(r.observacoes))
 
-  logFn(`Total rows: ${rows.length}, open: ${openRows.length}`)
+  logFn(`Total rows: ${rows.length}, mandatos: ${backfillable.length}, open: ${openRows.length}`)
   logFn(`AUTO queue (TSE+Wikidata): ${autoQueue.length}`)
   logFn(`MANUAL queue (to CSV): ${manualQueue.length}`)
 
@@ -130,54 +253,17 @@ export async function runBackfillHistoricoPeriodoFim(deps: BackfillDeps): Promis
     for (const record of autoRecords) {
       if (record.periodo_fim !== null) continue
 
-      const laterSame = sorted.find((r) =>
-        r.cargo_canonico === record.cargo_canonico &&
-        r.periodo_inicio > record.periodo_inicio &&
-        r.id !== record.id
-      )
-      if (laterSame) {
-        changes.push({
-          id: record.id,
-          slug: record.slug,
-          cargo: record.cargo_canonico,
-          inicio: record.periodo_inicio,
-          newFim: laterSame.periodo_inicio,
-          reason: `closed by later ${record.cargo_canonico} (${laterSame.periodo_inicio})`,
-        })
-        continue
-      }
+      const resolved = resolvePeriodoFim(record, sorted, deps.referenceYear)
+      if (!resolved) continue
 
-      if (ELECTIVE_CARGOS.has(record.cargo_canonico)) {
-        const laterCloser = sorted.find((r) =>
-          r.periodo_inicio > record.periodo_inicio &&
-          r.id !== record.id &&
-          ELECTIVE_CARGOS.has(r.cargo_canonico) &&
-          closesMandate(r.cargo_canonico, record.cargo_canonico)
-        )
-        if (laterCloser) {
-          changes.push({
-            id: record.id,
-            slug: record.slug,
-            cargo: record.cargo_canonico,
-            inicio: record.periodo_inicio,
-            newFim: laterCloser.periodo_inicio,
-            reason: `closed by ${laterCloser.cargo_canonico} (${laterCloser.periodo_inicio})`,
-          })
-          continue
-        }
-      }
-
-      const maxDur = MAX_DURATION[record.cargo_canonico]
-      if (maxDur && record.periodo_inicio < 2022 && (2026 - record.periodo_inicio) > maxDur) {
-        changes.push({
-          id: record.id,
-          slug: record.slug,
-          cargo: record.cargo_canonico,
-          inicio: record.periodo_inicio,
-          newFim: record.periodo_inicio + maxDur,
-          reason: `max duration ${maxDur}yr (${record.cargo_canonico}, started ${record.periodo_inicio})`,
-        })
-      }
+      changes.push({
+        id: record.id,
+        slug: record.slug,
+        cargo: record.cargo_canonico,
+        inicio: record.periodo_inicio,
+        newFim: resolved.ano,
+        reason: resolved.reason,
+      })
     }
   }
 
@@ -229,10 +315,16 @@ export function createBackfillDepsFromClient(
   return {
     apply: options.apply,
     async fetchRows() {
+      // Sem filtro por tipo_evento de proposito. `.eq("tipo_evento","mandato")`
+      // escondia (a) candidaturas intermediarias, que sao contexto para fechar
+      // o mandato anterior, e (b) linhas com tipo_evento NULL, que em producao
+      // incluem periodo de mandato real. O recorte de quem recebe periodo_fim
+      // passou para isBackfillTarget(), no nivel do algoritmo.
       const { data: allRows, error: queryErr } = await client
         .from("historico_politico")
-        .select("id, candidato_id, cargo_canonico, periodo_inicio, periodo_fim, observacoes, candidatos!inner(slug)")
-        .eq("tipo_evento", "mandato")
+        .select(
+          "id, candidato_id, cargo_canonico, periodo_inicio, periodo_fim, observacoes, tipo_evento, candidatos!inner(slug)"
+        )
         .not("periodo_inicio", "is", null)
         .order("periodo_inicio", { ascending: true })
 
@@ -248,6 +340,7 @@ export function createBackfillDepsFromClient(
         periodo_inicio: row.periodo_inicio as number,
         periodo_fim: row.periodo_fim as number | null,
         observacoes: row.observacoes as string | null,
+        tipo_evento: (row.tipo_evento ?? null) as string | null,
       }))
     },
     async updateRow(id, periodoFim) {

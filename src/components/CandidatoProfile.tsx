@@ -8,6 +8,7 @@ import { formatCompact, formatDate, safeHref } from "@/lib/utils"
 import { ProfileTabs, type Tab } from "./ProfileTabs"
 import { GravityBadge } from "./GravityBadge"
 import { NewsSection } from "./NewsSection"
+import { DataFreshnessNotice } from "./DataFreshnessNotice"
 import { SectionLabel, SectionTitle } from "./SectionHeader"
 import { ProfileOverview } from "./ProfileOverview"
 import { StateIndicators } from "./StateIndicators"
@@ -492,6 +493,13 @@ export function CandidatoProfile({
             {/* VISAO GERAL TAB */}
             {activeTab === "geral" && (
               <div className="space-y-12">
+                {/* Achado A0.4 (auditoria 2026-07-24): perfil_atual era a outra
+                    chave de frescor computada e nunca renderizada. A visão
+                    geral é o lugar dela, porque descreve o bloco factual do
+                    próprio perfil. */}
+                {sectionFreshness.perfil_atual && (
+                  <DataFreshnessNotice info={sectionFreshness.perfil_atual} />
+                )}
                 <ProfileOverview ficha={ficha} onNavigateTab={navigateToTab} />
                 {ficha.cargo_disputado === "Governador" && (ficha.indicadores_estaduais ?? []).length > 0 && (
                   <StateIndicators indicadores={ficha.indicadores_estaduais!} estado={ficha.estado ?? ""} />
@@ -593,6 +601,15 @@ export function CandidatoProfile({
               <div>
                 <SectionLabel>{fixedCopy.keyVotes} ({votos.length})</SectionLabel>
                 <SectionTitle>Como votou em temas importantes</SectionTitle>
+                {/* Achado A0.4 (auditoria 2026-07-24): a chave votos_candidato
+                    era computada no servidor, entrava no payload publico e
+                    nunca chegava a tela. Agora a aba Votos mostra o selo como
+                    as outras. */}
+                {votos.length > 0 && sectionFreshness.votos_candidato && (
+                  <div className="mt-4">
+                    <DataFreshnessNotice info={sectionFreshness.votos_candidato} />
+                  </div>
+                )}
                 {/* Visual dot grid */}
                 {votos.length > 0 && (
                   <div className="mt-6">

@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react"
-import { getCandidatosComparaveisResource } from "@/lib/api"
+import { getCandidatoMetadataResource, getCandidatosComparaveisResource } from "@/lib/api"
 import type { Metadata } from "next"
 import { SlashDivider } from "@/components/SlashDivider"
 import { Footer } from "@/components/Footer"
@@ -11,6 +11,7 @@ import { DataSourceNotice } from "@/components/DataSourceNotice"
 import { JsonLd } from "@/components/JsonLd"
 import { buildAbsoluteUrl, buildTwitterMetadata } from "@/lib/metadata"
 import { comparadorEixoLabels, normalizeComparadorEixo } from "@/lib/comparador-axis"
+import { isComparadorSlugParam, resolveComparadorCohort } from "@/lib/comparador-cohort"
 import Link from "next/link"
 
 const defaultTitle = "Comparador de candidatos | Puxa Ficha"
@@ -114,6 +115,27 @@ export async function generateMetadata({
 
 export const revalidate = 3600
 
+/**
+ * Descobre a coorte (cargo e, quando fizer sentido, UF) a partir dos slugs
+ * pedidos na URL, resolvendo os metadados de cada slug e delegando a decisao
+ * para `resolveComparadorCohort` (puro e testado em
+ * tests/comparador-cohort.test.ts).
+ *
+ * Achado da auditoria de 2026-07-24: `/comparar?c1=X&c2=Y` ignorava os slugs e
+ * sempre carregava a coorte default "Presidente", entao link compartilhado de
+ * dois governadores abria com os 13 presidenciáveis e nenhum dos dois
+ * selecionados.
+ */
+async function loadComparadorCohort(slugs: readonly string[]) {
+  const candidateSlugs = slugs.filter(isComparadorSlugParam)
+  if (candidateSlugs.length === 0) return {}
+
+  const metas = await Promise.all(
+    candidateSlugs.map(async (slug) => (await getCandidatoMetadataResource(slug)).data),
+  )
+  return resolveComparadorCohort(metas)
+}
+
 export default async function CompararPage({
   searchParams,
 }: {
@@ -126,7 +148,8 @@ export default async function CompararPage({
   const initialSelectedSlugs = slugParams.length > 0 ? slugParams.slice(0, 4) : undefined
   const initialEixo = sp.eixo ?? null
 
-  const candidatosResource = await getCandidatosComparaveisResource()
+  const cohort = await loadComparadorCohort(initialSelectedSlugs ?? [])
+  const candidatosResource = await getCandidatosComparaveisResource(cohort.cargo, cohort.estado)
   const candidatos = candidatosResource.data
   const schema = {
     "@context": "https://schema.org",

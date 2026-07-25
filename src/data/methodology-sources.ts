@@ -13,6 +13,27 @@ export interface MethodologySource {
 /**
  * Registry centralizado de todas as fontes de dados usadas no Puxa Ficha.
  * Mantido em sincronia com `scripts/ingest-all.ts` e `scripts/lib/ingest-*.ts`.
+ *
+ * REGRA DE HONESTIDADE (auditoria de integridade 2026-07-24, achados A0.3 e F4).
+ * Esta lista e uma promessa publica em /metodologia. Duas coisas mudaram na
+ * etapa 2C:
+ *
+ * 1. Fonte so entra aqui quando ja existe dado publicado. A entrada "Cadastro
+ *    de Sancoes (CGU)" foi removida: o ingest existe
+ *    (`scripts/lib/ingest-transparencia-sanctions.ts`), mas
+ *    `public.sancoes_administrativas` tinha 0 linhas em 2026-07-25 e nenhum
+ *    componente de `src/components/` ou `src/app/(site)/` renderiza o campo.
+ *    Prometer fonte sem dado e sem superficie e promessa vazia. O caminho para
+ *    religar esta em `docs/fontes-pendentes.md`.
+ *
+ * 2. `updateFrequency` descreve cadencia REAL e verificavel, nao intencao.
+ *    "diaria" so vale com cron de producao (`vercel.json`) ou `schedule:` em
+ *    `.github/workflows/`. Verificado em 2026-07-25: `.github/workflows/ingest.yml`
+ *    e `workflow_dispatch` puro, sem `schedule:`. A unica fonte com automacao
+ *    real e o Google News, via cron `0 8 * * *` de `/api/news/refresh` em
+ *    `vercel.json` (confirmado no banco: ultima linha de `noticias_candidato`
+ *    gravada em 2026-07-25 08:01 UTC). Todo o resto roda por lote manual, que e
+ *    exatamente o que "sob demanda" descreve.
  */
 export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
   // --- Fontes federais (candidatos) ---
@@ -30,9 +51,10 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Certidões criminais",
     ],
     sourceKind: "base_oficial",
-    updateFrequency: "semanal",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
-    curationNote: "CSVs do TSE baixados e processados semanalmente.",
+    curationNote: "CSVs do TSE baixados e processados em lote, quando há atualização na base de origem.",
   },
   {
     id: "tse-historico",
@@ -63,7 +85,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Frentes parlamentares",
     ],
     sourceKind: "base_oficial",
-    updateFrequency: "diária",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
   {
@@ -78,7 +101,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Mandatos e comissões",
     ],
     sourceKind: "base_oficial",
-    updateFrequency: "diária",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
   {
@@ -92,7 +116,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Viagens a serviço",
     ],
     sourceKind: "base_oficial",
-    updateFrequency: "diária",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
   {
@@ -103,20 +128,17 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Processos e julgamentos do TCU que envolvam candidatos.",
     dataTypes: ["Processos e condenações no TCU"],
     sourceKind: "base_oficial",
-    updateFrequency: "diária",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
-  {
-    id: "sancoes",
-    name: "Cadastro de Sanções (CGU)",
-    url: "https://portaldatransparencia.gov.br",
-    description:
-      "CEIS, CNEP e CEPIM: listas de impedimentos, sanções e entidades punidas vinculadas a candidatos.",
-    dataTypes: ["Sanções administrativas e impedimentos"],
-    sourceKind: "base_oficial",
-    updateFrequency: "diária",
-    curationType: "automático",
-  },
+  // REMOVIDO na etapa 2C (auditoria 2026-07-24, achado A0.3): "Cadastro de
+  // Sanções (CGU)" (CEIS, CNEP, CEPIM). O ingest existe em
+  // scripts/lib/ingest-transparencia-sanctions.ts e continua no repositório,
+  // mas em 2026-07-25 a tabela public.sancoes_administrativas tinha 0 linhas e
+  // nenhum componente renderiza o dado. Volta para esta lista quando as duas
+  // condições forem verdadeiras ao mesmo tempo: tabela com linha e superfície
+  // de exibição na ficha. Checklist em docs/fontes-pendentes.md.
   {
     id: "filiacao",
     name: "TSE: Filiação Partidária",
@@ -125,7 +147,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Registro de filiação partidária dos candidatos para timeline de mudanças de partido.",
     dataTypes: ["Filiação e desfiliação partidária"],
     sourceKind: "base_oficial",
-    updateFrequency: "semanal",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
   {
@@ -136,7 +159,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Cota para Exercício da Atividade Parlamentar dos Senadores.",
     dataTypes: ["Gastos parlamentares de senadores"],
     sourceKind: "base_oficial",
-    updateFrequency: "mensal",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "automático",
   },
   {
@@ -165,7 +189,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Histórico político complementar",
     ],
     sourceKind: "fonte_publica_complementar",
-    updateFrequency: "semanal",
+    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
+    updateFrequency: "sob demanda",
     curationType: "misto",
     curationNote:
       "Ingest automático de Wikidata; curadoria editorial para resolução de ambiguidades e dados faltantes.",
@@ -175,10 +200,12 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
     name: "Google News",
     url: "https://news.google.com",
     description:
-      "Notícias recentes sobre cada candidato, agregadas semanalmente.",
+      "Notícias recentes sobre cada candidato, agregadas diariamente. Só entra no perfil a matéria cujo título cita o candidato.",
     dataTypes: ["Notícias recentes"],
     sourceKind: "fonte_publica_complementar",
-    updateFrequency: "semanal",
+    // Única fonte com automação real: cron "0 8 * * *" de /api/news/refresh
+    // em vercel.json (verificado 2026-07-25).
+    updateFrequency: "diária",
     curationType: "automático",
   },
 

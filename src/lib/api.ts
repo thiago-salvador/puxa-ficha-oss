@@ -46,6 +46,7 @@ import {
   type VotacaoSearchRow,
 } from "@/lib/global-search"
 import { countPartySwitches, normalizePartyTimelineForDisplay } from "@/lib/party-switches"
+import { newsTitleMentionsCandidate } from "@/lib/news/name-match"
 import {
   fetchGastoTotalsByCandidatoIds,
   fetchLegislacaoMandatoExecutivoRowsPaged,
@@ -1031,7 +1032,15 @@ async function getCandidatoBySlugFromRelationResource(
     legislacao_mandato_executivo: legislacaoExecutivoOrdenado,
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
-    noticias: noticias.data ?? [],
+    // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
+    // 1C). A ingestao passou a descartar item cujo titulo nao cita o candidato,
+    // mas as linhas ja gravadas continuam no banco: 3.984 de 17.498 (22,77%)
+    // sem nenhum token do nome no titulo. Em vez de apagar dado, marcamos o que
+    // e cobertura do pleito para a UI dizer isso ao leitor.
+    noticias: (noticias.data ?? []).map((noticia) => ({
+      ...noticia,
+      contexto_do_pleito: !newsTitleMentionsCandidate(noticia.titulo, candidato),
+    })),
     indicadores_estaduais: indicadores.data ?? [],
     total_processos: (processos.data ?? []).length,
     processos_criminais: (processos.data ?? []).filter((p) => p.tipo === "criminal").length,

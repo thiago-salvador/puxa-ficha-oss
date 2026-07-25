@@ -50,7 +50,46 @@ const CANONICAL_PARTIES: CanonicalPartyDefinition[] = [
   { sigla: "NOVO", aliases: ["Partido Novo", "Novo"] },
   { sigla: "UNIAO", aliases: ["União Brasil", "Uniao Brasil", "UNIÃO"] },
   { sigla: "PSD", aliases: ["Partido Social Democrático", "Partido Social Democratico"] },
-  { sigla: "PMN", aliases: ["Mobilização Nacional", "Mobilizacao Nacional"] },
+  { sigla: "PMN", aliases: ["Partido da Mobilização Nacional", "Partido da Mobilizacao Nacional"] },
+  // MOBILIZA e o nome/sigla atual da mesma legenda do PMN. Fonte oficial:
+  // https://www.tse.jus.br/partidos/partidos-politicos/partidos-registrados-no-tse
+  // (HTTP 200, acesso 2026-07-25), tabela "MUDANÇAS DE NOME E/OU SIGLA",
+  // literal: "Partido da Mobilização Nacional (PMN) Mobilização Nacional
+  // (MOBILIZA) PetCiv nº 0001624-23.1996.6.00.0000 05/12/2023".
+  //
+  // Fica como entrada PROPRIA, nao como alias de PMN, pelo mesmo motivo ja
+  // documentado em scripts/lib/party-canonical.ts (review 2026-06-09): colapsar
+  // as duas siglas faria a ficha de quem esta hoje no MOBILIZA exibir "PMN",
+  // que e o nome anterior. A continuidade entre as duas eras e resolvida no
+  // grupo historico abaixo, igual PMDB/MDB e PFL/DEM, entao a renomeacao nao
+  // conta como troca de partido nem aparece como troca na timeline.
+  { sigla: "MOBILIZA", aliases: ["Mobilização Nacional", "Mobilizacao Nacional"] },
+  // PATRI e PATRIOTA sao a MESMA legenda: o partido passou a se chamar Patriota
+  // em 26/04/2018 (sigla PATRI) e em 26/03/2019 o TSE deferiu o uso do nome
+  // PATRIOTA. Mesma fonte oficial acima, literal: "A mudança de nome do Partido
+  // Ecológico Nacional (PEN) para Patriota (PATRI) foi deferida em 26/04/2018.
+  // Posteriormente, o Patriota (PATRI) requereu a utilização do nome PATRIOTA
+  // (sem sigla). O pedido foi deferido pelo TSE, em 26/03/2019."
+  //
+  // Aqui PATRI entra como ALIAS (e nao como era separada) porque o nome do
+  // partido ja era Patriota nos dois momentos: so a abreviacao mudou. Sem isso,
+  // `partiesEquivalent("PATRI", "PATRIOTA")` devolvia falso e a timeline do
+  // cabo-daciolo publicava a descontinuidade "2022 PATRI → PDT" seguida de
+  // "2026 PATRIOTA → MOBILIZA" (auditoria 2026-07-24).
+  { sigla: "PATRIOTA", aliases: ["Patriota", "PATRI"] },
+  // Siglas presentes no banco que nao resolviam para nada (resolveCanonicalPartySigla
+  // devolvia null), o que fazia ate a comparacao de uma sigla consigo mesma ser falsa.
+  // Todas conferidas na mesma pagina do TSE acima, acesso 2026-07-25:
+  // "PCB PARTIDO COMUNISTA BRASILEIRO 9.5.1996"; "Partido da Reconstrução
+  // Nacional (PRN) Partido Trabalhista Cristão (PTC) ... 24/04/2001"; "Partido
+  // da Reedificação da Ordem Nacional (PRONA) e Partido Liberal (PL) Partido da
+  // República (PR) ... 19/12/2006".
+  { sigla: "PCB", aliases: ["Partido Comunista Brasileiro"] },
+  { sigla: "PRN", aliases: ["Partido da Reconstrução Nacional", "Partido da Reconstrucao Nacional"] },
+  {
+    sigla: "PRONA",
+    aliases: ["Partido da Reedificação da Ordem Nacional", "Partido da Reedificacao da Ordem Nacional"],
+  },
   {
     sigla: "PAN",
     aliases: ["Partido dos Aposentados da Nação", "Partido dos Aposentados da Nacao"],
@@ -135,6 +174,11 @@ const HISTORICAL_PARTY_GROUPS: HistoricalPartyGroupDefinition[] = [
   { group: "PP", labels: ["PP", "PPB", "PPR", "Progressistas"] },
   { group: "PL", labels: ["PL", "PR", "Partido Liberal", "Partido da Republica"] },
   { group: "AVANTE", labels: ["AVANTE", "PT DO B", "PTDOB", "Partido Trabalhista do Brasil"] },
+  // Renomeacao PMN -> MOBILIZA deferida pelo TSE em 05/12/2023 (fonte citada
+  // junto da entrada canonica acima). No grupo historico, uma linha
+  // "PMN -> MOBILIZA" e classificada como renomeacao: nao entra em
+  // countPartySwitches e a timeline rotula "(renomeação)" em vez de troca.
+  { group: "MOBILIZA", labels: ["MOBILIZA", "PMN", "Mobilização Nacional", "Partido da Mobilização Nacional"] },
 ]
 
 const HISTORICAL_PARTY_GROUP_BY_TOKEN = new Map<string, string>()
@@ -160,6 +204,10 @@ const HISTORICAL_PARTY_DISPLAY: Record<string, HistoricalPartyDisplayDefinition>
   PODE: { historicalLabel: "PTN", modernLabel: "PODE", switchYear: 2017 },
   AVANTE: { historicalLabel: "PT DO B", modernLabel: "AVANTE", switchYear: 2017 },
   PL: { historicalLabel: "PR", modernLabel: "PL", switchYear: 2019 },
+  // switchYear 2024 e nao 2023: a decisao do TSE saiu em 05/12/2023, ou seja,
+  // quase todo o ano de 2023 a legenda ainda era PMN. Rotular 2023 como
+  // MOBILIZA seria antecipar o fato.
+  MOBILIZA: { historicalLabel: "PMN", modernLabel: "MOBILIZA", switchYear: 2024 },
 }
 
 export function resolveCanonicalPartySigla(value: string | null | undefined): string | null {

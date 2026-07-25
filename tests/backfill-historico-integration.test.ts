@@ -57,17 +57,18 @@ describe("backfill-historico-periodo-fim integration (PostgREST mock)", () => {
   before(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "puxa-ficha-backfill-"))
     fixtureRows = [
-      // c1: Deputado Federal 2014 -> 2022 => Rule A closes 2014
+      // c1: Deputado Federal 2014 -> 2022. O fechador esta 8 anos a frente,
+      // entao o teto de 4 anos do cargo capa em 2018 (regressao do bug V4).
       makeRow({ id: "int-1", candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2014 }),
       makeRow({ id: "int-2", candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2022 }),
-      // c2: Vereador 2016 -> Governador 2022 => Rule B closes Vereador
+      // c2: Vereador 2016 -> Governador 2022. Idem: capa em 2020.
       makeRow({ id: "int-3", candidato_id: "c2", cargo_canonico: "Vereador", periodo_inicio: 2016 }),
       makeRow({ id: "int-4", candidato_id: "c2", cargo_canonico: "Governador", periodo_inicio: 2022 }),
       // c3: Senador 2010, open, auto => Rule C closes at 2018 (max 8yr)
       makeRow({ id: "int-5", candidato_id: "c3", cargo_canonico: "Senador", periodo_inicio: 2010 }),
       // c4: manual source => not auto-processed
       makeRow({ id: "int-6", candidato_id: "c4", cargo_canonico: "Deputado Federal", periodo_inicio: 2008, observacoes: "curadoria editorial" }),
-      // tipo_evento != mandato => filtered out by SELECT
+      // candidatura: entra no SELECT como contexto, mas nunca recebe periodo_fim
       makeRow({ id: "int-7", candidato_id: "c1", cargo_canonico: "Deputado Federal", periodo_inicio: 2010, tipo_evento: "candidatura" }),
     ]
     mock = await startPostgRESTMock({ historico_politico: fixtureRows })
@@ -85,8 +86,8 @@ describe("backfill-historico-periodo-fim integration (PostgREST mock)", () => {
     })
 
     assert.match(stdout, /Changes proposed: 3/)
-    assert.match(stdout, /slug-c1.*Deputado Federal.*2014.*fim=2022/)
-    assert.match(stdout, /slug-c2.*Vereador.*2016.*fim=2022/)
+    assert.match(stdout, /slug-c1.*Deputado Federal.*2014.*fim=2018/)
+    assert.match(stdout, /slug-c2.*Vereador.*2016.*fim=2020/)
     assert.match(stdout, /slug-c3.*Senador.*2010.*fim=2018/)
     assert.match(stdout, /Dry-run/)
     assert.equal(mock.patches.length, 0, "dry-run must not write to banco efemero")
@@ -105,23 +106,23 @@ describe("backfill-historico-periodo-fim integration (PostgREST mock)", () => {
     // --- Verify HTTP PATCH requests hit the mock ---
     assert.equal(mock.patches.length, 3, "3 PATCH requests to banco efemero")
     const patchIds = new Set(mock.patches.map((p) => p.filterValue))
-    assert.ok(patchIds.has("int-1"), "int-1 (Rule A) patched")
-    assert.ok(patchIds.has("int-3"), "int-3 (Rule B) patched")
+    assert.ok(patchIds.has("int-1"), "int-1 patched")
+    assert.ok(patchIds.has("int-3"), "int-3 patched")
     assert.ok(patchIds.has("int-5"), "int-5 (Rule C) patched")
 
     // --- Verify PATCH payloads ---
     const p1 = mock.patches.find((p) => p.filterValue === "int-1")!
-    assert.deepEqual(p1.body, { periodo_fim: 2022 })
+    assert.deepEqual(p1.body, { periodo_fim: 2018 })
     const p3 = mock.patches.find((p) => p.filterValue === "int-3")!
-    assert.deepEqual(p3.body, { periodo_fim: 2022 })
+    assert.deepEqual(p3.body, { periodo_fim: 2020 })
     const p5 = mock.patches.find((p) => p.filterValue === "int-5")!
     assert.deepEqual(p5.body, { periodo_fim: 2018 })
 
     // --- KEY: verify final state of banco efemero rows ---
     const byId = new Map(fixtureRows.map((r) => [r.id, r]))
-    assert.equal(byId.get("int-1")!.periodo_fim, 2022, "banco efemero: int-1 closed at 2022 (Rule A)")
+    assert.equal(byId.get("int-1")!.periodo_fim, 2018, "banco efemero: int-1 capado pelo teto do cargo")
     assert.equal(byId.get("int-2")!.periodo_fim, null, "banco efemero: int-2 stays open")
-    assert.equal(byId.get("int-3")!.periodo_fim, 2022, "banco efemero: int-3 closed at 2022 (Rule B)")
+    assert.equal(byId.get("int-3")!.periodo_fim, 2020, "banco efemero: int-3 capado pelo teto do cargo")
     assert.equal(byId.get("int-4")!.periodo_fim, null, "banco efemero: int-4 stays open")
     assert.equal(byId.get("int-5")!.periodo_fim, 2018, "banco efemero: int-5 closed at 2018 (Rule C)")
     assert.equal(byId.get("int-6")!.periodo_fim, null, "banco efemero: int-6 manual untouched")

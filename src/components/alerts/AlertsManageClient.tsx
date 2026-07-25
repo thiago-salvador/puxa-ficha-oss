@@ -11,6 +11,7 @@ import {
   writeStoredFollowedCandidateSlugs,
 } from "@/lib/alerts-client"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
+import { formatCargoDisputadoPublicLabel } from "@/lib/ui-labels"
 
 interface SubscriptionItem {
   id: string
@@ -307,7 +308,13 @@ export function AlertsManageClient() {
                 <div>
                   <p className="text-[length:var(--text-body)] font-semibold text-foreground">{item.nome_urna}</p>
                   <p className="mt-1 text-[length:var(--text-caption)] font-semibold text-muted-foreground">
-                    {[formatPartyPublicLabel(item.partido_sigla) || null, item.cargo_disputado]
+                    {/* cargo_disputado cru inclui o token interno "Nenhum";
+                        o formatador publico e o mesmo usado na ficha
+                        (auditoria 2026-07-24, etapa 2C). */}
+                    {[
+                      formatPartyPublicLabel(item.partido_sigla) || null,
+                      formatCargoDisputadoPublicLabel(item.cargo_disputado) || null,
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
