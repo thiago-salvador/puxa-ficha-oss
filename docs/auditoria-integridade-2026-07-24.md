@@ -226,3 +226,55 @@ Uma divergência de número foi encontrada e explicada: o relatório da etapa 2B
 3. **Restaurar as duas URLs do TRF3** quando `web.trf3.jus.br` voltar a responder.
 4. **`PF_CURATION_PHASE` em produção continua não verificado**, mesma limitação do laudo original.
 5. **A divergência "54 linhas / 35 candidatos"** do achado V4 não foi reproduzida. O censo refeito dá 33 linhas em 22 candidatos, das quais 28 não curadas manualmente. Fica registrada como divergência aberta, não forçada para bater com o laudo.
+
+---
+
+# Fechamento: aplicado e verificado em produção (2026-07-25)
+
+Esta seção substitui, por medição, o que as seções acima registravam como pendente.
+
+## O que foi aplicado
+
+As 21 migrations do PR [#14](https://github.com/thiago-salvador/puxa-ficha-oss/pull/14) foram aplicadas em produção via `supabase db push` em 25/07/2026, mais uma 22ª que restaura o arquivo da `20260713132135` (`norte_attention_points_approved`), que estava aplicada no banco sem estar versionada e travava o push. Optou-se por restaurar o arquivo a partir de `supabase_migrations.schema_migrations.statements` em vez de rodar `migration repair --status reverted`, que é o que a CLI sugere: a migration foi de fato aplicada, e marcá-la revertida deixaria o histórico mentindo e reaplicaria os inserts num banco novo.
+
+O PR foi mergeado no `main` e o deploy de produção concluiu com sucesso.
+
+## Efeito medido, antes e depois
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| Pontos de atenção visíveis em candidato publicável | 92 | 57 |
+| Visíveis de gravidade crítica ou alta | 21 | 12 |
+| Fontes apontando para domínio nu | 52 | **0** |
+| URLs de fonte publicadas retornando 404 | 18 | **0 em 81 testadas** |
+| Naturalidade de `lucas-ribeiro` | `MG` | `João Pessoa/PB` |
+| `dr-fernando-maximo` | "Fernando Máximo de Oliveira" | "Fernando Rodrigues Máximo" |
+| `daniel-vilela` | "Daniel Goulart Vilela" | "Daniel Elias Carvalho Vilela" |
+| Idade na API pública | nula em 195 de 195 | derivada (`idade: 80` em `lula`) |
+
+46 claims foram despublicadas com o motivo gravado em `dados_relacionados -> 'despublicacao_2026_07_25'`. Nenhuma linha foi deletada, então tudo é reversível e auditável.
+
+As três imputações a pessoa errada estão fora do ar com veredito registrado: `renan-santos` e `ronaldo-caiado` como `sem-fonte`, `flavio-bolsonaro` como `precisa-reescrever`.
+
+## Verificado no site em produção
+
+- `/`, `/candidato/lula`, `/candidato/lucas-ribeiro`, `/comparar`, `/metodologia`, `/uf/ba` e `/rankings` respondem 200.
+- Badge "Pré-candidatura declarada" renderizando na ficha.
+- `jobTitle` do JSON-LD passou a usar o cargo atual ("Presidente da República"), fato verificável, em vez do cargo pretendido.
+- Idade renderizando ("80 anos"), onde antes não aparecia em nenhuma ficha.
+- `/comparar?c1=jeronimo&c2=acm-neto` mostra os dois candidatos pedidos, e não mais os 13 presidenciáveis.
+
+## Pendências das seções anteriores que foram fechadas
+
+- **Correção do `backfill-historico-periodo-fim.ts` na origem:** feita. O teto `MAX_DURATION` passa a vencer a regra de proximidade, o filtro deixa de esconder candidatura e linha com `tipo_evento` nulo, e candidatura só encerra mandato quando a renúncia é constitucionalmente obrigatória (art. 14, par. 6). Comparação do algoritmo antigo com o novo sobre 322 linhas reais: 20 propostas, 20 idênticas, zero regressão.
+- **A divergência "54 linhas / 35 candidatos":** reproduzida. O critério do próprio script (`MAX_DURATION` por cargo, restrito a `publicavel = true`) devolve exatamente 54 linhas em 35 candidatos. Mas só 28 são o bug: as outras 26 são consolidações de mandatos consecutivos curadas à mão, e capá-las apagaria mandato real (`wellington-fagundes`, "Deputado Federal 1995-2015", tem observação "Sucessivos mandatos federais" e convive com as linhas granulares de 1998, 2002, 2006 e 2010). Ficam como pendência editorial, listadas no cabeçalho da migration.
+
+## O que segue aberto
+
+1. **CPF divergente de `jeronimo`.** Não é corrigível por `UPDATE` pontual, porque o CPF é chave de cruzamento da ingestão. Exige reancorar a ficha e reprocessar histórico, patrimônio e financiamento.
+2. **Reescrita editorial das 10 claims** que saíram do ar como `precisa-reescrever`: têm fonte viva anexada, mas o texto publicado afirmava mais do que ela sustenta. Voltam quando o texto couber na fonte.
+3. **4 linhas de histórico** com aparência de conflito entre ano de eleição e ano de posse, marcadas para decisão humana.
+4. **26 linhas de consolidação de mandato** descritas acima.
+5. **Duas URLs do TRF3** a restaurar quando `web.trf3.jus.br` voltar a responder.
+6. **`PF_CURATION_PHASE` em produção** continua não verificado: nenhuma ferramenta desta sessão lê variável de ambiente da Vercel.
+7. **Alerta Dependabot** de severidade média em `@hono/node-server`, escopo de desenvolvimento. Não entra no `npm audit` de produção, que fecha com zero vulnerabilidades.
