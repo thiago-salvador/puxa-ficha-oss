@@ -131,14 +131,17 @@ function normalizarParaMarcador(texto: string): string {
  * de grandeza, não renderizar a página.
  */
 export function extrairTextoUtil(html: string): string {
-  // As tags de fechamento aceitam espaço antes do `>` (`</script >` é válido em
-  // HTML). Sem tolerar isso, o bloco não é removido e o corpo do script entra na
-  // contagem de texto útil, o que faria uma página sem conteúdo passar no piso de
-  // substância. Apontado pelo CodeQL (js/bad-tag-filter).
+  // A tag de fechamento aceita qualquer coisa entre o nome e o `>`: `</script >`,
+  // `</script\n>` e até `</script foo="bar">` são fechamentos válidos, porque o
+  // parser de HTML ignora o que vem depois do nome numa end tag. Por isso o
+  // `[^>]*` em vez de `\s*`. Sem isso o bloco não é removido, o corpo do script
+  // entra na contagem de texto útil, e uma página sem conteúdo nenhum passaria no
+  // piso de substância sustentando uma claim. Apontado pelo CodeQL
+  // (js/bad-tag-filter).
   return html
-    .replace(/<script[\s\S]*?<\/script\s*>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style\s*>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script[^>]*>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style[^>]*>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript[^>]*>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;?/gi, " ")

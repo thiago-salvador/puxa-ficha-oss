@@ -67,6 +67,15 @@ describe("extrairTextoUtil", () => {
       "<noscript>ative o javascript</noscript ></head><body><h1>Titulo</h1></body></html>"
     assert.equal(extrairTextoUtil(corpo), "Titulo")
   })
+
+  it("descarta bloco cuja tag de fechamento traz lixo depois do nome", () => {
+    // O parser de HTML ignora o que vem depois do nome numa end tag, então
+    // `</script foo="bar">` e `</script\t\n x>` fecham o bloco do mesmo jeito.
+    const corpo =
+      '<html><head><script>conteudo que nao deve contar</script foo="bar">' +
+      "<style>a{b:c}</style\t\n x></head><body><h1>Titulo</h1></body></html>"
+    assert.equal(extrairTextoUtil(corpo), "Titulo")
+  })
 })
 
 describe("pareceVedacaoEleitoral", () => {
