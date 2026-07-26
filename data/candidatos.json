@@ -752,11 +752,7 @@
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {
-        "1994": "16050036209348",
-        "1998": "160001607111121",
-        "2002": "414"
-      }
+      "tse_sq_candidato": {}
     }
   },
   {

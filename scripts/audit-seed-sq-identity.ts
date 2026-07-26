@@ -156,9 +156,16 @@ async function baixarPacote(ano: string): Promise<string | null> {
   return dirAno
 }
 
-/** Le os CSVs do ano e devolve SQ -> registro. Streaming, para nao carregar tudo em memoria. */
-async function indexarAno(dirAno: string): Promise<Map<string, RegistroTSE>> {
-  const indice = new Map<string, RegistroTSE>()
+/**
+ * Le os CSVs do ano e devolve SQ -> TODOS os registros com aquele SQ.
+ *
+ * Guardar apenas o primeiro estava errado e gerava 40 falsos positivos: ate
+ * 2008, SQ_CANDIDATO nao e chave global, e sim sequencial POR UF (valores
+ * curtos como "10354"). Ficando com o primeiro arquivo em ordem alfabetica,
+ * candidatos do pais inteiro casavam com alguem do Acre.
+ */
+async function indexarAno(dirAno: string): Promise<Map<string, RegistroTSE[]>> {
+  const indice = new Map<string, RegistroTSE[]>()
 
   for (const arquivo of readdirSync(dirAno).filter((f) => f.endsWith(".csv"))) {
     // O arquivo _BRASIL repete o conteudo dos estaduais nos anos em que existe.
@@ -181,15 +188,21 @@ async function indexarAno(dirAno: string): Promise<Map<string, RegistroTSE>> {
         return i >= 0 ? campos[i] : ""
       }
       const sq = pos("SQ_CANDIDATO")
-      if (!sq || indice.has(sq)) continue
-      indice.set(sq, {
+      if (!sq) continue
+      const registro: RegistroTSE = {
         nome: pos("NM_CANDIDATO"),
         urna: pos("NM_URNA_CANDIDATO"),
         cargo: pos("DS_CARGO"),
         partido: pos("SG_PARTIDO"),
         ue: pos("NM_UE"),
         uf: pos("SG_UF"),
-      })
+      }
+      const lista = indice.get(sq) ?? []
+      // 1o e 2o turno repetem a mesma pessoa; guardar uma vez so.
+      if (!lista.some((r) => r.nome === registro.nome && r.uf === registro.uf)) {
+        lista.push(registro)
+      }
+      indice.set(sq, lista)
     }
   }
 
@@ -252,16 +265,41 @@ export async function main() {
     const indice = await indexarAno(dirAno)
     for (const par of pares) {
       conferidos += 1
-      const achado = indice.get(par.sq) ?? null
-      if (!achado) {
+      const candidatos = indice.get(par.sq) ?? []
+      if (!candidatos.length) {
         divergencias.push({
           slug: par.slug, ano, sq: par.sq, nomeSeed: par.nome,
           ufSeed: par.uf, achado: null, nivel: "ausente",
         })
         continue
       }
-      const avaliacao = avaliarIdentidade(par.nomes, achado)
-      if (avaliacao === "forte") continue
+
+      // Ate 2008 o mesmo SQ aparece em varias UFs, entao basta UM registro
+      // sustentar a identidade para o par estar certo. So e divergencia quando
+      // nenhum deles casa.
+      let melhorRegistro: RegistroTSE | null = null
+      let melhorAvaliacao: "parcial" | "nenhum" = "nenhum"
+      let temForte = false
+
+      for (const registro of candidatos) {
+        const avaliacao = avaliarIdentidade(par.nomes, registro)
+        if (avaliacao === "forte") {
+          temForte = true
+          break
+        }
+        const mesmaUf =
+          Boolean(par.uf) && Boolean(registro.uf) && normalizar(par.uf) === normalizar(registro.uf)
+        // Para o relatorio, prefere o registro da UF do candidato: e o que a
+        // ingestao provavelmente usaria e o mais util de ler.
+        const melhorQueAtual =
+          !melhorRegistro || avaliacao === "parcial" || (mesmaUf && melhorAvaliacao === "nenhum")
+        if (melhorQueAtual) {
+          melhorRegistro = registro
+          melhorAvaliacao = avaliacao
+        }
+      }
+
+      if (temForte || !melhorRegistro) continue
 
       // A UF desempata a ambiguidade de nome. Compartilhar o primeiro nome com
       // alguem que disputou em outro estado nao e coincidencia aceitavel: foi
@@ -270,14 +308,14 @@ export async function main() {
       // lista de ambiguos em vez de reprovar.
       const ufDiverge =
         Boolean(par.uf) &&
-        Boolean(achado.uf) &&
-        normalizar(par.uf) !== normalizar(achado.uf)
+        Boolean(melhorRegistro.uf) &&
+        normalizar(par.uf) !== normalizar(melhorRegistro.uf)
 
-      const nivel = avaliacao === "parcial" && !ufDiverge ? "parcial" : "nenhum"
+      const nivel = melhorAvaliacao === "parcial" && !ufDiverge ? "parcial" : "nenhum"
 
       divergencias.push({
         slug: par.slug, ano, sq: par.sq, nomeSeed: par.nome,
-        ufSeed: par.uf, achado, nivel,
+        ufSeed: par.uf, achado: melhorRegistro, nivel,
       })
     }
     process.stderr.write(`  ${ano}: ${pares.length} conferidos\n`)
