@@ -1095,7 +1095,6 @@ const PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS = new Set([
   "marcelo-brigadeiro",
   "natasha-slhessarenko",
   "renan-santos",
-  "tadeu-de-souza",
 ])
 
 export async function getCandidatoBySlugResource(

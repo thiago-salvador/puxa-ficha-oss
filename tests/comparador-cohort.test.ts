@@ -4,9 +4,13 @@
  * e carregava sempre a coorte default "Presidente", entao um link de dois
  * governadores abria com os 13 presidenciaveis e nenhum dos dois marcados.
  *
- * Os cargos e estados usados aqui sao os que existem em `candidatos_publico`
- * (consultado em 2026-07-25): Governador 168, Presidente 13, Senador 7,
- * Deputado Federal 4, Vice-Governador 3.
+ * Os cargos e estados usados aqui sao os que existiam em `candidatos_publico`
+ * em 2026-07-25: Governador 168, Presidente 13, Senador 7, Deputado Federal 4,
+ * Vice-Governador 3. Desde a migration 20260726120000, Senado e Camara estao
+ * despublicados (184 publicados: Governador 168, Presidente 13,
+ * Vice-Governador 3). Os casos com cargo Senador seguem aqui de proposito:
+ * `resolveComparadorCohort` e funcao pura sobre a coorte que recebe, e deve
+ * continuar correta se esses cargos voltarem ao ar.
  */
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"

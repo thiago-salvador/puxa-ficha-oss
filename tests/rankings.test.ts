@@ -26,10 +26,13 @@ describe("rankings", () => {
       isFiltered: true,
     })
 
+    // Senador saiu de RANKING_CARGOS junto com a despublicacao de Senado e
+    // Camara (migration 20260726120000), entao cai no fallback como qualquer
+    // outro cargo fora da lista. Link antigo continua abrindo, em Presidente.
     assert.deepEqual(normalizeRankingFilters({ cargo: "Senador", uf: "rj" }), {
-      cargo: "Senador",
+      cargo: "Presidente",
       estado: undefined,
-      isFiltered: true,
+      isFiltered: false,
     })
 
     assert.deepEqual(normalizeRankingFilters({ cargo: "Prefeito", uf: "xx" }), {

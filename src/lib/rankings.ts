@@ -1,7 +1,10 @@
 import { BRAZIL_STATES } from "@/data/brazil-states"
 import { formatBRL } from "@/lib/utils"
 
-export const RANKING_CARGOS = ["Presidente", "Governador", "Senador"] as const
+// Senador saiu em 2026-07-26 junto com a despublicacao de Senado e Camara
+// (migration 20260726120000): sem candidato publicado no cargo, a opcao no
+// filtro so levava a um ranking vazio.
+export const RANKING_CARGOS = ["Presidente", "Governador"] as const
 
 export type RankingCargo = (typeof RANKING_CARGOS)[number]
 export type RankingSortOrder = "desc" | "asc"
