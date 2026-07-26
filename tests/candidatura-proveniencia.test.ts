@@ -7,6 +7,10 @@
  * `situacao_candidatura` = 'pre-candidato' em 179, 'incerto' em 15 e NULL em 1.
  * Nenhum registro deferido pelo TSE. Por isso o default tem de ser
  * "declaracao_editorial" em todos os caminhos, inclusive nos ausentes.
+ *
+ * Desde a migration 20260726120000 sao 184 publicaveis (Senado e Camara fora
+ * do escopo do lancamento). A proporcao nao muda o comportamento testado aqui:
+ * segue nenhum registro deferido pelo TSE.
  */
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"

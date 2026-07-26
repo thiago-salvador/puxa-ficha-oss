@@ -7,6 +7,7 @@ import { QuizResult } from "@/components/quiz/QuizResult"
 import { getQuizAlignmentDatasetResource } from "@/lib/api"
 import { buildAbsoluteUrl, buildTwitterMetadata } from "@/lib/metadata"
 import { ogSize } from "@/lib/og"
+import { normalizeQuizCargo } from "@/lib/quiz-cargo"
 
 const title = "Quiz | Resultado | Puxa Ficha"
 const description = "Comparação programática do quiz Quem me representa, sem ranking ou recomendação de voto."
@@ -70,7 +71,7 @@ export default async function QuizResultadoPage({
   searchParams: Promise<{ cargo?: string; uf?: string }>
 }) {
   const sp = await searchParams
-  const cargo = sp.cargo?.trim() || "Presidente"
+  const cargo = normalizeQuizCargo(sp.cargo)
   const uf = sp.uf?.trim()
 
   if (cargo === "Governador" && !uf) {

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server"
 import { decodeQuizPayloadForShare } from "@/lib/quiz-encoding"
 import { buildEditorialOg, dynamicOgImageCacheHeaders } from "@/lib/og"
+import { normalizeQuizCargo } from "@/lib/quiz-cargo"
 import { resolveQuizShortToken } from "@/lib/quiz-short-link-resolve"
 import {
   createFixedWindowIpRateLimiter,
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   const r = effectiveParams.get("r")
   const v = effectiveParams.get("v")
-  const cargo = effectiveParams.get("cargo")?.trim() || "Presidente"
+  const cargo = normalizeQuizCargo(effectiveParams.get("cargo"))
   const uf = effectiveParams.get("uf")?.trim()
 
   if (cargo === "Governador" && !uf) {

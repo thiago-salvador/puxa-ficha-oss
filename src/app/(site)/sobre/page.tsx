@@ -75,6 +75,13 @@ export default function SobrePage() {
             análise crítica e transparente.
           </p>
           <p className="text-[length:var(--text-body)] font-medium leading-relaxed text-foreground sm:text-[length:var(--text-body-lg)]">
+            A cobertura atual é dos cargos majoritários do Executivo: Presidência da República e
+            governos estaduais, incluindo os vices das chapas. Senado e Câmara dos Deputados ficam
+            de fora por enquanto, porque uma amostra pequena das duas casas informaria menos do que
+            sugere. Dados de mandato parlamentar continuam sendo usados como fonte sobre quem hoje
+            ocupa uma cadeira e disputa o Executivo.
+          </p>
+          <p className="text-[length:var(--text-body)] font-medium leading-relaxed text-foreground sm:text-[length:var(--text-body-lg)]">
             Diferente de ferramentas que simulam neutralidade, o Puxa Ficha tem uma perspectiva
             editorial explícita: linguagem acessível para a classe trabalhadora, foco em contradições
             entre discurso e prática, e transparência sobre critérios, limites e fontes.

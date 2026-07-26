@@ -22,7 +22,7 @@ export type CargoDisputadoProveniencia = "declaracao_editorial" | "registro_tse"
 /**
  * Tokens de `status`/`situacao_candidatura` que significam candidatura ja
  * pedida ou deferida no TSE. Hoje nenhuma linha publicavel esta nesse conjunto
- * (195 de 195 sao `status = "pre-candidato"`, consultado em 2026-07-25), mas o
+ * (184 de 184 sao `status = "pre-candidato"`, consultado em 2026-07-26), mas o
  * mapeamento existe para o dia em que o registro abrir e o pipeline atualizar.
  */
 const TOKENS_REGISTRO_TSE: ReadonlySet<string> = new Set([

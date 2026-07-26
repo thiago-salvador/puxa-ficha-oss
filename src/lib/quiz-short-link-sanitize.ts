@@ -2,6 +2,8 @@
  * Sanitiza query string do resultado do quiz antes de persistir em link curto.
  */
 
+import { isQuizCargo } from "@/lib/quiz-cargo"
+
 const MAX_TOTAL_LEN = 6144
 const MAX_R_LEN = 5500
 
@@ -30,7 +32,7 @@ export function sanitizeQuizResultQueryString(raw: string): string | null {
   out.set("v", v)
 
   if (cargoP) {
-    if (cargoP !== "Presidente" && cargoP !== "Governador") return null
+    if (!isQuizCargo(cargoP)) return null
     out.set("cargo", cargoP)
   }
   if (ufP) {
