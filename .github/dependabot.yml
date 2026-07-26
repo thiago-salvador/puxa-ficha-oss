@@ -13,6 +13,12 @@ updates:
       # passo de typecheck do Next.js 16. Travar em 6.x ate suporte oficial.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # ESLint 10.x removeu APIs de contexto (context.getFilename) que o
+      # eslint-config-next 16.x ainda usa: o passo de lint quebra com
+      # "Error while loading rule 'react/display-name'". Travar em 9.x ate
+      # o eslint-config-next publicar suporte.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       next-react:
         patterns:
