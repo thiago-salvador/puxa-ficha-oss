@@ -510,7 +510,7 @@ const getCachedCandidatosResource = unstable_cache(
   // Bumped 2026-05-15: swap da coorte presidencial remove tarcisio/eduardo-leite
   // da superficie publica e adiciona augusto-cury/cabo-daciolo/edmilson-costa.
   // Bumped 2026-05-22: publicacao da lista editorial de pre-candidatos dos lotes 1 e 2.
-  ["public-candidatos-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630"],
+  ["public-candidatos-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -574,7 +574,7 @@ async function getCandidatoNavResourceUncached(
 
 const getCachedCandidatoNavResource = unstable_cache(
   async (cargo?: string) => getCandidatoNavResourceUncached(cargo),
-  ["public-candidato-nav-resource", "slug-nome-urna-20260603"],
+  ["public-candidato-nav-resource", "slug-nome-urna-20260603", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -683,7 +683,15 @@ const getCachedGlobalSearchIndexResource = unstable_cache(
   async () => getGlobalSearchIndexResourceUncached(),
   // Bumped 2026-04-26 (Bloco 1 review 2026-04-24): force one-time bust of Vercel
   // Data Cache so the new subtitle/searchText (without raw 'incerto') is exercised.
-  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610"],
+  //
+  // Bumped 2026-07-26 (`escopo-executivo-20260726`): a despublicacao de Senado e
+  // Camara (migration 20260726120000) mudou a coorte no banco, mas o indice de
+  // busca continuou servindo os 195 antigos. Efeito visivel: buscar "Eduardo
+  // Braga" achava o candidato e levava a uma ficha 404. O Data Cache da Vercel
+  // sobrevive a deploy, e a rota de revalidacao por tag depende de
+  // PF_REVALIDATE_SECRET, entao o bump da chave e o caminho que funciona sem
+  // segredo. Mesma chave aplicada a todos os resources que listam candidatos.
+  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -770,7 +778,7 @@ async function getCandidatoSlugParamsUncached(): Promise<{ slug: string }[]> {
 
 const getCachedCandidatoSlugParams = unstable_cache(
   async () => getCandidatoSlugParamsUncached(),
-  ["public-candidato-slugs-static", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610"],
+  ["public-candidato-slugs-static", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -797,7 +805,7 @@ const getCachedCandidatoMetadataResource = unstable_cache(
     requireLiveResourceForCache(await getCandidatoMetadataResourceUncached(slug)),
   // Bumped 2026-04-26: payload publico agora carrega partido_sigla/partido_atual
   // ja sanitizados via sanitizePublicPartyFields. Suffix invalida cache antigo.
-  ["public-candidato-metadata-resource", "central-party-sanitize", "no-cache-degraded-v1", "presidential-cohort-20260515", "public-profile-density-20260517", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630"],
+  ["public-candidato-metadata-resource", "central-party-sanitize", "no-cache-degraded-v1", "presidential-cohort-20260515", "public-profile-density-20260517", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidato-metadata"],
@@ -1288,7 +1296,7 @@ const getCachedCandidatosComResumoResource = unstable_cache(
     getCandidatosComResumoResourceUncached(cargo, estado),
   // Bumped 2026-04-26: dados de candidato vem ja sanitizados via getCandidatosResource;
   // o suffix forca bust de cache antigo do Bloco 1.
-  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630"],
+  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-resumo"],
@@ -1406,7 +1414,7 @@ const getCachedCandidatosComparaveisResource = unstable_cache(
   // Bumped 2026-04-26: payload publico carrega partido sanitizado.
   // Bumped 2026-06-03: pontos_atencao removido do payload de comparaveis (so
   // alimentava alertas_graves no servidor, nunca lido no cliente).
-  ["public-candidatos-comparaveis-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "comparaveis-strip-pontos-20260603", "photos-names-20260610"],
+  ["public-candidatos-comparaveis-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "comparaveis-strip-pontos-20260603", "photos-names-20260610", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-comparaveis"],
@@ -1563,7 +1571,7 @@ const getCachedRankingDataResource = unstable_cache(
     getRankingDataResourceUncached(slug, cargo || undefined, estado || undefined),
   // Bumped 2026-05-21: copy pública de rankings virou "listas temáticas";
   // invalida definition.title/contextExplanation serializados no Data Cache.
-  ["ranking-data-resource-public-copy-20260521"],
+  ["ranking-data-resource-public-copy-20260521", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["ranking-data"],
@@ -1895,7 +1903,7 @@ async function getQuizAlignmentDatasetResourceUncached(
 const getCachedQuizAlignmentDatasetResource = unstable_cache(
   async (cargo: string, estado: string) =>
     getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined),
-  ["quiz-alignment-dataset-resource", "fase2"],
+  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["quiz-dataset"],
