@@ -23,9 +23,7 @@ interface FollowCandidateButtonProps {
 
 interface ApiResponse {
   error?: string
-  requiresVerification?: boolean
-  manageLinkSent?: boolean
-  cooldownActive?: boolean
+  /** Só o toggle informa estado; o subscribe responde neutro por desenho. */
   following?: boolean
 }
 
@@ -199,23 +197,14 @@ export function FollowCandidateButton({
         throw new Error(data?.error || "Não foi possível iniciar o alerta agora.")
       }
 
-      if (data?.manageLinkSent) {
-        setFeedback({
-          tone: "default",
-          title: data.cooldownActive ? "Link já enviado há pouco" : "Novo link enviado",
-          description: data.cooldownActive
-            ? "Confira o email mais recente que já mandamos com o link de gestão deste navegador."
-            : "Te mandamos por email um novo link para gerenciar seus alertas neste navegador.",
-        })
-      } else {
-        setFeedback({
-          tone: "default",
-          title: data?.cooldownActive ? "Confirmação já enviada há pouco" : "Confirme seu email",
-          description: data?.cooldownActive
-            ? `Confira o email mais recente para concluir o acompanhamento de ${candidateName}.`
-            : `Enviamos um link para você confirmar o acompanhamento de ${candidateName}.`,
-        })
-      }
+      // Mensagem única de propósito: o endpoint responde igual para email novo,
+      // já cadastrado e já verificado, senão bastaria enviar um endereço para
+      // descobrir se ele está na base. O texto cobre os três casos sem mentir.
+      setFeedback({
+        tone: "default",
+        title: "Verifique seu email",
+        description: `Se este endereço puder receber alertas, enviamos um link para concluir o acompanhamento de ${candidateName}. Confira também o spam, e o email mais recente caso já tenha pedido há pouco.`,
+      })
     } catch (error) {
       setFeedback({
         tone: "destructive",
