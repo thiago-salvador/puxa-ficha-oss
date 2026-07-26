@@ -399,17 +399,18 @@ describe("alerts HTTP routes", () => {
         }),
       )
 
+      // Corpo neutro desde 2026-07-26: os tres caminhos de sucesso respondem
+      // igual, para o endpoint nao virar oraculo de enumeracao. O que muda
+      // entre eles sao os efeitos colaterais, verificados logo abaixo.
       const body = await readJson<{
         ok: boolean
-        requiresVerification: boolean
-        emailMasked: string
+        emailSent: boolean
         candidateSlug: string
       }>(response)
 
       assert.equal(response.status, 200)
       assert.equal(body.ok, true)
-      assert.equal(body.requiresVerification, true)
-      assert.equal(body.emailMasked, "el***********@example.com")
+      assert.equal(body.emailSent, true)
       assert.equal(body.candidateSlug, "lula")
 
       assert.equal(fixture.getTable("alert_subscribers").length, 1)
@@ -447,16 +448,13 @@ describe("alerts HTTP routes", () => {
         }),
       )
 
-      const body = await readJson<{
-        ok: boolean
-        requiresVerification: boolean
-        cooldownActive: boolean
-      }>(response)
+      const body = await readJson<{ ok: boolean; emailSent: boolean }>(response)
 
       assert.equal(response.status, 200)
       assert.equal(body.ok, true)
-      assert.equal(body.requiresVerification, true)
-      assert.equal(body.cooldownActive, true)
+      // Mesmo corpo do caminho sem cooldown, de proposito. O cooldown so se
+      // manifesta no efeito: a assinatura pendente e gravada e nenhum email sai.
+      assert.equal(body.emailSent, true)
       assert.equal(fixture.getTable("alert_subscriptions").length, 1)
       assert.equal(fixture.emails.length, 0)
     })
@@ -486,16 +484,15 @@ describe("alerts HTTP routes", () => {
         }),
       )
 
-      const body = await readJson<{
-        ok: boolean
-        verified: boolean
-        manageLinkSent: boolean
-      }>(response)
+      const body = await readJson<{ ok: boolean; emailSent: boolean }>(response)
 
       assert.equal(response.status, 200)
       assert.equal(body.ok, true)
-      assert.equal(body.verified, true)
-      assert.equal(body.manageLinkSent, true)
+      assert.equal(body.emailSent, true)
+      // `verified` some do corpo de proposito: era a chave que denunciava se o
+      // email ja estava na base e confirmado. O envio real do link de gestao
+      // continua provado pelo efeito colateral.
+      assert.equal("verified" in body, false)
       assert.equal(fixture.emails.length, 1)
       assert.notEqual(fixture.getTable("alert_subscribers")[0]?.manage_token_hash, previousManageHash)
     })

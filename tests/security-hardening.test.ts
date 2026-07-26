@@ -286,10 +286,43 @@ describe("trusted client IP extraction", () => {
 })
 
 describe("alerts subscribe scope guard", () => {
-  it("keeps the existing alerts/subscribe rate limit as the only alert subscribe limiter", () => {
+  /**
+   * Ate 2026-07-26 este guard exigia que o teto de banco fosse o UNICO
+   * limitador do subscribe. A regra foi invertida porque deixava um buraco: o
+   * teto de banco so roda quando o email ainda nao existe
+   * (`if (!existingSubscriber)`), entao o caminho de assinante ja verificado,
+   * que dispara email de link de gestao, ficava coberto apenas pelo cooldown
+   * de 15 min por assinante. Com uma lista de emails validos dava para tirar um
+   * email por endereco sem nunca esbarrar em teto de IP.
+   *
+   * O invariante agora e que os DOIS convivem, cada um cobrindo o que o outro
+   * nao cobre.
+   */
+  it("mantem os dois limitadores do subscribe: teto de banco e janela por IP", () => {
     const subscribeRoute = read("src/app/api/alerts/subscribe/route.ts")
 
-    assert.match(subscribeRoute, /rate_limit_new_subscribers_hour/)
-    assert.doesNotMatch(subscribeRoute, /createFixedWindowIpRateLimiter/)
+    assert.match(
+      subscribeRoute,
+      /rate_limit_new_subscribers_hour/,
+      "teto de banco por hora para assinante novo",
+    )
+    assert.match(
+      subscribeRoute,
+      /createFixedWindowIpRateLimiter/,
+      "janela por IP no processo, aplicada a todos os caminhos",
+    )
+  })
+
+  it("nao devolve estado do assinante no corpo do subscribe", () => {
+    const subscribeRoute = read("src/app/api/alerts/subscribe/route.ts")
+    const corpoDoHandler = subscribeRoute.slice(subscribeRoute.indexOf("createSubscribeHandler"))
+
+    for (const chave of ["manageLinkSent", "requiresVerification", "cooldownActive:"]) {
+      assert.doesNotMatch(
+        corpoDoHandler,
+        new RegExp(`${chave}\\s*:\\s*true`),
+        `${chave} no corpo transforma o endpoint em oraculo de enumeracao`,
+      )
+    }
   })
 })

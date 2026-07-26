@@ -19,7 +19,6 @@ import {
   hashAlertEmail,
   hashAlertIp,
   hashAlertToken,
-  maskAlertEmail,
   normalizeAlertEmail,
   normalizeCandidateSlug,
 } from "@/lib/alerts"
@@ -29,6 +28,10 @@ import {
   setAlertManageTokenCookie,
 } from "@/lib/alerts-session"
 import { rejectCrossSiteAlertsMutation } from "@/lib/alerts-csrf"
+import {
+  createFixedWindowIpRateLimiter,
+  rateLimitExceededResponse,
+} from "@/lib/request-rate-limit"
 import { logAlertsApiExit, logAlertsEvent } from "@/lib/alerts-log"
 import { sendTransactionalEmail } from "@/lib/email"
 import {
@@ -40,6 +43,44 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const MAX_NEW_SUBSCRIBERS_PER_HOUR = 24
+
+/**
+ * Teto por IP no processo, aplicado a TODA requisicao de subscribe.
+ *
+ * O teto de banco (MAX_NEW_SUBSCRIBERS_PER_HOUR) so roda quando o email ainda
+ * nao existe, entao o caminho de assinante ja verificado, que dispara email de
+ * link de gestao, ficava coberto apenas pelo cooldown de 15 min por assinante:
+ * um bot com uma lista de emails validos conseguia um email por endereco sem
+ * nunca esbarrar em teto de IP.
+ *
+ * Este limitador e em memoria do processo, logo e por instancia, e nao
+ * substitui o rate limit distribuido na borda. Serve como camada de dentro,
+ * barata, que fecha a assimetria entre os dois caminhos.
+ */
+const subscribeRateLimiter = createFixedWindowIpRateLimiter({
+  namespace: "alerts-subscribe",
+  max: 12,
+  windowMs: 10 * 60_000,
+})
+
+/**
+ * Resposta unica de sucesso, identica nos tres caminhos (assinante novo, ja
+ * cadastrado sem verificar, ja verificado) e tambem quando o cooldown segura o
+ * envio.
+ *
+ * Antes, o corpo distinguia `manageLinkSent`, `requiresVerification` e
+ * `cooldownActive`, o que transformava o endpoint num oraculo: bastava enviar
+ * um email para descobrir se ele ja estava cadastrado e se ja tinha sido
+ * verificado. Enumeracao de base de assinantes num site sobre politica nao e
+ * dano hipotetico.
+ */
+function neutralSubscribeResponse(candidateSlug: string) {
+  return NextResponse.json({
+    ok: true,
+    emailSent: true,
+    candidateSlug,
+  })
+}
 type AlertsServiceRoleClient = ReturnType<typeof createAlertsServiceRoleClient>
 
 interface SubscribeDeps {
@@ -101,6 +142,12 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
     const csrfResponse = rejectCrossSiteAlertsMutation(req, "subscribe", deps.logAlertsApiExit)
     if (csrfResponse) return csrfResponse
 
+    const rateLimit = subscribeRateLimiter.check(req.headers)
+    if (!rateLimit.allowed) {
+      deps.logAlertsApiExit("subscribe", 429, "rate_limit_ip_window")
+      return rateLimitExceededResponse(rateLimit)
+    }
+
     let body: unknown
     try {
       body = await readJsonBodyWithLimit(req)
@@ -152,14 +199,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
             candidateSlug: candidate.slug,
             cooldownActive: true,
           })
-          return NextResponse.json({
-            ok: true,
-            verified: true,
-            manageLinkSent: true,
-            cooldownActive: true,
-            emailMasked: maskAlertEmail(email),
-            candidateSlug: candidate.slug,
-          })
+          return neutralSubscribeResponse(candidate.slug)
         }
 
         const nextManageToken = createAlertToken()
@@ -212,13 +252,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
         deps.logAlertsApiExit("subscribe", 200, "verified_manage_link_sent", {
           candidateSlug: candidate.slug,
         })
-        return NextResponse.json({
-          ok: true,
-          verified: true,
-          manageLinkSent: true,
-          emailMasked: maskAlertEmail(email),
-          candidateSlug: candidate.slug,
-        })
+        return neutralSubscribeResponse(candidate.slug)
       }
 
       const authorizedSubscriber = await deps.findSubscriberByManageToken(manageToken)
@@ -290,13 +324,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
       deps.logAlertsApiExit("subscribe", 200, "requires_verification_cooldown", {
         candidateSlug: candidate.slug,
       })
-      return NextResponse.json({
-        ok: true,
-        requiresVerification: true,
-        cooldownActive: true,
-        emailMasked: maskAlertEmail(email),
-        candidateSlug: candidate.slug,
-      })
+      return neutralSubscribeResponse(candidate.slug)
     }
 
     const verifyToken = createAlertToken()
@@ -406,12 +434,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
     deps.logAlertsApiExit("subscribe", 200, "requires_verification_email_sent", {
       candidateSlug: candidate.slug,
     })
-    return NextResponse.json({
-      ok: true,
-      requiresVerification: true,
-      emailMasked: maskAlertEmail(email),
-      candidateSlug: candidate.slug,
-    })
+    return neutralSubscribeResponse(candidate.slug)
   }
 }
 
