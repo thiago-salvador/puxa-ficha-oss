@@ -44,50 +44,79 @@ Ou seja: o CPF errado não é um campo cosmético errado. Ele desliga a âncora 
 separa pessoas com o mesmo nome, e o resultado é candidatura de terceiro exibida
 na ficha de quem está no ar.
 
-## O achado é da classe, não de um candidato
+## A triagem: 8 suspeitos, 3 casos reais
 
-A mesma consulta sobre os publicados devolve oito fichas com duas ou mais
-candidaturas a Vereador em sigla diferente da atual:
+A consulta que procura "candidatura a Vereador em sigla diferente da atual"
+devolve oito fichas publicadas. Mas **troca de partido real produz exatamente a
+mesma assinatura**, entao a consulta sozinha nao decide nada. Olhando trajetoria
+a trajetoria, cinco delas se explicam sem homonimo nenhum.
 
-| Slug | Partido hoje | Linhas | Siglas no histórico |
-|---|---|---|---|
-| `jeronimo` | PT | 6 | DEM, MDB, PHS, PMN, PSDB, PTN |
-| `cleitinho` | REPUBLICANOS | 4 | AVANTE, PP, PT DO B |
-| `marcos-rogerio` | PL | 3 | PDT, PPS, PTB |
-| `maria-da-consolacao` | PSOL | 2 | PSB, PT DO B |
-| `adailton-furia` | PSD | 2 | PRB, PSDB |
-| `professora-dorinha` | UNIAO | 2 | PMDB, PPB |
-| `clecio-luis` | UNIAO | 2 | PSOL, PT |
-| `dr-daniel` | PODEMOS | 2 | PSDB |
+### Contaminacao confirmada
 
-**A lista é indício, não veredito.** Vários desses casos podem ser troca de
-partido real, e a consulta não distingue. O que ela mostra é onde olhar. Só o
-`jeronimo` tem, hoje, a colisão lógica que fecha o diagnóstico sem depender de
-julgamento.
+| Slug | Linhas | O que fecha o diagnostico |
+|---|---|---|
+| `jeronimo` (PT/BA) | 6 | Colisao logica em 2012 (Vice-Prefeito pelo PT **e** Vereador pelo PTN na mesma eleicao), seis siglas fora do campo do PT em vinte anos, e **nenhuma** eleicao vencida |
+| `maria-da-consolacao` (PSOL/MG) | 2 | Duas colisoes: 2012 Prefeito pelo PSOL **e** Vice-Prefeito pelo PSC; 2016 Prefeito pelo PSOL **e** Vereador pelo PT do B |
 
-## Por que nada foi corrigido aqui
+As oito linhas foram despublicadas na migration
+[20260726160000](../supabase/migrations/20260726160000_despublicar_historico_por_homonimo.sql).
 
-Apagar linha de histórico é afirmar que uma candidatura não é daquela pessoa.
-Errar nessa direção também é errar sobre pessoa real, e no sentido oposto:
-esconder mandato ou candidatura verdadeira. A correção exige, por candidato:
+### Suspeito, sem colisao que feche
 
-1. Obter o CPF oficial na fonte (TSE), confirmar a divergência e corrigir
-   `candidatos.cpf`.
-2. Reprocessar com o CPF certo, para o resolver reancorar por CPF em vez de por
-   nome. O pipeline é idempotente; financiamento e patrimônio aceitam recorte
-   por slug (`PF_TSE_FINANCIAMENTO_SLUGS`, `PF_TSE_PATRIMONIO_SLUGS`), histórico
-   não tem esse recorte hoje.
-3. Conferir linha a linha o que sai e o que fica, com a evidência registrada,
-   como foi feito nas migrations de 25/07.
+`professora-dorinha` (UNIAO/TO) tem duas candidaturas a vereadora suplente, em
+2000 (PPB) e 2016 (PMDB). A de 2016 e atipica, porque ela era deputada federal
+naquele momento. Nao e impossivel, e nao ha colisao. Fica marcada para consulta
+ao TSE, sem alteracao.
 
-Enquanto isso não acontece, a ficha do `jeronimo` exibe candidaturas que quase
-certamente são de outra pessoa.
+### Troca de partido legitima, intocadas
 
-## Sugestão de guard-rail
+| Slug | Trajetoria | Leitura |
+|---|---|---|
+| `clecio-luis` | Vereador PT 2004 (eleito), Vereador PSOL 2008 (eleito), Prefeito PSOL 2012 (eleito), Prefeito REDE 2016 (eleito) | Progressao limpa, todos eleitos |
+| `dr-daniel` | Vereador PSDB 2012 e 2016 (eleito), Prefeito MDB 2021, Prefeito PSB 2024 | Progressao coerente |
+| `adailton-furia` | Vereador PSDB 2008, Vereador PRB 2012 (eleito), Prefeito PRB 2016, Prefeito PSD 2020 (eleito) | Progressao coerente |
+| `cleitinho` | Vereador PP 2008 (eleito), PP 2012, PT do B 2016, AVANTE 2020 (eleito) | Mesma cidade, troca de sigla normal |
+| `marcos-rogerio` | Vereador PTB 2000, PPS 2004, PDT 2008 (eleito) | Progressao coerente |
 
-Existe `scripts/lib/historico-homonym-signals.ts`, que já emite
-`cpf_obs_incompativel` quando um CPF citado em observação diverge do CPF do
-candidato. O sinal que falta é o inverso: **linha de histórico cuja âncora foi
-resolvida por nome, e não por SQ nem por CPF**, deveria nascer marcada e ficar
-fora da superfície pública até revisão. Hoje o degrau de nome é silencioso, e é
-justamente ele que produziu a tabela acima.
+O padrao que separa os dois grupos serve para a proxima triagem: **candidatura
+por homonimo generico quase nunca vence eleicao e nao progride de cargo**. As
+seis linhas do `jeronimo` sao todas suplente ou nao eleito, sem progressao
+nenhuma; as cinco trajetorias legitimas tem eleicoes vencidas e sobem de
+vereador para prefeito.
+
+## Por que despublicar e nao deletar
+
+Apagar linha de historico e afirmar que uma candidatura nao e daquela pessoa.
+Errar nessa direcao tambem erra sobre pessoa real, no sentido oposto: esconde
+mandato ou candidatura verdadeira. As linhas continuam no banco, com o motivo
+gravado em `despublicacao_motivo`, e voltam com um `UPDATE`.
+
+O par de colunas (`despublicado_em`, `despublicacao_motivo`) espelha o que a
+migration `20260725153000` fez em `pontos_atencao`, para o mecanismo ser o mesmo
+nas duas tabelas. O filtro que da efeito a ele esta em `src/lib/api.ts`, na
+consulta de `historico_politico`.
+
+## O guard-rail, aplicado
+
+Antes, o degrau de nome do resolver era silencioso: a linha entrava na ficha sem
+sinal nenhum de que a ancora era fraca. Agora, em
+`scripts/lib/ingest-tse-historico.ts`, **linha nova resolvida por casamento de
+nome nasce despublicada**, com o motivo gravado, esperando revisao.
+
+A regra vale so no `INSERT`. No `UPDATE` a linha ja existe e pode ter sido
+revisada ou curada a mao, e reescrever o estado a cada re-ingest desfaria decisao
+humana em silencio, que e o mesmo defeito invertido.
+`tests/historico-guard-homonimo.test.ts` trava as duas metades, mais o filtro da
+consulta publica.
+
+## O que segue aberto
+
+1. **CPF oficial do `jeronimo`.** A API do DivulgaCandContas nao respondeu ao
+   formato de consulta tentado em 26/07. Sem o numero verificado na fonte,
+   corrigir `candidatos.cpf` seria chute. Enquanto isso, as linhas contaminadas
+   estao fora do ar, que e o efeito pratico que importa para quem le a ficha.
+2. **`professora-dorinha`**, descrita acima.
+3. **Reprocessar com o CPF certo**, quando ele existir, para o resolver
+   reancorar por CPF. Financiamento e patrimonio aceitam recorte por slug
+   (`PF_TSE_FINANCIAMENTO_SLUGS`, `PF_TSE_PATRIMONIO_SLUGS`); historico nao tem
+   esse recorte hoje.

@@ -915,8 +915,18 @@ async function getCandidatoBySlugFromRelationResource(
 
   const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores] =
     await Promise.all([
+      // `despublicado_em` filtra candidatura atribuida por homonimo (migration
+      // 20260726160000). O CPF divergente no cadastro desliga o casamento por
+      // CPF no tse-resolver e a linha vem do casamento por nome, trazendo
+      // candidatura de outra pessoa para a ficha. A linha continua no banco
+      // com o motivo gravado, entao a correcao e reversivel.
       withSupabaseRetry(`historico_politico(${slug})`, async () =>
-        supabase.from("historico_politico").select("*").eq("candidato_id", id).order("periodo_inicio", { ascending: false })
+        supabase
+          .from("historico_politico")
+          .select("*")
+          .eq("candidato_id", id)
+          .is("despublicado_em", null)
+          .order("periodo_inicio", { ascending: false })
       ),
       withSupabaseRetry(`mudancas_partido(${slug})`, async () =>
         supabase
