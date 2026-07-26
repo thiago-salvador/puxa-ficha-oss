@@ -7,6 +7,10 @@
 
 # testing / coverage
 /coverage
+# c8 escreve em output/coverage (reports-dir) e .tmp/c8 (temp-directory),
+# que nao casavam com as regras acima e vazavam no git status.
+/output
+/.tmp
 .lighthouse-reports/
 test-results/
 playwright-report/
