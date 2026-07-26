@@ -56,4 +56,5 @@ fonte de maior prioridade.
 ## Licença das contribuições
 
 Ao contribuir, você concorda que sua contribuição será licenciada sob a
-[Elastic License 2.0](LICENSE), a mesma do projeto.
+[Apache License 2.0](LICENSE), a mesma do projeto, incluindo a concessão de
+patente prevista na seção 3 da licença.
