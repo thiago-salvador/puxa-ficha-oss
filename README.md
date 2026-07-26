@@ -1,9 +1,16 @@
 # Puxa Ficha
 
+[![CI](https://github.com/thiago-salvador/puxa-ficha-oss/actions/workflows/ci.yml/badge.svg)](https://github.com/thiago-salvador/puxa-ficha-oss/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-24.x-339933.svg)](.nvmrc)
+
 Plataforma cívica de consulta pública sobre candidatos das eleições brasileiras
 de 2026. Ficha pública, comparador lado a lado e pontos de atenção com fontes
 visíveis. Os dados vêm de bases oficiais (TSE, Câmara dos Deputados, Senado
 Federal, Portal da Transparência) sob a Lei de Acesso à Informação.
+
+A cobertura atual é dos cargos majoritários do Executivo: Presidência da
+República e governos estaduais, incluindo os vices das chapas.
 
 **Produção:** https://puxaficha.com.br
 
@@ -123,7 +130,11 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md) e o
 
 ## Licença
 
-Código sob [Elastic License 2.0](LICENSE): você pode usar, modificar e
-contribuir livremente, mas não pode oferecer o software a terceiros como serviço
-hospedado. Os dados são públicos (Lei de Acesso à Informação) e não estão
-cobertos pela licença do código.
+Código sob [Apache License 2.0](LICENSE): você pode usar, modificar, redistribuir
+e hospedar livremente, inclusive comercialmente, preservando o aviso de copyright
+e o [NOTICE](NOTICE). A licença inclui concessão explícita de patente.
+
+Os dados são públicos (Lei de Acesso à Informação) e não estão cobertos pela
+licença do código. O [NOTICE](NOTICE) detalha isso e traz as ressalvas de
+dependências de terceiros, em especial o GSAP, que tem licença própria e não
+acompanha a permissão comercial da Apache 2.0.

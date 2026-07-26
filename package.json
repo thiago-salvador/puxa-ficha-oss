@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "Plataforma cívica de consulta pública sobre candidatos das eleições brasileiras: ficha, comparador e pontos de atenção com fontes visíveis.",
-  "license": "Elastic-2.0",
+  "license": "Apache-2.0",
   "homepage": "https://puxaficha.com.br",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thiago-salvador/puxa-ficha.git"
+    "url": "git+https://github.com/thiago-salvador/puxa-ficha-oss.git"
   },
   "bugs": {
-    "url": "https://github.com/thiago-salvador/puxa-ficha/issues"
+    "url": "https://github.com/thiago-salvador/puxa-ficha-oss/issues"
   },
   "author": "Thiago Salvador",
   "engines": {
