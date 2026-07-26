@@ -42,6 +42,8 @@
     "audit:public-document-exposure:gate": "tsx scripts/audit-public-document-exposure.ts",
     "audit:public-security-surface:gate": "tsx scripts/audit-public-security-surface.ts",
     "validate:seed": "tsx scripts/validate-seed.ts",
+    "audit:seed-sq-identity": "tsx scripts/audit-seed-sq-identity.ts",
+    "audit:seed-sq-identity:gate": "tsx scripts/audit-seed-sq-identity.ts --gate",
     "apply:factual-fixes:dry-run": "tsx scripts/apply-current-factual-fixes.ts --dry-run",
     "persist:sq": "tsx scripts/persist-sq-candidato.ts",
     "data:recalc-financiamento-doadores": "tsx scripts/recalc-financiamento-maiores-doadores.ts --apply",

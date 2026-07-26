@@ -5,6 +5,9 @@
 /.pnp
 .pnp.*
 
+# cache do auditor de SQ do TSE (pacotes anuais, dezenas de MB)
+/.tse-audit-cache
+
 # testing / coverage
 /coverage
 # c8 escreve em output/coverage (reports-dir) e .tmp/c8 (temp-directory),
