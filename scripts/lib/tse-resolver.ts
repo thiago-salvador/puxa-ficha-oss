@@ -122,11 +122,18 @@ export async function createTSEResolver(
   candidatos: CandidatoConfig[],
   ano: number
 ): Promise<TSEResolver> {
-  const sqToSlug = new Map<string, string>()
+  // Guarda a UF declarada junto com o slug: ate 2008, SQ_CANDIDATO nao e chave
+  // global no TSE, e sim sequencial POR UF (valores curtos como "10354"). Sem
+  // a UF aqui, um SQ curto do seed casa com a primeira linha que tiver aquele
+  // numero em qualquer estado.
+  const sqToCandidato = new Map<string, { slug: string; estado: string }>()
   for (const candidato of candidatos) {
     const sq = candidato.ids.tse_sq_candidato?.[String(ano)]?.trim()
     if (sq) {
-      sqToSlug.set(sq, candidato.slug)
+      sqToCandidato.set(sq, {
+        slug: candidato.slug,
+        estado: (candidato.estado || "").trim().toUpperCase(),
+      })
     }
   }
 
@@ -162,10 +169,23 @@ export async function createTSEResolver(
     resolveRow(row) {
       const sq = (row.SQ_CANDIDATO || "").trim()
       if (sq) {
-        const slug = sqToSlug.get(sq)
-        if (slug) {
-          stats.sqPreloaded++
-          return { slug, method: "sq-preloaded" }
+        const candidato = sqToCandidato.get(sq)
+        if (candidato) {
+          // Mesma guarda de UF que o caminho por nome ja tinha, e pela mesma
+          // razao. Ate 2008 o SQ e sequencial por estado, entao um SQ curto do
+          // seed pode colidir com outra pessoa em outra UF, e o degrau de SQ e
+          // o de MAIOR prioridade: ele nao degrada para o proximo, ancora
+          // direto. Auditoria de 2026-07-26.
+          const rowUfSq = (row.SG_UF || "").trim().toUpperCase()
+          const ufDivergeNoSq =
+            Boolean(rowUfSq) && Boolean(candidato.estado) && rowUfSq !== candidato.estado
+
+          if (!ufDivergeNoSq) {
+            stats.sqPreloaded++
+            return { slug: candidato.slug, method: "sq-preloaded" }
+          }
+          // UF diverge: nao ancora por SQ e deixa os degraus seguintes (CPF e
+          // nome, que tem guarda propria) decidirem.
         }
       }
 
