@@ -14,7 +14,8 @@ import {
   isTseObservedPartyChangeContext,
 } from "./party-timeline-consistency"
 import type { IngestResult, CandidatoConfig } from "./types"
-import { createTSEResolver, shouldSkipWeakMatchForAno } from "./tse-resolver"
+import type { ResolveMethod } from "./tse-resolver"
+import { createTSEResolver, isWeakNameMatch, shouldSkipWeakMatchForAno } from "./tse-resolver"
 import { canonicalCargo } from "./cargo-utils"
 import { sanitizeTemplateText } from "./ptbr-sanitize"
 import { canonicalizeEstadoForStorage } from "@/lib/br-uf"
@@ -90,7 +91,8 @@ interface CandidacyRecord {
   estado: string
   situacao_resultado: string
   eleito: boolean
-  match_method: string
+  /** Degrau do tse-resolver que ancorou a linha. `name-*` e o degrau fraco. */
+  match_method: ResolveMethod
 }
 
 async function downloadFile(url: string, dest: string): Promise<boolean> {
@@ -346,6 +348,21 @@ export async function ingestTSEHistorico(): Promise<IngestResult[]> {
           ? `${record.situacao_resultado} (TSE ${record.ano})`
           : `Candidatura: ${record.situacao_resultado} (TSE ${record.ano})`)
 
+        // Guard-rail de homonimo (2026-07-26). O resolver casa em tres degraus:
+        // SQ_CANDIDATO, CPF e, por ultimo, NOME. O degrau de nome era silencioso,
+        // e foi ele que trouxe seis candidaturas de outra pessoa para a ficha do
+        // jeronimo, porque o CPF divergente desligou o degrau anterior.
+        //
+        // Linha NOVA vinda de casamento por nome passa a nascer fora da
+        // superficie publica, esperando revisao. O dado e gravado igual, so nao
+        // aparece na ficha ate alguem conferir.
+        const resolvidoPorNome = isWeakNameMatch(record.match_method)
+
+        // Campos comuns ao insert e ao update. O estado de despublicacao fica
+        // FORA daqui de proposito: no update a linha ja existe e pode ter sido
+        // revisada ou curada a mao, e reescrever esses campos a cada re-ingest
+        // desfaria decisao humana em silencio, que e o mesmo defeito do
+        // guard-rail, invertido. O marcador so vale no insert.
         const row = {
           candidato_id: candidatoId,
           cargo: record.cargo,
@@ -381,7 +398,13 @@ export async function ingestTSEHistorico(): Promise<IngestResult[]> {
         } else {
           const { error: insertErr } = await supabase
             .from("historico_politico")
-            .insert(row)
+            .insert({
+              ...row,
+              despublicado_em: resolvidoPorNome ? new Date().toISOString() : null,
+              despublicacao_motivo: resolvidoPorNome
+                ? `Linha resolvida por casamento de nome (${record.match_method}), sem SQ_CANDIDATO nem CPF. Fora da ficha publica ate revisao manual, para nao repetir a atribuicao por homonimo de 2026-07-26.`
+                : null,
+            })
 
           if (insertErr) {
             result.errors.push(`Erro ao inserir historico ${record.cargo} ${record.ano}: ${insertErr.message}`)
