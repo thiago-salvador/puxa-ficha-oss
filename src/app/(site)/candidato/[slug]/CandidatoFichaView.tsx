@@ -269,11 +269,16 @@ export async function CandidatoFichaView({
             </span>
 
             {/* Marcador de procedência colado no dado (achado A0.1). O aviso
-                de pré-candidatura existia só no rodapé, longe do pleito. */}
+                de pré-candidatura existia só no rodapé, longe do pleito.
+                Cor: `text-secondary-foreground` é o par semântico de
+                `bg-secondary`. Com `text-muted-foreground` dava #737373 sobre
+                #f5f5f5, 4.34:1 em fonte de 10px, abaixo dos 4.5:1 do WCAG AA
+                (axe, serious). Justo o selo de origem do dado não pode ser o
+                texto menos legível da ficha. */}
             <span
               data-pf-hero-role-provenance={cargoProveniencia}
               title={cargoProvenienciaNota}
-              className="mt-1.5 inline-flex w-fit items-center rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground"
+              className="mt-1.5 inline-flex w-fit items-center rounded-full border border-border bg-secondary px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-secondary-foreground"
             >
               {cargoProvenienciaLabel}
             </span>
