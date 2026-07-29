@@ -55,16 +55,20 @@ Ou seja, o dado atravessa o backend inteiro e morre antes da tela.
 
 ## Nota sobre cadencia das demais fontes
 
-Verificado em 2026-07-25:
+Atualizado em 2026-07-29 (verificacao original: 2026-07-25):
 
-- `.github/workflows/ingest.yml` e `workflow_dispatch` puro. Nao tem `schedule:`.
-  O unico workflow agendado do repositorio e `link-check-fontes.yml`, que checa
-  links de fontes e nao ingere dado.
+- `.github/workflows/ingest.yml` ganhou `schedule: 0 6 * * 3` (quartas): ingere
+  camara+senado e revalida o Data Cache publico ao final. TSE e demais fontes
+  continuam por `workflow_dispatch`.
+- Outros workflows agendados: `link-check-fontes.yml` (segundas, URLs de fontes
+  de pontos de atencao) e `data-quality.yml` (quintas: IDs camara/senado vs API
+  oficial + audits de superficie publica; dia 3 do mes: SQ do seed vs
+  consulta_cand do TSE).
 - `vercel.json` tem 4 crons: `/api/alerts/send-digest`, `/api/news/refresh`,
   `/api/internal/published-consistency` e `/api/internal/runtime-smoke`. Apenas
   o segundo ingere dado de fonte publica.
 
-Por isso a unica fonte de `/metodologia` que hoje pode dizer "diaria" e o Google
-News. As demais foram para "sob demanda", que descreve o que de fato acontece:
-lote manual. Se um agendamento real for criado, o rotulo pode subir junto com o
-cron, no mesmo commit.
+Em `/metodologia`: Google News diz "diaria" (cron da Vercel), Camara e Senado
+dizem "semanal" (schedule do ingest). O resto segue "sob demanda", que descreve
+o que de fato acontece: lote manual. Rotulo sobe ou desce junto com o cron, no
+mesmo commit.

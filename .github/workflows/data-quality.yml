@@ -1,0 +1,126 @@
+name: Qualidade de dados
+
+# Auditorias periódicas de correção dos dados publicados. Complementam os
+# gates que já rodam em outro lugar:
+#
+#   - CI (por PR): validate:seed, check:scripts, testes
+#   - Vercel cron (diário): published-consistency (contrato DB<->UI),
+#     runtime-smoke
+#   - link-check-fontes.yml (semanal): URLs de fontes de pontos de atenção
+#
+# O que ESTE workflow cobre, e que nada acima cobre:
+#
+#   ids-cohort (semanal)  Confere cada ids.camara/ids.senado do seed contra a
+#                         API oficial (nome e UF batem?). Um ID errado ancora
+#                         a ingestão na pessoa errada; foi classe de erro real
+#                         (homônimos, docs/homonimos-historico-2026-07-26.md).
+#
+#   public-surface        Roda os audits de superfície pública com a chave
+#   (semanal)             ANON: vazamento de CPF/CNPJ em texto publicado e
+#                         superfície de segurança (o que o anônimo consegue
+#                         ler além do contrato). Precisa de SUPABASE_ANON_KEY,
+#                         não da service role: o ponto é ver o que o público vê.
+#
+#   sq-identity (mensal)  Reconfere cada ids.tse_sq_candidato[ano] do seed
+#                         contra o pacote consulta_cand do TSE. SQ errado é o
+#                         pior erro do resolver (ancora a pessoa errada com
+#                         confiança máxima; incidentes dos PRs #32/#33/#34).
+#                         Mensal porque o insumo (pacote TSE + seed) muda
+#                         devagar e o download é pesado.
+#
+# A falha do job É o alerta (GitHub notifica falha de scheduled workflow).
+# Nenhum job escreve no banco: tudo é leitura e relatório.
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_ANON_KEY (só para o job public-surface; a anon key
+#   já é pública por natureza, embarcada no bundle do site)
+
+on:
+  schedule:
+    # Quintas às 09:00 UTC (06:00 em Brasília): ids-cohort + public-surface.
+    - cron: "0 9 * * 4"
+    # Dia 3 de cada mês às 07:00 UTC: sq-identity.
+    - cron: "0 7 3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-quality
+  cancel-in-progress: false
+
+jobs:
+  ids-cohort:
+    name: IDs Câmara/Senado vs API oficial
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 9 * * 4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - name: Health check remoto (falha em mismatch ou not_found)
+        run: npm run audit:ids-cohort:gate
+
+  public-surface:
+    name: Superfície pública (exposição de documento + segurança)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 9 * * 4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - name: Validar secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL e/ou SUPABASE_ANON_KEY ausentes nos Actions secrets." >&2
+            exit 1
+          fi
+      - name: Exposição de documento (CPF/CNPJ) em texto publicado
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npm run audit:public-document-exposure:gate
+      - name: Superfície de segurança com chave anônima
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npm run audit:public-security-surface:gate
+
+  sq-identity:
+    name: SQ do seed vs consulta_cand do TSE
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 7 3 * *'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: "npm"
+      - name: Cache dos pacotes consulta_cand
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tse-audit-cache
+          key: tse-audit-cache-${{ runner.os }}-v1
+      - run: npm ci
+      - name: Auditar identidade dos SQ (gate)
+        run: npm run audit:seed-sq-identity:gate

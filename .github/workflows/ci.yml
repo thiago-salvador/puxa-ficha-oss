@@ -44,6 +44,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Os scripts de ingestão/auditoria têm tsconfig próprio e ficam fora do
+      # typecheck do app; sem este passo, um script quebrado só falharia na
+      # hora de rodar a ingestão agendada.
+      - name: Typecheck (scripts)
+        run: npm run check:scripts
+
+      # Valida data/candidatos.json (contrato, slugs únicos, colisões de
+      # nome_urna, SQ duplicado). Local e sem segredo, então roda em qualquer
+      # PR de fork. Sem este gate, um seed inválido passa no CI e só explode
+      # na ingestão.
+      - name: Validar seed
+        run: npm run validate:seed
+
       - name: Dead code (knip)
         run: npm run check:dead-code
 
