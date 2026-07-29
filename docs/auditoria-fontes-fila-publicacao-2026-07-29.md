@@ -168,6 +168,129 @@ mesmo jeito que a despublicacao no `link-check` exige `--apply` rodado a mao.
 3. Decidir o criterio da secao 3: se "ponto de atencao" admite enquadramento
    politico ou so fato com ato concreto. A resposta muda o produto, nao so
    estas duas fichas.
-4. Varrer o resto da fila com o mesmo metodo. As 18 aqui sao so as de gravidade
-   alta e critica; sobram 45 claims de gravidade media e baixa sem fonte
-   utilizavel.
+4. Varrer o resto da fila com o mesmo metodo. FEITO: ver Parte 2.
+
+---
+
+# Parte 2: varredura das claims de gravidade media e baixa
+
+Executada na mesma sessao, a pedido. As 52 claims restantes da fila se dividem
+em dois problemas completamente diferentes, e tratar as duas como "45 casos a
+investigar" teria sido erro de diagnostico.
+
+## 2.1 O achado sistemico: a fonte jornalistica do seed foi fabricada em massa
+
+Testei com `probeUrlReal` TODAS as URLs de dominio jornalistico geradas com
+`gerado_por = 'ia'` na tabela inteira, publicas e nao publicas:
+
+**32 das 34 testadas retornam HTTP 404.**
+
+As duas unicas vivas sao da CNN Brasil, ambas em ficha do `flavio-bolsonaro`.
+Todo o resto (g1, Folha, BBC) esta morto. Isso nao e link rot, que seria
+aleatorio e atingiria tambem as fontes oficiais. E assinatura de URL gerada por
+modelo: o padrao aparece inclusive em URLs bem formadas, com data completa,
+que mesmo assim nunca existiram.
+
+O contraste fecha o diagnostico:
+
+| origem | tipo de fonte | resultado |
+|---|---|---|
+| `gerado_por = 'ia'` | jornalistica | 32 de 34 mortas |
+| `gerado_por = 'ia'` | oficial | 197 URLs, das quais **166 sao dominio nu** |
+| `gerado_por = 'curadoria'` | qualquer | as testadas estao vivas e sustentam a claim |
+
+**Consequencia pratica: nenhuma fonte jornalistica com `gerado_por = 'ia'` deve
+ser considerada verificada.** Nao e caso a caso, e a camada inteira.
+
+## 2.2 As 33 claims de preenchimento automatico
+
+33 claims de gravidade `baixa`, uma para cada um de 33 candidatos distintos,
+com dois titulos apenas:
+
+- "Sem historico de mandato eletivo registrado" (10), fonte `https://www.tse.jus.br`
+- "Carreira politica: N mandato(s) registrado(s)" (23), fontes
+  `https://www.camara.leg.br` e `https://www.senado.leg.br`
+
+Todas com dominio nu como "fonte". Elas respondem por 166 das URLs de dominio
+nu contadas acima.
+
+Estas nao precisam de 33 investigacoes. Precisam de uma decisao: **contagem de
+mandato nao e ponto de atencao, e um dado derivado** que o projeto ja tem em
+`historico_politico`. Ou o campo passa a ser renderizado como dado da ficha,
+com a fonte apontando para o dataset real do TSE, ou as claims saem. Manter
+como "ponto de atencao" com a home do TSE como prova nao serve a nenhum dos
+dois propositos.
+
+## 2.3 As 19 claims substantivas
+
+Verificadas uma a uma, mesmo metodo da Parte 1: agentes independentes com
+proibicao de devolver URL nao aberta, seguidos de reverificacao minha com
+`probeUrlReal`. **17 URLs novas recomendadas, 17 de 17 vivas.** Somando as duas
+partes: **33 de 33 URLs propostas neste documento passaram no probe do
+proprio projeto.**
+
+### Erros factuais no ar (corrigir antes de publicar)
+
+| id | candidato | erro |
+|---|---|---|
+| `90f21c81` | ratinho-junior | **"PR com menor taxa de desemprego do Sul em 2023" e FALSO.** Puxei a PNAD Continua direto da API do SIDRA: Santa Catarina bateu o Parana nos QUATRO trimestres (media anual SC 3,55% contra PR 4,90%). Nao existe recorte de 2023 em que a afirmacao seja verdadeira. |
+| `7430457c` | michelle-bolsonaro | **"Nunca ocupou cargo publico" e FALSO.** Foi secretaria parlamentar na Camara entre 2004 e 2008, incluindo 14 meses no gabinete do proprio marido, de onde saiu apos a sumula do STF contra nepotismo. |
+| `5a9d9a65` | ciro-gomes | Saida do PDT datada de 2022; foi em **17/10/2025**. Em outubro de 2022 ele era o candidato do PDT a Presidencia, ou seja, a claim afirma que ele saiu do partido no momento em que o representava. Hoje esta no PSDB. |
+| `67942ea6` | aldo-rebelo | Contagem de partidos errada (foram cinco, nao quatro) e desatualizada: foi expulso do DC em 22/05/2026, homologado em 25/05/2026, e hoje esta sem partido. |
+| `e62c9cb6` | tarcisio | O numero "73 leiloes" nao aparece em fonte nenhuma; o proprio governo dele usa 84. A fonte atual, `gov.br/infraestrutura`, redireciona para outro orgao porque o Ministerio da Infraestrutura foi extinto em 2023. |
+| `4e2f13a0` | eduardo-leite | Filiacao ao PSD datada de abril/2024; foi em **09/05/2025**. O texto tambem para em "busca de espaco para 2026", quando ele ja oficializou pre-candidatura em 06/03/2026. |
+| `b0f094ce` | tarcisio | A Sabesp nao foi privatizada: foi desestatizacao parcial, com o Estado caindo de 50,3% para 18,3% e seguindo maior acionista individual. O superlativo "maior privatizacao estadual da historia" nao se sustenta em fonte alguma. |
+
+### Fonte que responde 200 mas nao prova a claim
+
+Esta categoria e a mais traicoeira, porque passa em qualquer link-check:
+
+| id | candidato | problema |
+|---|---|---|
+| `84e148c3` | delegado-eder-mauro | A claim tem duas fontes. A do STF sustenta tudo. **A do STJ e de outro processo inteiramente**: e o REsp 1897338-DF, caso Maria Regina Sousa contra Joice Hasselmann e Google. Deve sair da lista. |
+| `b830aeec` | simone-tebet | A ficha de tramitacao do Senado tem o campo de votacao nominal VAZIO, entao nao prova o voto individual dela. A fonte que prova e a chamada nominal publicada pela Agencia Senado, onde ela aparece entre os 53 favoraveis. O open data de voto nominal foi desativado em 01/02/2026. |
+| `6ef3e291` | aldo-rebelo | `camara.leg.br/deputados/73428` e a ficha atual de deputado e nao mostra presidencia nem ministerios. A pagina oficial de ex-presidentes da Camara sustenta. |
+| `a35ef613` | tarcisio | `datafolha.folha.uol.com.br` e dominio nu. Pior: no mesmo Datafolha de julho/2026 a aprovacao da gestao e 63% (sustenta a claim) mas otimo/bom e 45% (derruba). Dizer so "acima de 50%" escolhe silenciosamente a metrica favoravel. |
+
+### Enquadramento editorial publicado como fato
+
+Padrao que apareceu em pelo menos 8 das 19, e que nenhum link-check pega:
+
+- **Elogio classificado como ponto de atencao**: "Recorde de concessoes"
+  (tarcisio), "Aprovacao acima de 50%" (tarcisio), "Governador do Ceara com
+  investimento em educacao" (ciro-gomes), "Reforma da previdencia" (eduardo-leite).
+  Numa plataforma de fiscalizacao, release do biografado com a autoridade de
+  achado de auditoria e pior que erro de numero.
+- **Juizo com aparencia de fato**: "Historico de dificuldade em manter
+  aliancas" (marina-silva), "Questiona-se a construcao de base propria"
+  (ratinho-junior, em voz passiva sem sujeito), "foi RECOMPENSADA com o
+  Ministerio" (simone-tebet), "reduzindo deficit previdenciario"
+  (eduardo-leite, projecao que reproduz fala do proprio governador; o deficit
+  do RPPS/RS ainda era ~R$ 9,8 bi em 2024).
+- **Culpa por coincidencia temporal**: "Ministro do Esporte durante escandalo
+  da Copa 2014" (aldo-rebelo). Nao ha imputacao concreta a ele; a fonte que
+  achei diz explicitamente que ele nao foi acusado.
+
+### Decaimento temporal
+
+Terceiro problema estrutural, alem de fonte e enquadramento: o seed trata como
+vigente coisa que mudou. Filiacao partidaria de Ciro e de Aldo, cargo de
+ministra da Tebet (saiu em 31/03/2026), status processual do Bolsonaro. **Toda
+claim de filiacao partidaria e de cargo em exercicio precisa de revalidacao**,
+nao so as auditadas aqui. Uma ficha que diz "e ministra" apodrece sozinha, sem
+ninguem editar nada.
+
+## 2.4 Conclusao das duas partes
+
+Das 70 claims da fila de publicacao com fonte inutilizavel:
+
+- 33 sao preenchimento automatico e pedem uma decisao de produto, nao 33 investigacoes.
+- 37 sao substantivas e foram auditadas uma a uma. **Nenhuma sobreviveu intacta.**
+- 3 afirmam hoje coisa factualmente falsa sobre pessoa nomeada (ABJ Marketing,
+  R$ 282 milhoes, "condenado em 2a instancia") e mais 4 tem numero ou data que
+  nenhuma fonte sustenta.
+
+O defeito nao e "fontes que morreram". E que a camada de claims gerada por IA
+entrou no banco sem verificacao, com fonte fabricada, numero inventado,
+enquadramento editorial e decaimento temporal. O link-check pega so a primeira
+dessas quatro coisas.
