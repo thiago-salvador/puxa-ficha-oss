@@ -40,6 +40,31 @@
  * e agora também que nenhuma delas seja de domínio da lista de verificação
  * manual (`DOMINIOS_VERIFICACAO_MANUAL` em src/lib/fonte-substancia.ts).
  *
+ * O QUE MUDOU EM 2026-07-29: DOIS NÍVEIS DE ALARME
+ *
+ * A primeira execução com credencial no CI reprovou 71 claims e 36 URLs
+ * mortas. Cruzando com `candidatos_publico`, só 7 dessas claims estavam em
+ * ficha de candidato de fato publicado, e as 7 tinham TODAS as fontes
+ * `indisponivel`, o veredito que este arquivo já declarava como temporário.
+ * Ou seja: o job ficaria vermelho toda semana sem que nada estivesse errado na
+ * superfície pública. Gate que grita sem motivo é gate que alguém silencia, e
+ * aí ele não pega o dia em que o problema for real.
+ *
+ * Duas correções, e nenhuma delas afrouxa a checagem:
+ *
+ *   1. `visivel = true` no ponto de atenção NÃO significa que a claim aparece
+ *      no site. O candidato dono dela também precisa estar em
+ *      `candidatos_publico`. O campo `publico` da linha carrega esse fato, e
+ *      `--gate-somente-publicos` restringe o CRITÉRIO DE FALHA ao recorte que
+ *      o leitor enxerga. A checagem continua rodando sobre tudo, e o que ficou
+ *      de fora do recorte público continua no relatório: esse conjunto é a
+ *      fila de publicação, e checá-lo só depois de publicar seria checar tarde
+ *      demais.
+ *   2. Claim cujas fontes são todas `indisponivel` deixa de contar como
+ *      defeito. Vira aviso. Falha exige defeito REAL de sourcing, isto é ao
+ *      menos uma fonte `morta`, `sem_caminho` ou `sem_substancia`. É o que o
+ *      cabeçalho acima já dizia sobre despublicação, aplicado também ao gate.
+ *
  * Modos:
  *   --dry-run   (padrão) só reporta, nunca escreve
  *   --apply     despublica (visivel = false) a claim cujas fontes estão TODAS
@@ -52,7 +77,7 @@
  *   npx tsx scripts/link-check-pontos-atencao.ts --apply
  *
  * Flags extras: --limit=N, --timeout=MS, --concurrency=N, --host-delay=MS,
- * --max-bytes=N, --only-visible
+ * --max-bytes=N, --only-visible, --gate-somente-publicos
  */
 
 import { pathToFileURL } from "node:url"
@@ -83,6 +108,12 @@ export interface PontoAtencaoLinkRow {
   visivel: boolean | null
   fontes: unknown
   dados_relacionados: unknown
+  /**
+   * O candidato dono da claim está em `candidatos_publico`, ou seja, a ficha
+   * existe para o leitor. Ausente ou `undefined` é tratado como `true` de
+   * propósito: na dúvida sobre o alcance, o alarme fala mais alto, não menos.
+   */
+  publico?: boolean
 }
 
 export interface LinkCheckDeps {
@@ -108,6 +139,8 @@ export interface ClaimVeredito {
   titulo: string
   gravidade: string | null
   visivel: boolean
+  /** Ver `PontoAtencaoLinkRow.publico`. */
+  publico: boolean
   total: number
   vivas: number
   mortas: number
@@ -129,6 +162,15 @@ export interface LinkCheckResult {
   claimsTotalmenteMortas: ClaimVeredito[]
   claimsParcialmenteMortas: ClaimVeredito[]
   claimsSemFonteComConteudo: ClaimVeredito[]
+  /**
+   * Subconjunto de `claimsSemFonteComConteudo` com defeito REAL de sourcing
+   * (ao menos uma fonte morta, sem caminho ou sem substância). Claim cujas
+   * fontes estão todas apenas `indisponivel` fica de fora: é temporária por
+   * definição e volta sozinha.
+   */
+  claimsSemFonteUtilizavel: ClaimVeredito[]
+  /** Claims visíveis com ao menos uma fonte morta, total ou parcialmente. */
+  claimsComFonteMorta: ClaimVeredito[]
   despublicadas: number
   bloqueadasPorVerificacaoManual: number
   erros: number
@@ -353,6 +395,7 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
   const claimsTotalmenteMortas: ClaimVeredito[] = []
   const claimsParcialmenteMortas: ClaimVeredito[] = []
   const claimsSemFonteComConteudo: ClaimVeredito[] = []
+  const claimsComFonteMorta: ClaimVeredito[] = []
 
   for (const row of rows) {
     const lista = urlsDaFonte(row.fontes)
@@ -364,6 +407,7 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
       titulo: row.titulo,
       gravidade: row.gravidade,
       visivel: row.visivel === true,
+      publico: row.publico !== false,
       total: lista.length,
       vivas: status.filter((s) => s === "viva").length,
       mortas: status.filter((s) => s === "morta").length,
@@ -381,6 +425,7 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
     if (veredito.vivas === 0 && veredito.visivel) claimsSemFonteComConteudo.push(veredito)
 
     if (veredito.mortas === 0) continue
+    if (veredito.visivel) claimsComFonteMorta.push(veredito)
     // "Todas mortas" exige zero vivas, zero indisponíveis e zero sem
     // substância: fonte que só bloqueou robô ou que está sob vedação eleitoral
     // não pode contribuir para tirar a claim do ar.
@@ -458,10 +503,15 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
     claimsTotalmenteMortas,
     claimsParcialmenteMortas,
     claimsSemFonteComConteudo,
+    claimsSemFonteUtilizavel: claimsSemFonteComConteudo.filter(temDefeitoRealDeFonte),
+    claimsComFonteMorta,
     despublicadas,
     bloqueadasPorVerificacaoManual,
     erros,
   }
+
+  const noFront = (v: ClaimVeredito) => v.publico
+  const foraDoFront = (v: ClaimVeredito) => !v.publico
 
   log(
     `${apply ? "Aplicado." : "Dry-run. Nenhuma escrita."}\n` +
@@ -473,12 +523,33 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
       `  Claims com TODAS as fontes mortas: ${resultado.claimsTotalmenteMortas.length}\n` +
       `  Claims com fonte morta mas nao todas: ${resultado.claimsParcialmenteMortas.length}\n` +
       `  Claims publicadas sem fonte com conteudo: ${resultado.claimsSemFonteComConteudo.length}\n` +
+      `    destas, com defeito real de fonte: ${resultado.claimsSemFonteUtilizavel.length} ` +
+      `(o resto e indisponibilidade temporaria)\n` +
+      `  EM FICHA PUBLICA (o que o leitor ve agora):\n` +
+      `    com fonte morta: ${resultado.claimsComFonteMorta.filter(noFront).length}\n` +
+      `    sem fonte utilizavel: ${resultado.claimsSemFonteUtilizavel.filter(noFront).length}\n` +
+      `  FILA DE PUBLICACAO (candidato fora do front, corrigir ANTES de publicar):\n` +
+      `    com fonte morta: ${resultado.claimsComFonteMorta.filter(foraDoFront).length}\n` +
+      `    sem fonte utilizavel: ${resultado.claimsSemFonteUtilizavel.filter(foraDoFront).length}\n` +
       `  Despublicadas nesta execucao: ${resultado.despublicadas}\n` +
       `  Retidas para verificacao humana: ${resultado.bloqueadasPorVerificacaoManual}\n` +
       `  Erros de escrita: ${resultado.erros}`,
   )
 
   return resultado
+}
+
+/**
+ * Defeito real de sourcing, em oposição a indisponibilidade temporária.
+ *
+ * `indisponivel` cobre bloqueio de robô, 5xx, timeout e vedação eleitoral: a
+ * fonte volta sozinha, e por isso este arquivo nunca despublica com base nela.
+ * O gate segue a mesma doutrina. Já `morta`, `sem_caminho` e `sem_substancia`
+ * descrevem fonte que não sustenta a afirmação, e nenhuma delas se resolve com
+ * o tempo.
+ */
+export function temDefeitoRealDeFonte(veredito: ClaimVeredito): boolean {
+  return veredito.mortas > 0 || veredito.semCaminho > 0 || veredito.semSubstancia > 0
 }
 
 function parseNumberFlag(prefixo: string, padrao: number | null): number | null {
@@ -537,11 +608,35 @@ async function despublicarNoBanco(row: PontoAtencaoLinkRow, motivo: string): Pro
   if (semColunas.error) throw new Error(semColunas.error.message)
 }
 
+/**
+ * Ids dos candidatos que o leitor de fato alcança. `candidatos_publico` é a
+ * mesma view que o app consulta, então o recorte aqui é o recorte do site, e
+ * não uma segunda definição de "público" que poderia divergir com o tempo.
+ */
+async function idsDeCandidatosPublicos(): Promise<Set<string>> {
+  const pageSize = 1000
+  const ids = new Set<string>()
+  for (let from = 0; ; from += pageSize) {
+    const { data, error: err } = await supabase
+      .from("candidatos_publico")
+      .select("id")
+      .order("id")
+      .range(from, from + pageSize - 1)
+
+    if (err) throw new Error(`candidatos_publico: ${err.message}`)
+    const pagina = (data ?? []) as Array<{ id: string }>
+    for (const linha of pagina) ids.add(linha.id)
+    if (pagina.length < pageSize) break
+  }
+  return ids
+}
+
 async function main() {
   const apply = process.argv.includes("--apply")
   const onlyVisible = process.argv.includes("--only-visible")
   const failOnDead = process.argv.includes("--fail-on-dead")
   const failOnSemSubstancia = process.argv.includes("--fail-on-sem-substancia")
+  const gateSomentePublicos = process.argv.includes("--gate-somente-publicos")
   const limit = parseNumberFlag("--limit=", null)
   const timeoutMs = parseNumberFlag("--timeout=", 20000) ?? 20000
   const concurrency = parseNumberFlag("--concurrency=", 6) ?? 6
@@ -559,6 +654,7 @@ async function main() {
     onlyVisible,
     limit,
     async fetchRows() {
+      const publicos = await idsDeCandidatosPublicos()
       const pageSize = 500
       const todas: PontoAtencaoLinkRow[] = []
       for (let from = 0; ; from += pageSize) {
@@ -570,7 +666,12 @@ async function main() {
 
         if (err) throw new Error(err.message)
         const pagina = (data ?? []) as PontoAtencaoLinkRow[]
-        todas.push(...pagina)
+        todas.push(
+          ...pagina.map((row) => ({
+            ...row,
+            publico: row.candidato_id !== null && publicos.has(row.candidato_id),
+          })),
+        )
         if (pagina.length < pageSize) break
       }
       return todas
@@ -584,15 +685,28 @@ async function main() {
   })
 
   if (resultado.erros > 0) process.exitCode = 1
-  if (failOnDead && resultado.urlsMortas > 0) {
-    baseError(SOURCE, `${resultado.urlsMortas} URL(s) morta(s) encontradas e --fail-on-dead esta ligado.`)
-    process.exitCode = 1
-  }
-  if (failOnSemSubstancia && resultado.claimsSemFonteComConteudo.length > 0) {
+
+  // Com --gate-somente-publicos, só derruba o job o que o leitor alcança hoje.
+  // O resto continua no relatório acima como fila de publicação: é dívida a
+  // pagar antes de publicar o candidato, não incidente da semana.
+  const noEscopo = (veredito: ClaimVeredito) => !gateSomentePublicos || veredito.publico
+
+  const mortasNoEscopo = resultado.claimsComFonteMorta.filter(noEscopo)
+  if (failOnDead && mortasNoEscopo.length > 0) {
     baseError(
       SOURCE,
-      `${resultado.claimsSemFonteComConteudo.length} claim(s) publicada(s) sem nenhuma fonte com conteudo recuperavel ` +
-        `e --fail-on-sem-substancia esta ligado.`,
+      `${mortasNoEscopo.length} claim(s) visivel(is) com fonte morta` +
+        `${gateSomentePublicos ? " em ficha publica" : ""} e --fail-on-dead esta ligado.`,
+    )
+    process.exitCode = 1
+  }
+
+  const semFonteNoEscopo = resultado.claimsSemFonteUtilizavel.filter(noEscopo)
+  if (failOnSemSubstancia && semFonteNoEscopo.length > 0) {
+    baseError(
+      SOURCE,
+      `${semFonteNoEscopo.length} claim(s) publicada(s) sem nenhuma fonte utilizavel` +
+        `${gateSomentePublicos ? " em ficha publica" : ""} e --fail-on-sem-substancia esta ligado.`,
     )
     process.exitCode = 1
   }

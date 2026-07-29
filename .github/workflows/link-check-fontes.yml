@@ -30,9 +30,23 @@ name: Link-check das fontes
 #
 # SEMPRE em modo dry-run. Nenhuma execução automática escreve no banco: a
 # despublicação (`npm run data:link-check-fontes`) é decisão humana, rodada à
-# mão depois de olhar o relatório. O job falha quando encontra URL morta ou
-# claim publicada sem nenhuma fonte com conteúdo, e é a falha que serve de
-# alerta.
+# mão depois de olhar o relatório. É a falha do job que serve de alerta.
+#
+# DOIS NÍVEIS DE ALARME (2026-07-29). A primeira execução com credencial
+# reprovou 71 claims e 36 URLs mortas, mas só 7 dessas claims estavam em ficha
+# de candidato publicado, e as 7 tinham TODAS as fontes `indisponivel`, que é
+# justamente o veredito temporário. O job nasceria vermelho toda semana sem
+# nada errado na superfície pública, e gate que grita sem motivo é gate que
+# alguém silencia.
+#
+# Por isso o gate roda com `--gate-somente-publicos`: derruba o job só o que o
+# leitor alcança hoje (candidato em `candidatos_publico`), e só por defeito
+# REAL de fonte (morta, sem caminho ou sem substância), nunca por
+# indisponibilidade temporária. A checagem continua cobrindo o banco inteiro, e
+# o que está fora do recorte público aparece no resumo como FILA DE
+# PUBLICACAO: é dívida a pagar ANTES de publicar aquele candidato, não
+# incidente da semana. Para ver tudo com o critério antigo, existe
+# `npm run data:link-check-fontes:gate:tudo`.
 #
 # Não roda em pull_request: usa SUPABASE_SERVICE_ROLE_KEY, e secret não é
 # exposto a PR de fork.
@@ -74,7 +88,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Link-check (dry-run, falha se houver URL morta ou claim sem fonte com conteúdo)
+      - name: Link-check (dry-run, falha por defeito real de fonte em ficha pública)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

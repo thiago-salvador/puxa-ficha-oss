@@ -51,7 +51,8 @@
     "data:recalc-financiamento-doadores": "tsx scripts/recalc-financiamento-maiores-doadores.ts --apply",
     "data:recalc-financiamento-doadores:dry-run": "tsx scripts/recalc-financiamento-maiores-doadores.ts --dry-run",
     "data:link-check-fontes:dry-run": "tsx scripts/link-check-pontos-atencao.ts --dry-run",
-    "data:link-check-fontes:gate": "tsx scripts/link-check-pontos-atencao.ts --dry-run --fail-on-dead --fail-on-sem-substancia",
+    "data:link-check-fontes:gate": "tsx scripts/link-check-pontos-atencao.ts --dry-run --fail-on-dead --fail-on-sem-substancia --gate-somente-publicos",
+    "data:link-check-fontes:gate:tudo": "tsx scripts/link-check-pontos-atencao.ts --dry-run --fail-on-dead --fail-on-sem-substancia",
     "data:link-check-fontes": "tsx scripts/link-check-pontos-atencao.ts --apply"
   },
   "dependencies": {
