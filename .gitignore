@@ -37,8 +37,10 @@ tmp/
 logs/
 
 # env files
-.env
-.env*.local
+# `.env*` cobre tambem o que `vercel env pull` escreve fora do padrao
+# (`.env.production`, por exemplo). A excecao mantem o template versionado.
+.env*
+!.env.example
 
 # local script state (regenerable)
 scripts/audit-factual-*.json
