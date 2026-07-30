@@ -56,6 +56,19 @@ export interface RegistroTSE {
   partido: string
   ue: string
   uf: string
+  /**
+   * DT_NASCIMENTO, no formato cru do TSE (dd/mm/aaaa).
+   *
+   * Existe por causa do achado de 30/07/2026: a comparacao por NOME tem um
+   * ponto cego em homonimo, e ela sozinha aprovou 30 SQ de outra pessoa. O
+   * caso fundador foi `alvaro-dias-rn` (Alvaro Costa Dias, ex-prefeito de
+   * Natal) casando com ALVARO FERNANDES DIAS, senador do PR: os dois nomes
+   * compartilham "Alvaro" e "Dias", entao `avaliarIdentidade` devolvia forte.
+   *
+   * Data de nascimento fecha esse buraco sem falso positivo, porque uma pessoa
+   * tem UMA data. Ver `inconsistenciasDeNascimento`.
+   */
+  nascimento: string
 }
 
 /** Remove acentos e caixa, porque o TSE grava tudo em maiuscula sem padrao de acento. */
@@ -196,6 +209,7 @@ async function indexarAno(dirAno: string): Promise<Map<string, RegistroTSE[]>> {
         partido: pos("SG_PARTIDO"),
         ue: pos("NM_UE"),
         uf: pos("SG_UF"),
+        nascimento: pos("DT_NASCIMENTO"),
       }
       const lista = indice.get(sq) ?? []
       // 1o e 2o turno repetem a mesma pessoa; guardar uma vez so.
@@ -217,6 +231,84 @@ interface Divergencia {
   ufSeed: string | null
   achado: RegistroTSE | null
   nivel: "parcial" | "nenhum" | "ausente"
+}
+
+export interface ObservacaoNascimento {
+  ano: string
+  sq: string
+  nascimento: string
+  nome: string
+  uf: string
+}
+
+export interface InconsistenciaNascimento {
+  slug: string
+  /** A data de maior frequencia entre os anos; e a ancora presumida. */
+  ancora: string
+  /** Observacoes cuja data diverge da ancora, ou seja os SQ suspeitos. */
+  divergentes: ObservacaoNascimento[]
+}
+
+/**
+ * Cruza as datas de nascimento que os SQ de um mesmo slug devolvem.
+ *
+ * Uma pessoa tem UMA data de nascimento. Se os SQ atribuidos a um slug
+ * discordam, pelo menos um deles e de outra pessoa. Isso nao tem falso
+ * positivo por homonimo, que e justamente o buraco da comparacao por nome.
+ *
+ * O que ele NAO decide: qual dos lados esta certo. A ancora e so a data mais
+ * frequente, e um slug com 1 SQ certo e 3 errados apontaria para o lado
+ * errado. Por isso a saida e "confira estes", nao "corrija assim".
+ *
+ * Divergencia de 1 digito com nome identico em todos os anos costuma ser erro
+ * de digitacao do proprio TSE, e nao pessoa errada. O gate reporta mesmo
+ * assim, porque distinguir isso exige leitura humana, mas o texto avisa.
+ */
+export function inconsistenciasDeNascimento(
+  porSlug: Map<string, ObservacaoNascimento[]>,
+  /**
+   * Pares "slug:ano" ja revisados e confirmados como erro de digitacao do TSE,
+   * vindos de `data/sq-exceptions.json` com reason `tse-birthdate-typo`.
+   *
+   * Exceção so entra com evidencia de DOCUMENTO (CPF e titulo eleitoral
+   * batendo entre os anos), nunca por nome parecido: nome foi exatamente o que
+   * deixou 30 SQ de outra pessoa passarem.
+   */
+  isentos: ReadonlySet<string> = new Set()
+): InconsistenciaNascimento[] {
+  const saida: InconsistenciaNascimento[] = []
+
+  for (const [slug, observacoes] of porSlug) {
+    const validas = observacoes.filter(
+      (o) =>
+        o.nascimento &&
+        o.nascimento !== "#NULO#" &&
+        o.nascimento !== "#NE#" &&
+        !isentos.has(`${slug}:${o.ano}`)
+    )
+    if (validas.length < 2) continue
+
+    const frequencia = new Map<string, number>()
+    for (const o of validas) frequencia.set(o.nascimento, (frequencia.get(o.nascimento) ?? 0) + 1)
+    if (frequencia.size < 2) continue
+
+    let ancora = ""
+    let melhor = -1
+    for (const [data, n] of frequencia) {
+      if (n > melhor) {
+        melhor = n
+        ancora = data
+      }
+    }
+
+    saida.push({
+      slug,
+      ancora,
+      divergentes: validas.filter((o) => o.nascimento !== ancora),
+    })
+  }
+
+  return saida.sort((a, b) => a.slug.localeCompare(b.slug))
 }
 
 export async function main() {
@@ -249,6 +341,7 @@ export async function main() {
 
   const anos = (anosPedidos.length ? anosPedidos : [...porAno.keys()]).sort()
   const divergencias: Divergencia[] = []
+  const nascimentosPorSlug = new Map<string, ObservacaoNascimento[]>()
   let conferidos = 0
   let semPacote = 0
 
@@ -266,6 +359,31 @@ export async function main() {
     for (const par of pares) {
       conferidos += 1
       const candidatos = indice.get(par.sq) ?? []
+
+      // Coleta a data de nascimento deste (slug, ano) para o cruzamento entre
+      // anos. Ate 2008 o SQ e sequencial POR UF e `candidatos` traz varias
+      // pessoas: so alimenta o cruzamento quando da pra saber de quem e a
+      // data, ou seja quando ha um registro so, ou quando a UF do seed
+      // desempata. Ambiguidade fica de fora em vez de virar acusacao errada.
+      {
+        const daUf = par.uf
+          ? candidatos.filter((r) => r.uf && normalizar(r.uf) === normalizar(par.uf as string))
+          : []
+        const escolhido =
+          daUf.length === 1 ? daUf[0] : candidatos.length === 1 ? candidatos[0] : null
+        if (escolhido?.nascimento) {
+          const lista = nascimentosPorSlug.get(par.slug) ?? []
+          lista.push({
+            ano,
+            sq: par.sq,
+            nascimento: escolhido.nascimento,
+            nome: escolhido.nome,
+            uf: escolhido.uf,
+          })
+          nascimentosPorSlug.set(par.slug, lista)
+        }
+      }
+
       if (!candidatos.length) {
         divergencias.push({
           slug: par.slug, ano, sq: par.sq, nomeSeed: par.nome,
@@ -365,12 +483,55 @@ export async function main() {
     ambiguas.forEach(imprimir)
   }
 
-  if (!divergencias.length) console.log("\nNenhuma divergencia nos anos conferidos.")
+  // Cruzamento de data de nascimento entre anos. Roda sobre TODOS os pares,
+  // inclusive os que a comparacao por nome aprovou, que e exatamente onde o
+  // homonimo se esconde.
+  const isentosNascimento = new Set<string>()
+  try {
+    const excecoes = JSON.parse(
+      readFileSync(resolve(process.cwd(), "data/sq-exceptions.json"), "utf-8")
+    ) as { entries?: Array<{ slug: string; ano: number; reason: string }> }
+    for (const e of excecoes.entries ?? []) {
+      if (e.reason === "tse-birthdate-typo") isentosNascimento.add(`${e.slug}:${e.ano}`)
+    }
+  } catch {
+    // Sem arquivo de excecao o gate fica mais rigoroso, nunca mais frouxo.
+  }
+
+  const nascimentoInconsistente = inconsistenciasDeNascimento(
+    nascimentosPorSlug,
+    isentosNascimento
+  )
+  console.log(`Nascimento divergente : ${nascimentoInconsistente.length}`)
+
+  if (nascimentoInconsistente.length) {
+    console.log("\n" + "-".repeat(72))
+    console.log("DATA DE NASCIMENTO DIVERGENTE ENTRE OS ANOS DO MESMO SLUG")
+    console.log("-".repeat(72))
+    console.log("Uma pessoa tem UMA data de nascimento. Se os SQ de um slug discordam,")
+    console.log("pelo menos um deles e de outra pessoa. Divergencia de 1 digito com nome")
+    console.log("identico em todos os anos costuma ser erro de digitacao do TSE.")
+    for (const item of nascimentoInconsistente) {
+      console.log(`\n  ${item.slug} (ancora ${item.ancora})`)
+      for (const d of item.divergentes) {
+        console.log(`    ${d.ano} SQ ${d.sq} nasc ${d.nascimento} [${d.uf}] ${d.nome}`)
+      }
+    }
+  }
+
+  if (!divergencias.length && !nascimentoInconsistente.length) {
+    console.log("\nNenhuma divergencia nos anos conferidos.")
+  }
 
   // O gate so reprova o que tem evidencia de pessoa errada. Ambiguidade vira
   // trabalho de revisao, nao build vermelho: um gate que grita por engano
   // ensina a ignorar o gate.
-  if (modoGate && graves.length) process.exit(1)
+  //
+  // Nascimento divergente entra como reprovacao porque nao e ambiguidade: e
+  // contradicao factual entre dois registros oficiais atribuidos a mesma
+  // pessoa. Foi o unico sinal que pegou os 30 SQ errados de 30/07/2026, que a
+  // comparacao por nome tinha aprovado com 0 divergencia.
+  if (modoGate && (graves.length || nascimentoInconsistente.length)) process.exit(1)
 }
 
 // Precisa ser exato: o arquivo de teste tambem contem "audit-seed-sq-identity"

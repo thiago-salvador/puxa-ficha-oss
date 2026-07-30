@@ -7,7 +7,7 @@ import { log, warn, error } from "./lib/logger"
 import {
   createTSEResolver,
   getResolveMethodPriority,
-  shouldSkipWeakMatchForAno,
+  shouldSkipWeakMatch,
   type ResolveMethod,
 } from "./lib/tse-resolver"
 import type { CandidatoConfig } from "./lib/types"
@@ -199,7 +199,7 @@ async function persistForAno(
 
       const match = resolver.resolveRow(row)
       if (!match) return
-      if (shouldSkipWeakMatchForAno(ano, match.method)) {
+      if (shouldSkipWeakMatch(match.method)) {
         return
       }
 
