@@ -3825,5 +3825,65 @@
         "2022": "250001700018"
       }
     }
+  },
+  {
+    "slug": "patrus-ananias",
+    "nome_completo": "Patrus Ananias de Souza",
+    "nome_urna": "Patrus Ananias",
+    "cargo_disputado": "Governador",
+    "estado": "MG",
+    "ids": {
+      "camara": 74160,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "coronel-busnello",
+    "nome_completo": "João Jacques Soares Busnello",
+    "nome_urna": "Coronel Busnello",
+    "cargo_disputado": "Governador",
+    "estado": "RJ",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "marcus-sodre",
+    "nome_completo": "Marcus Alexandre Sodré",
+    "nome_urna": "Marcus Sodré",
+    "cargo_disputado": "Governador",
+    "estado": "SC",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "witer-naves",
+    "nome_completo": "Witer Fonseca Naves",
+    "nome_urna": "Witer Naves",
+    "cargo_disputado": "Governador",
+    "estado": "TO",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "jeremias-cosmo",
+    "nome_completo": "Jeremias Cosmo",
+    "nome_urna": "Professor Jeremias",
+    "cargo_disputado": "Governador",
+    "estado": "PE",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
   }
 ]
