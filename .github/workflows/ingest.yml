@@ -32,6 +32,17 @@ on:
         description: "Fontes (separadas por espaço): camara senado tse transparencia google-news"
         required: false
         default: "camara senado"
+      # Em 30/07/2026 o job `camara` estourou os 30 min e foi cancelado sem
+      # chegar no candidato alvo: a fila roda na ordem do seed, gasta 70-90s por
+      # candidato e sempre recomeça do topo. O script ja tinha as duas saidas
+      # (`--slugs` e `--skip-camara-validated`), mas nenhuma era alcancavel pelo
+      # dispatch, entao a unica forma de enriquecer 1 ficha era rodar a coorte
+      # inteira e torcer pra caber na janela.
+      incremental:
+        description: "Camara: pular quem ja tem votos+projetos+gastos recentes (evita o timeout de 30 min)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -67,6 +78,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TRANSPARENCIA_API_KEY: ${{ secrets.TRANSPARENCIA_API_KEY }}
           RAW_SOURCES: ${{ github.event.inputs.sources || 'camara senado' }}
+          INCREMENTAL: ${{ github.event.inputs.incremental }}
         run: |
           set -euo pipefail
           SAFE=""
@@ -76,7 +88,14 @@ jobs:
               *) echo "::error::fonte inválida: $s" ; exit 1 ;;
             esac
           done
-          npx tsx scripts/ingest-all.ts $SAFE
+          # A flag nao entra na allowlist de fontes de proposito: ela e booleana
+          # e vem de `inputs`, nunca de string livre, entao nao ha superficie de
+          # injecao pelo campo de texto.
+          FLAGS=""
+          if [ "${INCREMENTAL:-false}" = "true" ]; then
+            FLAGS="--skip-camara-validated"
+          fi
+          npx tsx scripts/ingest-all.ts $SAFE $FLAGS
 
   ingest-tse:
     name: TSE CSV
