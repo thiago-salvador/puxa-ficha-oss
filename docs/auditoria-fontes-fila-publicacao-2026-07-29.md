@@ -238,7 +238,7 @@ proprio projeto.**
 | `5a9d9a65` | ciro-gomes | Saida do PDT datada de 2022; foi em **17/10/2025**. Em outubro de 2022 ele era o candidato do PDT a Presidencia, ou seja, a claim afirma que ele saiu do partido no momento em que o representava. Hoje esta no PSDB. |
 | `67942ea6` | aldo-rebelo | Contagem de partidos errada (foram cinco, nao quatro) e desatualizada: foi expulso do DC em 22/05/2026, homologado em 25/05/2026, e hoje esta sem partido. |
 | `e62c9cb6` | tarcisio | O numero "73 leiloes" nao aparece em fonte nenhuma; o proprio governo dele usa 84. A fonte atual, `gov.br/infraestrutura`, redireciona para outro orgao porque o Ministerio da Infraestrutura foi extinto em 2023. |
-| `4e2f13a0` | eduardo-leite | Filiacao ao PSD datada de abril/2024; foi em **09/05/2025**. O texto tambem para em "busca de espaco para 2026", quando ele ja oficializou pre-candidatura em 06/03/2026. |
+| `4e2f13a0` | eduardo-leite | Filiacao ao PSD datada de abril/2024; foi em **09/05/2025**. CORRECAO DE 30/07/2026: a versao anterior desta linha dizia que ele "ja oficializou pre-candidatura em 06/03/2026" a Presidencia. Isso caiu. O Thiago confirmou em 30/07 que **Eduardo Leite nao concorrera**, e a varredura dos governadores achou fonte de 30/03/2026 dizendo que, com a escolha de Ronaldo Caiado pelo PSD, ele decidiu ficar no governo do RS ate o fim do mandato. A ficha dele foi marcada `desistente` com cargo `Nenhum` na migration `20260730120000`. |
 | `b0f094ce` | tarcisio | A Sabesp nao foi privatizada: foi desestatizacao parcial, com o Estado caindo de 50,3% para 18,3% e seguindo maior acionista individual. O superlativo "maior privatizacao estadual da historia" nao se sustenta em fonte alguma. |
 
 ### Fonte que responde 200 mas nao prova a claim
