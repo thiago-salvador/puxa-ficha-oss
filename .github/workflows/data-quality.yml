@@ -54,7 +54,12 @@ jobs:
   ids-cohort:
     name: IDs Câmara/Senado vs API oficial
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 minutos era o valor original e a primeira execucao real na main provou
+    # que nao serve: o job foi cortado exatamente no limite (run 30537319506,
+    # 11:07:23 -> 11:37:38). O script consulta as APIs da Camara e do Senado
+    # para 87 slugs com retry e espera entre chamadas, e no runner isso e bem
+    # mais lento que em rede local. 90 minutos da folga sem virar job zumbi.
+    timeout-minutes: 90
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 9 * * 4'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
