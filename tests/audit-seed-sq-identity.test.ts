@@ -20,8 +20,12 @@ import {
   type RegistroTSE,
 } from "../scripts/audit-seed-sq-identity"
 
+// `nascimento` fica vazio de proposito: estes casos exercitam a heuristica de
+// NOME (`avaliarIdentidade` / `compararNomes`), que nao le a data. O
+// cruzamento por data de nascimento e outro mecanismo, testado em
+// `inconsistenciasDeNascimento`, e nao entra aqui.
 function registro(nome: string, urna = ""): RegistroTSE {
-  return { nome, urna, cargo: "", partido: "", ue: "", uf: "" }
+  return { nome, urna, cargo: "", partido: "", ue: "", uf: "", nascimento: "" }
 }
 
 describe("auditor de SQ: heuristica de identidade", () => {
