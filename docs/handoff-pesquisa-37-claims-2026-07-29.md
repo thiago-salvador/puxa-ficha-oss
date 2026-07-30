@@ -63,64 +63,64 @@ a fonte por isso; registrar e, se possivel, buscar equivalente.
 
 ## As 37 claims
 
-UF em branco significa que o campo `estado` esta nulo no banco.
+UF marcada como `n/d` significa que o campo `estado` esta nulo no banco.
 
 ### Gravidade critica (8)
 
 | # | Candidato | Partido | UF | Cargo disputado | Claim | id |
 |---|---|---|---|---|---|---|
-| 1 | Jair Bolsonaro | PL | — | Presidente | Indiciado por tentativa de golpe | `a1b3850e` |
-| 2 | Jair Bolsonaro | PL | — | Presidente | Indiciado por desvio de joias sauditas | `8fb90ea8` |
-| 3 | Jair Bolsonaro | PL | — | Presidente | Inelegivel até 2030 | `4ea818c4` |
-| 4 | Jair Bolsonaro | PL | — | Presidente | Negacionismo na pandemia: 700 mil mortes | `58814104` |
-| 5 | Michelle Bolsonaro | PL | — | Presidente | Joias sauditas e Pix de Queiroz | `72d7742f` |
-| 6 | Pablo Marcal | PRTB | — | Presidente | Laudo falso contra Boulos | `6452c61b` |
-| 7 | Pablo Marcal | PRTB | — | Presidente | Patrimônio declarado de R$ 282 milhões incompativel com histórico | `67f26e0e` |
-| 8 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Operação policial com 56 mortes em Baixada Santista | `f2fa7b99` |
+| 1 | Jair Bolsonaro | PL | n/d | Presidente | Indiciado por tentativa de golpe | `a1b3850e` |
+| 2 | Jair Bolsonaro | PL | n/d | Presidente | Indiciado por desvio de joias sauditas | `8fb90ea8` |
+| 3 | Jair Bolsonaro | PL | n/d | Presidente | Inelegivel até 2030 | `4ea818c4` |
+| 4 | Jair Bolsonaro | PL | n/d | Presidente | Negacionismo na pandemia: 700 mil mortes | `58814104` |
+| 5 | Michelle Bolsonaro | PL | n/d | Presidente | Joias sauditas e Pix de Queiroz | `72d7742f` |
+| 6 | Pablo Marcal | PRTB | n/d | Presidente | Laudo falso contra Boulos | `6452c61b` |
+| 7 | Pablo Marcal | PRTB | n/d | Presidente | Patrimônio declarado de R$ 282 milhões incompativel com histórico | `67f26e0e` |
+| 8 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Operação policial com 56 mortes em Baixada Santista | `f2fa7b99` |
 
 ### Gravidade alta (10)
 
 | # | Candidato | Partido | UF | Cargo disputado | Claim | id |
 |---|---|---|---|---|---|---|
-| 9 | Aldo Rebelo | DC | — | Presidente | De comunista a aliado de Bolsonaro | `4ccf2e70` |
-| 10 | Ciro Gomes | PSDB | — | Presidente | Agressao a jornalista durante campanha | `647c916d` |
-| 11 | Ciro Gomes | PSDB | — | Presidente | Nao apoiou Lula no 2o turno de 2018 e 2022 | `291cf694` |
+| 9 | Aldo Rebelo | DC | n/d | Presidente | De comunista a aliado de Bolsonaro | `4ccf2e70` |
+| 10 | Ciro Gomes | PSDB | n/d | Presidente | Agressao a jornalista durante campanha | `647c916d` |
+| 11 | Ciro Gomes | PSDB | n/d | Presidente | Nao apoiou Lula no 2o turno de 2018 e 2022 | `291cf694` |
 | 12 | Eduardo Leite | PSD | RS | Presidente | Gestão da crise das enchentes no RS criticada | `0b67b436` |
 | 13 | Eduardo Leite | PSD | RS | Presidente | Gestão da reconstrucao pos-enchentes com reconhecimento federal | `0be9f284` |
-| 14 | Haddad (Fernando Haddad) | PT | — | Presidente | Condenado em 2a instancia por caixa 2 | `c52ef3ae` |
-| 15 | Jair Bolsonaro | PL | — | Presidente | Sigilo de 100 anos sobre gastos do cartao corporativo | `9faa0f83` |
-| 16 | Pablo Marcal | PRTB | — | Presidente | Condenação por furto qualificado | `f0922bdd` |
-| 17 | Pablo Marcal | PRTB | — | Presidente | Envolvimento com piramide financeira (ABJ Marketing) | `e572f945` |
-| 18 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Tiro durante comicio em Paraisopolis (2022) | `d470ed69` |
+| 14 | Haddad (Fernando Haddad) | PT | n/d | Presidente | Condenado em 2a instancia por caixa 2 | `c52ef3ae` |
+| 15 | Jair Bolsonaro | PL | n/d | Presidente | Sigilo de 100 anos sobre gastos do cartao corporativo | `9faa0f83` |
+| 16 | Pablo Marcal | PRTB | n/d | Presidente | Condenação por furto qualificado | `f0922bdd` |
+| 17 | Pablo Marcal | PRTB | n/d | Presidente | Envolvimento com piramide financeira (ABJ Marketing) | `e572f945` |
+| 18 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Tiro durante comicio em Paraisopolis (2022) | `d470ed69` |
 
 ### Gravidade media (14)
 
 | # | Candidato | Partido | UF | Cargo disputado | Claim | id |
 |---|---|---|---|---|---|---|
-| 19 | Aldo Rebelo | DC | — | Presidente | 4 partidos em 8 anos após 30 anos no PCdoB | `67942ea6` |
-| 20 | Aldo Rebelo | DC | — | Presidente | Ministro do Esporte durante escandalo da Copa 2014 | `9ecc1bc4` |
-| 21 | Aldo Rebelo | DC | — | Presidente | Presidente da Câmara dos Deputados (2005-2007) | `6ef3e291` |
-| 22 | Ciro Gomes | PSDB | — | Presidente | 7 partidos em 30 anos de carreira política | `5a9d9a65` |
-| 23 | Ciro Gomes | PSDB | — | Presidente | Governador do Ceará com investimento em educação | `f25ad23f` |
+| 19 | Aldo Rebelo | DC | n/d | Presidente | 4 partidos em 8 anos após 30 anos no PCdoB | `67942ea6` |
+| 20 | Aldo Rebelo | DC | n/d | Presidente | Ministro do Esporte durante escandalo da Copa 2014 | `9ecc1bc4` |
+| 21 | Aldo Rebelo | DC | n/d | Presidente | Presidente da Câmara dos Deputados (2005-2007) | `6ef3e291` |
+| 22 | Ciro Gomes | PSDB | n/d | Presidente | 7 partidos em 30 anos de carreira política | `5a9d9a65` |
+| 23 | Ciro Gomes | PSDB | n/d | Presidente | Governador do Ceará com investimento em educação | `f25ad23f` |
 | 24 | Delegado Eder Mauro | PL | PA | Senador | Condenado pelo STF por difamação após divulgar vídeo adulterado | `84e148c3` |
 | 25 | Eduardo Leite | PSD | RS | Presidente | Disputou prévias do PSDB e depois trocou de partido | `4e2f13a0` |
 | 26 | Eduardo Leite | PSD | RS | Presidente | Reforma da previdência estadual do RS | `4ac7cf88` |
-| 27 | Michelle Bolsonaro | PL | — | Presidente | Sem experiência política ou cargo público previo | `7430457c` |
-| 28 | Ratinho Junior | PSD | — | Presidente | PR com menor taxa de desemprego do Sul em 2023 | `90f21c81` |
-| 29 | Simone Tebet | MDB | — | Presidente | Apoiou Temer, depois se alinhou a Lula | `30709a00` |
-| 30 | Simone Tebet | MDB | — | Presidente | Votou pelo Teto de Gastos que agora critica | `b830aeec` |
-| 31 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Mudou domicilio eleitoral para SP sem residência previa | `09f569a7` |
-| 32 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Recorde de concessões rodoviarias como ministro | `e62c9cb6` |
+| 27 | Michelle Bolsonaro | PL | n/d | Presidente | Sem experiência política ou cargo público previo | `7430457c` |
+| 28 | Ratinho Junior | PSD | n/d | Presidente | PR com menor taxa de desemprego do Sul em 2023 | `90f21c81` |
+| 29 | Simone Tebet | MDB | n/d | Presidente | Apoiou Temer, depois se alinhou a Lula | `30709a00` |
+| 30 | Simone Tebet | MDB | n/d | Presidente | Votou pelo Teto de Gastos que agora critica | `b830aeec` |
+| 31 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Mudou domicilio eleitoral para SP sem residência previa | `09f569a7` |
+| 32 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Recorde de concessões rodoviarias como ministro | `e62c9cb6` |
 
 ### Gravidade baixa (5)
 
 | # | Candidato | Partido | UF | Cargo disputado | Claim | id |
 |---|---|---|---|---|---|---|
 | 33 | Anderson Ferreira | PL | PE | Deputado Federal | TRE-PE aplicou multa de R$ 50 mil por propaganda eleitoral antecipada | `cbe1b208` |
-| 34 | Marina Silva | PV | — | Presidente | 4 partidos: PT, PV, PSB, Rede | `020f3f6f` |
-| 35 | Ratinho Junior | PSD | — | Presidente | Herdeiro político: filho do apresentador Ratinho | `35f3d298` |
-| 36 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Aprovação acima de 50% como governador de SP | `a35ef613` |
-| 37 | Tarcísio de Freitas | REPUBLICANOS | — | Presidente | Defensor consistente de privatizações | `b0f094ce` |
+| 34 | Marina Silva | PV | n/d | Presidente | 4 partidos: PT, PV, PSB, Rede | `020f3f6f` |
+| 35 | Ratinho Junior | PSD | n/d | Presidente | Herdeiro político: filho do apresentador Ratinho | `35f3d298` |
+| 36 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Aprovação acima de 50% como governador de SP | `a35ef613` |
+| 37 | Tarcísio de Freitas | REPUBLICANOS | n/d | Presidente | Defensor consistente de privatizações | `b0f094ce` |
 
 ## Distribuicao
 
