@@ -1036,6 +1036,41 @@
       "reason": "no-bens-at-source",
       "detail": "SQ 250001700018 confirmado em consulta_cand_2022. A ingestão e a busca direta nos arquivos oficiais TSE do ano não retornaram linha individual para bens declarados; a ausência fica documentada sem inferência universal.",
       "confirmed": "2026-07-11"
+    },
+    {
+      "slug": "fabio-mitidieri",
+      "ano": 2018,
+      "reason": "tse-birthdate-typo",
+      "detail": "SQ 260000623594 (TSE 2018 SE). A data oscila entre 14/02/1977 e 24/02/1977 conforme o ano, mas CPF e titulo eleitoral sao identicos em 2008, 2014, 2018 e 2022, logo e a mesma pessoa e a divergencia e erro de digitacao do TSE. Conferido por hash dos documentos, sem grava-los.",
+      "confirmed": "2026-07-30"
+    },
+    {
+      "slug": "gustavo-henrique",
+      "ano": 2014,
+      "reason": "tse-birthdate-typo",
+      "detail": "SQ 180000000014 (TSE 2014 PI) traz 22/11/1973 contra 29/11/1973 em 2012 e 2022. CPF e titulo identicos nos tres anos: mesma pessoa, digito trocado na origem.",
+      "confirmed": "2026-07-30"
+    },
+    {
+      "slug": "luan-monteiro",
+      "ano": 2020,
+      "reason": "tse-birthdate-typo",
+      "detail": "SQ 190001092078 (TSE 2020 RJ) traz 06/08/1996 contra 05/08/1996 em 2022 e 2024. CPF e titulo identicos: mesma pessoa, digito trocado na origem.",
+      "confirmed": "2026-07-30"
+    },
+    {
+      "slug": "wanderlei-barbosa",
+      "ano": 2014,
+      "reason": "tse-birthdate-typo",
+      "detail": "SQ 270000010436 (TSE 2014 TO) traz 21/02/1980 contra 12/03/1964 em 2006, 2008, 2010, 2018 e 2022. CPF e titulo identicos nos sete registros: mesma pessoa. A entrada anterior deste par dizia apenas 'SQ confirmado', confirmacao feita por NOME, que e o ponto cego que deixou passar 30 SQ de outra pessoa em 30/07/2026; agora esta ancorada em documento.",
+      "confirmed": "2026-07-30"
+    },
+    {
+      "slug": "fabio-mitidieri",
+      "ano": 2008,
+      "reason": "tse-birthdate-typo",
+      "detail": "SQ 2182 (TSE 2008 SE) traz 14/02/1977 contra a ancora 24/02/1977. Mesmo CPF e titulo eleitoral de 2014, 2018 e 2022. Atencao: ate 2008 o SQ e sequencial POR UF e este 2182 e compartilhado por 22 pessoas em UFs diferentes; a linha certa e a de SE, desempatada pela UF do seed.",
+      "confirmed": "2026-07-30"
     }
   ]
 }
