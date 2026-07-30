@@ -306,3 +306,83 @@ describe("runLinkCheck", () => {
     assert.equal(r.urlsUnicas, 1)
   })
 })
+
+/**
+ * Dois níveis de alarme (2026-07-29).
+ *
+ * O que estes testes protegem: a primeira execução real reprovou 71 claims,
+ * das quais só 7 estavam em ficha pública, e essas 7 tinham todas as fontes
+ * apenas `indisponivel`. Sem a separação, o job semanal nasce vermelho por
+ * ruído e alguém silencia justamente a rede que deveria pegar o problema real.
+ * O lado oposto também está coberto: nada aqui pode fazer defeito real de
+ * fonte em ficha pública deixar de ser defeito.
+ */
+describe("runLinkCheck: recorte público e defeito real de fonte", () => {
+  const url404 = "https://g1.globo.com/politica/mensalao/noticia/2012/12/stf.ghtml"
+  const url200 = "https://portal.stf.jus.br/processos/detalhe.asp?incidente=1"
+
+  it("fonte só indisponível não conta como defeito real: é temporária e volta sozinha", async () => {
+    const d = deps([ponto({ id: "a", fontes: [{ url: url200 }] })], { [url200]: "indisponivel" })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsSemFonteComConteudo.length, 1, "segue reportada como sem conteúdo")
+    assert.equal(r.claimsSemFonteUtilizavel.length, 0, "mas não é defeito que derrube o gate")
+  })
+
+  it("fonte morta, sem caminho ou sem substância conta como defeito real", async () => {
+    for (const status of ["morta", "sem_caminho", "sem_substancia"] as const) {
+      const d = deps([ponto({ id: "a", fontes: [{ url: url200 }] })], { [url200]: status })
+      const r = await runLinkCheck(d)
+
+      assert.equal(r.claimsSemFonteUtilizavel.length, 1, `${status} deve ser defeito real`)
+    }
+  })
+
+  it("uma fonte viva junto de uma indisponível não gera alarme algum", async () => {
+    const d = deps([ponto({ id: "a", fontes: [{ url: url200 }, { url: url404 }] })], {
+      [url200]: "viva",
+      [url404]: "indisponivel",
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsSemFonteComConteudo.length, 0)
+    assert.equal(r.claimsSemFonteUtilizavel.length, 0)
+  })
+
+  it("claim de candidato fora do front é marcada como não pública e fica separável", async () => {
+    const d = deps(
+      [
+        ponto({ id: "publica", fontes: [{ url: url404 }] }),
+        ponto({ id: "fila", publico: false, fontes: [{ url: url404 }] }),
+      ],
+      { [url404]: "morta" },
+    )
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsSemFonteUtilizavel.length, 2, "as duas seguem sendo defeito real")
+    assert.deepEqual(
+      r.claimsSemFonteUtilizavel.filter((v) => v.publico).map((v) => v.id),
+      ["publica"],
+      "só a de candidato publicado entra no recorte que derruba o gate",
+    )
+    assert.deepEqual(
+      r.claimsComFonteMorta.filter((v) => !v.publico).map((v) => v.id),
+      ["fila"],
+      "a outra continua visível no relatório como fila de publicação",
+    )
+  })
+
+  it("linha sem o campo publico é tratada como pública: na dúvida o alarme fala mais alto", async () => {
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], { [url404]: "morta" })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsComFonteMorta[0]?.publico, true)
+  })
+
+  it("claim invisível com fonte morta não entra em claimsComFonteMorta", async () => {
+    const d = deps([ponto({ id: "a", visivel: false, fontes: [{ url: url404 }] })], { [url404]: "morta" })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsComFonteMorta.length, 0, "já está fora do ar, não há o que alarmar")
+  })
+})

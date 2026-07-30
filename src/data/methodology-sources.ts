@@ -28,12 +28,14 @@ export interface MethodologySource {
  *
  * 2. `updateFrequency` descreve cadencia REAL e verificavel, nao intencao.
  *    "diaria" so vale com cron de producao (`vercel.json`) ou `schedule:` em
- *    `.github/workflows/`. Verificado em 2026-07-25: `.github/workflows/ingest.yml`
- *    e `workflow_dispatch` puro, sem `schedule:`. A unica fonte com automacao
- *    real e o Google News, via cron `0 8 * * *` de `/api/news/refresh` em
- *    `vercel.json` (confirmado no banco: ultima linha de `noticias_candidato`
- *    gravada em 2026-07-25 08:01 UTC). Todo o resto roda por lote manual, que e
- *    exatamente o que "sob demanda" descreve.
+ *    `.github/workflows/`. Estado em 2026-07-29:
+ *      - Google News: diaria, via cron `0 8 * * *` de `/api/news/refresh` em
+ *        `vercel.json`.
+ *      - Camara e Senado: semanal, via `schedule: 0 6 * * 3` em
+ *        `.github/workflows/ingest.yml` (adicionado 2026-07-29). Se o cron
+ *        sair ou mudar de cadencia, este rotulo muda no MESMO commit.
+ *      - Todo o resto roda por lote manual, que e exatamente o que
+ *        "sob demanda" descreve.
  */
 export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
   // --- Fontes federais (candidatos) ---
@@ -85,8 +87,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Frentes parlamentares",
     ],
     sourceKind: "base_oficial",
-    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
-    updateFrequency: "sob demanda",
+    // Automação real: schedule semanal (0 6 * * 3) em .github/workflows/ingest.yml.
+    updateFrequency: "semanal",
     curationType: "automático",
   },
   {
@@ -101,8 +103,8 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
       "Mandatos e comissões",
     ],
     sourceKind: "base_oficial",
-    // Sem automação: lote manual via workflow_dispatch (verificado 2026-07-25).
-    updateFrequency: "sob demanda",
+    // Automação real: schedule semanal (0 6 * * 3) em .github/workflows/ingest.yml.
+    updateFrequency: "semanal",
     curationType: "automático",
   },
   {

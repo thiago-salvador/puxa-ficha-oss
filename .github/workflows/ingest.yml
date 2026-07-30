@@ -1,14 +1,31 @@
 name: Ingestão de dados
 
 # Ingestão em massa das fontes públicas (TSE, Câmara, Senado, Portal da
-# Transparência) para o Supabase. Roda apenas por disparo manual: usa o
-# SUPABASE_SERVICE_ROLE_KEY, então nunca roda em pull_request (secrets não são
-# expostos a PRs de fork; workflow_dispatch executa somente o código da main).
+# Transparência) para o Supabase. Nunca roda em pull_request: usa o
+# SUPABASE_SERVICE_ROLE_KEY, e secrets não são expostos a PRs de fork.
+# Tanto workflow_dispatch quanto schedule executam somente o código da main,
+# então o modelo de confiança é o mesmo nos dois disparos.
+#
+# Cadência: schedule semanal cobre só camara+senado (APIs REST idempotentes,
+# dado que muda toda semana: votações, gastos, proposições). TSE e demais
+# fontes continuam por disparo manual: são lotes pesados e/ou passam por
+# curadoria antes de publicar. Se este cron mudar, o rótulo updateFrequency
+# de src/data/methodology-sources.ts muda no MESMO commit (regra documentada
+# no cabeçalho daquele arquivo).
+#
+# Após ingestão bem-sucedida, o job `revalidate` derruba o Data Cache das
+# tags públicas na produção; sem isso o site continua servindo o dado antigo
+# até a revalidação manual.
 #
 # Secrets necessários (Settings → Secrets and variables → Actions):
-#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TRANSPARENCIA_API_KEY (opcional)
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PF_REVALIDATE_SECRET,
+#   TRANSPARENCIA_API_KEY (opcional)
 
 on:
+  schedule:
+    # Quartas às 06:00 UTC (03:00 em Brasília): camara+senado (default de
+    # RAW_SOURCES quando não há input).
+    - cron: "0 6 * * 3"
   workflow_dispatch:
     inputs:
       sources:
@@ -28,7 +45,10 @@ jobs:
     name: REST APIs (Câmara + Senado + Transparência)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # No disparo por schedule não existem inputs; o fallback de RAW_SOURCES
+    # ('camara senado') decide o que roda.
     if: >-
+      github.event_name == 'schedule' ||
       contains(github.event.inputs.sources, 'camara') ||
       contains(github.event.inputs.sources, 'senado') ||
       contains(github.event.inputs.sources, 'transparencia')
@@ -103,3 +123,41 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/ingest-all.ts google-news
+
+  # Fecha o loop dado novo -> site novo: sem esta etapa, a produção continua
+  # servindo o Data Cache antigo até alguém rodar "Revalidar cache" na mão.
+  # Roda quando pelo menos um job de ingestão terminou com sucesso e nenhum
+  # falhou (jobs pulados pelo filtro de fontes não bloqueiam).
+  revalidate:
+    name: Revalidar cache público
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [ingest-rest, ingest-tse, ingest-news]
+    if: >-
+      !cancelled() &&
+      contains(needs.*.result, 'success') &&
+      !contains(needs.*.result, 'failure')
+    env:
+      REVALIDATE_URL: https://puxaficha.com.br/api/revalidate
+      REVALIDATE_SECRET: ${{ secrets.PF_REVALIDATE_SECRET }}
+      # Mesmo conjunto de tags públicas de revalidate-cache.yml.
+      TAGS_JSON: >-
+        ["public-candidatos","public-candidato-metadata","public-candidato-ficha","public-candidatos-resumo","public-candidatos-comparaveis","public-indicadores-all","public-indicadores-estado","quiz-dataset","ranking-data","doador-reverse"]
+    steps:
+      - name: POST /api/revalidate
+        run: |
+          set -euo pipefail
+          if [ -z "${REVALIDATE_SECRET:-}" ]; then
+            echo "PF_REVALIDATE_SECRET ausente nos GitHub Actions secrets." >&2
+            exit 1
+          fi
+          jq -cn --argjson tags "$TAGS_JSON" '{tags: $tags}' > /tmp/payload.json
+          status="$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "$REVALIDATE_URL" \
+            -H "content-type: application/json" \
+            -H "x-pf-revalidate-secret: ${REVALIDATE_SECRET}" \
+            --data-binary @/tmp/payload.json)"
+          echo "HTTP ${status}"
+          jq -c . /tmp/resp.json || cat /tmp/resp.json
+          echo "HTTP ${status}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" != "200" ]; then exit 1; fi
