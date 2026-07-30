@@ -193,3 +193,46 @@ decisao.
 7. Depois do registro de candidaturas em meados de agosto, tudo isso vira
    consultavel no DivulgaCandContas, que e fonte oficial e legivel por maquina.
    A partir dai isso deveria ser automacao agendada, nao varredura manual.
+
+## Adendo de 30/07/2026: identidade das 6 fichas incluidas
+
+As 6 inclusoes da migration `20260730130000_roster_governadores_inclusoes_2026.sql`
+nasceram com nome, partido, UF e cargo, e mais nada. A migration
+`20260730150000_identidade_inclusoes_governadores_2026.sql` preenche
+`data_nascimento`, `naturalidade`, `formacao` e `profissao_declarada`, e a
+proveniencia campo a campo esta no cabecalho dela.
+
+**O registro de 2026 nao serviu.** O pacote `consulta_cand_2026.zip` ja existe e
+e atualizado diariamente, mas em 30/07 tinha 1.828 linhas no pais, so 10 de
+GOVERNADOR, 8 UFs com arquivo vazio (entre elas TO) e 100% das linhas em
+`#NE`. Nenhum dos 6 estava la. A fonte usada foi o registro eleitoral do TSE de
+anos anteriores (2014, 2018, 2022), pela mesma rota do DivulgaCandContas que as
+migrations de identidade de julho ja usam. Os SQ_CANDIDATO correspondentes
+entraram em `data/candidatos.json` e passam no `audit:seed-sq-identity:gate`.
+
+Tres pendencias que este doc deixou em aberto foram fechadas com fonte:
+
+- **Nome civil do jeremias-cosmo.** A imprensa so escreve "Jeremias Cosmo". O
+  TSE registra `JEREMIAS COSMO SILVA DOS SANTOS`. O vinculo entre os dois nao
+  foi presumido: bate municipio de nascimento (Palmares), ano (1980), as duas
+  profissoes (bancario do Banco do Brasil e professor da rede estadual) e o
+  municipio de atuacao (Ribeirao). Detalhamento no cabecalho da migration.
+- **Coronel Busnello e cabeca de chapa**, confirmado. A chapa foi invertida por
+  volta de 17-18/07 e homologada em convencao virtual em 23/07, com Rafael Luz
+  (Rafa Luz, bombeiro militar) como vice.
+- **Marcus Sodre.** O registro do TSE de 2014 e a mesma pessoa: nome civil,
+  partido (PSTU) e UF identicos, e a idade derivada da data de nascimento (54)
+  bate com a que a imprensa publicou na convencao de 25/07.
+
+**O que ficou nulo, e por que.** `witer-naves` fica sem `data_nascimento` e sem
+`formacao`. Ele nao tem registro nenhum no TSE em 2014, 2016, 2018, 2020, 2022
+nem 2026, e a fonte jornalistica da a idade (54), nao a data. Idade nao
+determina data de nascimento, e "geografo" e profissao, nao grau de instrucao.
+Consequencia visivel: a ficha dele sai sem idade, porque
+`public.candidatos_publico` deriva idade de `data_nascimento`. Desbloqueia no
+registro de agosto.
+
+**Divergencia anotada e nao corrigida.** O TSE grafa o sobrenome do
+patrus-ananias como "DE SOUSA" em 2014 e 2022 e "DE SOUZA" em 2018; a API da
+Camara diz "SOUZA". O banco usa "Souza". Nao foi mexido: trocar grafia de nome
+civil por maioria de fontes e chute, nao correcao.
