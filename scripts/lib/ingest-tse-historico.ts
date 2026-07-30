@@ -15,7 +15,7 @@ import {
 } from "./party-timeline-consistency"
 import type { IngestResult, CandidatoConfig } from "./types"
 import type { ResolveMethod } from "./tse-resolver"
-import { createTSEResolver, isWeakNameMatch, shouldSkipWeakMatchForAno } from "./tse-resolver"
+import { createTSEResolver, isWeakNameMatch, shouldSkipWeakMatch } from "./tse-resolver"
 import { canonicalCargo } from "./cargo-utils"
 import { sanitizeTemplateText } from "./ptbr-sanitize"
 import { canonicalizeEstadoForStorage } from "@/lib/br-uf"
@@ -213,7 +213,7 @@ async function processAno(
     await parseCSV(csvPath, (row) => {
       const match = resolver.resolveRow(row)
       if (!match) return
-      if (shouldSkipWeakMatchForAno(ano, match.method)) return
+      if (shouldSkipWeakMatch(match.method)) return
 
       const cargo = normalizeCargo(row.DS_CARGO || "")
       if (!cargo) return

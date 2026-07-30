@@ -46,8 +46,32 @@ export function isWeakNameMatch(method: ResolveMethod): boolean {
   return method === "name-unique" || method === "name-uf"
 }
 
-export function shouldSkipWeakMatchForAno(ano: number, method: ResolveMethod): boolean {
-  return ano === 2024 && isWeakNameMatch(method)
+/**
+ * Match por nome NUNCA e aceito, em ano nenhum.
+ *
+ * Ate 30/07/2026 isto era `shouldSkipWeakMatchForAno`, e so recusava match
+ * fraco em 2024. De 2010 a 2022 um chute por nome era aceito e, no caso do
+ * `persist-sq-candidato.ts`, GRAVADO em `data/candidatos.json`. Na rodada
+ * seguinte esse valor voltava como `sq-preloaded`, prioridade 4, acima de
+ * `cpf`, que e 3.
+ *
+ * Isso e lavagem de confianca: o chute entra fraco, vira ancora de confianca
+ * maxima e passa a derrotar o unico sinal que poderia corrigi-lo, se
+ * auto-reforcando a cada execucao. Foi o que colocou o senador do PR na ficha
+ * do ex-prefeito de Natal, entre outros 15 casos, e o que levou 19 linhas de
+ * patrimonio e 23 de financiamento pra quarentena em 20260730170000.
+ *
+ * O guard existir so pra 2024 mostrava que o risco ja tinha sido percebido e
+ * tapado num ano so.
+ *
+ * TRADE-OFF ACEITO: sem match por nome, candidato sem SQ e sem CPF deixa de
+ * ser resolvido, e a cobertura cai. E o lado certo pra errar. SQ ausente faz a
+ * ingestao cair pra CPF, que e mais forte; SQ errado sequestra a ficha E ainda
+ * bloqueia o CPF, porque tem prioridade maior. Num site civico, campo vazio e
+ * recuperavel, atribuir o patrimonio de uma pessoa a outra nao e.
+ */
+export function shouldSkipWeakMatch(method: ResolveMethod): boolean {
+  return isWeakNameMatch(method)
 }
 
 function normalizeCPF(value: string): string {

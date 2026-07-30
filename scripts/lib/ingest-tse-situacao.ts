@@ -9,7 +9,7 @@ import type { IngestResult, CandidatoConfig } from "./types"
 import {
   createTSEResolver,
   getResolveMethodPriority,
-  shouldSkipWeakMatchForAno,
+  shouldSkipWeakMatch,
   type ResolveMethod,
   type ResolveResult,
 } from "./tse-resolver"
@@ -388,7 +388,7 @@ async function processAno(
     await parseCSV(csvPath, (row) => {
       const match = resolver.resolveRow(row)
       if (!match) return
-      if (shouldSkipWeakMatchForAno(ano, match.method)) {
+      if (shouldSkipWeakMatch(match.method)) {
         return
       }
 

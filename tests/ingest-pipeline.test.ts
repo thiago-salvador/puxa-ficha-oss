@@ -4,7 +4,7 @@ import { describe, it } from "node:test"
 import { normalizeForMatch } from "../scripts/lib/normalize-for-match"
 import { parseCSV } from "../scripts/lib/parse-csv-local"
 import {
-  shouldSkipWeakMatchForAno,
+  shouldSkipWeakMatch,
   isWeakNameMatch,
   getResolveMethodPriority,
 } from "../scripts/lib/tse-resolver"
@@ -95,10 +95,34 @@ describe("tse-resolver", () => {
     assert.equal(isWeakNameMatch("sq-preloaded"), false)
   })
 
-  it("shouldSkipWeakMatchForAno: skips weak matches for 2024 municipal", () => {
-    assert.equal(shouldSkipWeakMatchForAno(2024, "name-unique"), true)
-    assert.equal(shouldSkipWeakMatchForAno(2024, "name-uf"), true)
-    assert.equal(shouldSkipWeakMatchForAno(2024, "cpf"), false)
-    assert.equal(shouldSkipWeakMatchForAno(2022, "name-unique"), false)
+  it("shouldSkipWeakMatch: recusa match por nome, e nao aceita nenhum ano", () => {
+    assert.equal(shouldSkipWeakMatch("name-unique"), true)
+    assert.equal(shouldSkipWeakMatch("name-uf"), true)
+    assert.equal(shouldSkipWeakMatch("cpf"), false)
+    assert.equal(shouldSkipWeakMatch("sq-preloaded"), false)
+  })
+
+  // Regressao de 30/07/2026. Antes o guard era shouldSkipWeakMatchForAno e so
+  // recusava match fraco em 2024, entao 2010-2022 aceitava chute por nome e o
+  // persist-sq gravava esse chute no seed. Na rodada seguinte ele voltava como
+  // sq-preloaded, que tem prioridade MAIOR que cpf: o palpite passava a
+  // derrotar o unico sinal capaz de corrigi-lo. Foi assim que o senador do PR
+  // acabou na ficha do ex-prefeito de Natal.
+  it("nenhum ano aceita match por nome, incluindo os que o guard antigo liberava", () => {
+    for (const ano of [2010, 2012, 2014, 2016, 2018, 2020, 2022, 2024]) {
+      assert.equal(
+        shouldSkipWeakMatch("name-unique"),
+        true,
+        `ano ${ano} nao pode aceitar name-unique`
+      )
+      assert.equal(shouldSkipWeakMatch("name-uf"), true, `ano ${ano} nao pode aceitar name-uf`)
+    }
+  })
+
+  it("um match por nome nunca pode superar cpf em prioridade depois de persistido", () => {
+    // O dano so existe porque sq-preloaded > cpf. Se algum dia essa ordem for
+    // invertida, o guard acima deixa de ser a unica defesa e este teste avisa.
+    assert.ok(getResolveMethodPriority("sq-preloaded") > getResolveMethodPriority("cpf"))
+    assert.equal(shouldSkipWeakMatch("name-unique"), true)
   })
 })

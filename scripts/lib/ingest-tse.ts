@@ -9,7 +9,7 @@ import type { IngestResult, CandidatoConfig } from "./types"
 import {
   createTSEResolver,
   getResolveMethodPriority,
-  shouldSkipWeakMatchForAno,
+  shouldSkipWeakMatch,
   type ResolveMethod,
   type TSEResolver,
 } from "./tse-resolver"
@@ -216,7 +216,7 @@ async function buildSQMap(
 
       const match = resolver.resolveRow(row)
       if (!match) return
-      if (shouldSkipWeakMatchForAno(ano, match.method)) return
+      if (shouldSkipWeakMatch(match.method)) return
 
       const candidato = candidatosBySlug.get(match.slug)
       if (!candidato) return
