@@ -8488,6 +8488,44 @@ export const FIXES: CandidateFix[] = [
       },
     ],
   },
+
+  // --- Saidas da corrida presidencial durante a janela de convencoes de 2026 ---
+  //
+  // Contexto: a janela de convencoes partidarias de 2026 vai de 20/07 a 05/08, e
+  // o registro de candidatura no TSE ocorre ate meados de agosto. Ou seja, ate o
+  // registro NINGUEM e candidato oficial, e "deixou de ser pre-candidato" e um
+  // fato jornalistico, nao um dado do DivulgaCandContas. Por isso os dois casos
+  // abaixo entram como curadoria com fonte nomeada, e nao por ingest.
+  //
+  // O padrao segue o precedente ja no banco para quem desistiu
+  // (jose-carlos-aleluia, pedro-cunha-lima, wanderlei-barbosa):
+  // status 'desistente' + publicavel false + cargo_disputado 'Nenhum'. A CHECK
+  // constraint candidatos_publicavel_requires_disputa exige essa combinacao.
+  //
+  // Nada e deletado: as duas fichas saem do ar e o historico permanece, entao a
+  // operacao e reversivel se o quadro mudar antes do registro.
+  {
+    slug: "aecio-neves",
+    source:
+      "CNN Brasil, 2026-07-09, 'Aécio descarta candidatura ao Planalto pelo PSDB' (https://www.cnnbrasil.com.br/eleicoes/aecio-descarta-candidatura-ao-planalto-pelo-psdb/): 'desistiu da hipótese de concorrer à Presidência da República na eleição deste ano'. Verificado por leitura direta da página (HTTP 200) em 2026-07-30. O PSDB confirmou que não lançará candidato próprio ao Planalto. Uma eventual disputa ao Senado por MG seguia indefinida em 2026-07-24 (O Tempo, 'Indefinição em Minas trava decisão de Aécio em concorrer ao Senado'), por isso cargo_disputado fica 'Nenhum' e não 'Senador'.",
+    candidateUpdate: {
+      status: "desistente",
+      publicavel: false,
+      cargo_disputado: "Nenhum",
+      situacao_candidatura: null,
+    },
+  },
+  {
+    slug: "joaquim-barbosa",
+    source:
+      "Poder360, 2026-07-24, 'Com saída de Barbosa, DC lança Clariana ao Planalto' (https://www.poder360.com.br/poder-eleicoes-2026/com-saida-de-barbosa-dc-lanca-clariana-ao-planalto/): a decisão foi anunciada em 24/07/2026 'depois de o ministro aposentado do STF desistir de concorrer ao Palácio do Planalto'. Verificado por leitura direta da página (HTTP 200) em 2026-07-30. Ressalva registrada: ele nunca se manifestou publicamente nem para aceitar nem para desistir da pré-candidatura que a direção do DC anunciou, e o nome final do partido só se resolve na convenção de 02/08/2026, com Aldo Rebelo contestando judicialmente.",
+    candidateUpdate: {
+      status: "desistente",
+      publicavel: false,
+      cargo_disputado: "Nenhum",
+      situacao_candidatura: null,
+    },
+  },
 ]
 
 function mergeFonteDados(existing: string[] | null | undefined): string[] {
