@@ -59,6 +59,13 @@ on:
     # Segundas às 09:00 UTC (06:00 em Brasília).
     - cron: "0 9 * * 1"
   workflow_dispatch:
+    inputs:
+      revalidar:
+        description: >-
+          Slugs separados por vírgula para revalidar ANTES de publicar
+          (ex.: ciro-gomes,aldo-rebelo). Vazio = execução semanal normal.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -89,7 +96,18 @@ jobs:
       - run: npm ci
 
       - name: Link-check (dry-run, falha por defeito real de fonte em ficha pública)
+        if: ${{ !inputs.revalidar }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npm run data:link-check-fontes:gate
+
+      # Gate de publicação sob demanda (2026-08-02). Existe para que a
+      # revalidação exigida antes de um candidato entrar (ou voltar) à coorte
+      # possa ser rodada SEM a service role sair do CI. Falha = não publique.
+      - name: Revalidação pré-publicação dos slugs informados
+        if: ${{ inputs.revalidar }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run data:link-check-fontes:revalidar -- "--revalidar=${{ inputs.revalidar }}"
