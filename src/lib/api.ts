@@ -129,6 +129,39 @@ function requireLiveResourceForCache<T>(resource: DataResource<T>): DataResource
   return resource
 }
 
+/**
+ * Falha transiente que NÃO pode entrar no Data Cache (incidente 2026-08-02):
+ * um `degradedResource` retornado DENTRO de `unstable_cache` era congelado por
+ * APP_DATA_REVALIDATE_SECONDS (1h) e servido instantaneamente para todo mundo,
+ * então 45s de instabilidade viravam 1h de home vazia. A função em cache lança
+ * este erro (rejeição não é cacheada), e o wrapper exportado converte de volta
+ * no MESMO degradedResource fora do cache via `degradedFromError`, preservando
+ * o contrato dos callers. Ficha e metadata já usavam a variante
+ * `requireLiveResourceForCache` (suffix no-cache-degraded-v1); esta cobre os
+ * recursos restantes carregando a mensagem original.
+ *
+ * Degradação PARCIAL com dados reais (busca sem temas de votação, resumo sem
+ * enriquecimento, quiz sem mapa de votações) continua retornando resource e
+ * sendo cacheável de propósito: há conteúdo verdadeiro para servir.
+ */
+class DegradedDataError extends Error {
+  readonly sourceMessage: string | null
+
+  constructor(sourceMessage: string | null | undefined) {
+    super(sourceMessage ?? "recurso degradado por falha transiente")
+    this.name = "DegradedDataError"
+    this.sourceMessage = sourceMessage ?? null
+  }
+}
+
+/** Converte o throw da camada de cache no degradedResource de sempre; o resto sobe. */
+function degradedFromError<T>(error: unknown, fallbackData: T): DataResource<T> {
+  if (error instanceof DegradedDataError) {
+    return degradedResource(fallbackData, error.sourceMessage)
+  }
+  throw error
+}
+
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null
   const parsed = new Date(value)
@@ -490,8 +523,8 @@ async function getCandidatosResourceUncached(
     } else {
       console.error("getCandidatos failed:", error?.message)
     }
-    return degradedResource(
-      [],
+    // Lançar (não retornar degraded): rejeição não entra no unstable_cache.
+    throw new DegradedDataError(
       "Não foi possível carregar a lista de candidatos nesta tentativa."
     )
   }
@@ -510,7 +543,7 @@ const getCachedCandidatosResource = unstable_cache(
   // Bumped 2026-05-15: swap da coorte presidencial remove tarcisio/eduardo-leite
   // da superficie publica e adiciona augusto-cury/cabo-daciolo/edmilson-costa.
   // Bumped 2026-05-22: publicacao da lista editorial de pre-candidatos dos lotes 1 e 2.
-  ["public-candidatos-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726"],
+  ["public-candidatos-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -521,7 +554,11 @@ export async function getCandidatosResource(
   cargo?: string,
   estado?: string
 ): Promise<DataResource<Candidato[]>> {
-  return getCachedCandidatosResource(cargo, estado)
+  try {
+    return await getCachedCandidatosResource(cargo, estado)
+  } catch (error) {
+    return degradedFromError(error, [] as Candidato[])
+  }
 }
 
 /**
@@ -563,8 +600,7 @@ async function getCandidatoNavResourceUncached(
     } else {
       console.error("getCandidatoNav failed:", error?.message)
     }
-    return degradedResource(
-      [],
+    throw new DegradedDataError(
       "Não foi possível carregar a navegação entre candidatos nesta tentativa."
     )
   }
@@ -574,7 +610,7 @@ async function getCandidatoNavResourceUncached(
 
 const getCachedCandidatoNavResource = unstable_cache(
   async (cargo?: string) => getCandidatoNavResourceUncached(cargo),
-  ["public-candidato-nav-resource", "slug-nome-urna-20260603", "escopo-executivo-20260726"],
+  ["public-candidato-nav-resource", "slug-nome-urna-20260603", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -584,7 +620,11 @@ const getCachedCandidatoNavResource = unstable_cache(
 export async function getCandidatoNavResource(
   cargo?: string
 ): Promise<DataResource<CandidatoNavItem[]>> {
-  return getCachedCandidatoNavResource(cargo)
+  try {
+    return await getCachedCandidatoNavResource(cargo)
+  } catch (error) {
+    return degradedFromError(error, [] as CandidatoNavItem[])
+  }
 }
 
 const VOTACAO_SEARCH_PAGE_SIZE = 1000
@@ -640,6 +680,12 @@ async function getGlobalSearchIndexResourceUncached(): Promise<
   const candidatosRes = await getCandidatosResource()
   const candidatos = candidatosRes.data
 
+  // Cascata: lista degradada por falha transiente (USE_MOCK já retornou acima)
+  // não pode virar índice vazio cacheado por mais 1h.
+  if (candidatosRes.sourceStatus !== "live") {
+    throw new DegradedDataError(candidatosRes.sourceMessage)
+  }
+
   if (candidatos.length === 0) {
     return {
       data: [],
@@ -692,7 +738,7 @@ const getCachedGlobalSearchIndexResource = unstable_cache(
   // sobrevive a deploy, e a rota de revalidacao por tag depende de
   // PF_REVALIDATE_SECRET, entao o bump da chave e o caminho que funciona sem
   // segredo. Mesma chave aplicada a todos os resources que listam candidatos.
-  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726"],
+  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -702,7 +748,11 @@ const getCachedGlobalSearchIndexResource = unstable_cache(
 export async function getGlobalSearchIndexResource(): Promise<
   DataResource<GlobalSearchIndexItem[]>
 > {
-  return getCachedGlobalSearchIndexResource()
+  try {
+    return await getCachedGlobalSearchIndexResource()
+  } catch (error) {
+    return degradedFromError(error, [] as GlobalSearchIndexItem[])
+  }
 }
 
 /**
@@ -1295,6 +1345,11 @@ async function getCandidatosComResumoResourceUncached(
   const candidatos = candidatosResource.data
 
   if (candidatosResource.sourceStatus !== "live") {
+    // Sem USE_MOCK, degraded aqui é sempre falha transiente da lista: cascata
+    // que não pode virar resumo vazio cacheado por 1h.
+    if (!USE_MOCK) {
+      throw new DegradedDataError(candidatosResource.sourceMessage)
+    }
     return {
       ...candidatosResource,
       data: candidatos.map((c) => ({
@@ -1364,7 +1419,7 @@ const getCachedCandidatosComResumoResource = unstable_cache(
     getCandidatosComResumoResourceUncached(cargo, estado),
   // Bumped 2026-04-26: dados de candidato vem ja sanitizados via getCandidatosResource;
   // o suffix forca bust de cache antigo do Bloco 1.
-  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726"],
+  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-resumo"],
@@ -1375,7 +1430,11 @@ export async function getCandidatosComResumoResource(
   cargo?: string,
   estado?: string
 ): Promise<DataResource<CandidatoResumo[]>> {
-  return getCachedCandidatosComResumoResource(cargo, estado)
+  try {
+    return await getCachedCandidatosComResumoResource(cargo, estado)
+  } catch (error) {
+    return degradedFromError(error, [] as CandidatoResumo[])
+  }
 }
 
 async function getCandidatosComparaveisResourceUncached(
@@ -1409,10 +1468,7 @@ async function getCandidatosComparaveisResourceUncached(
     } else {
       console.error("getCandidatosComparaveis failed:", compareError.message)
     }
-    return degradedResource(
-      [],
-      "Não foi possível montar a comparação nesta tentativa."
-    )
+    throw new DegradedDataError("Não foi possível montar a comparação nesta tentativa.")
   }
 
   const baseRows = data ?? []
@@ -1482,7 +1538,7 @@ const getCachedCandidatosComparaveisResource = unstable_cache(
   // Bumped 2026-04-26: payload publico carrega partido sanitizado.
   // Bumped 2026-06-03: pontos_atencao removido do payload de comparaveis (so
   // alimentava alertas_graves no servidor, nunca lido no cliente).
-  ["public-candidatos-comparaveis-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "comparaveis-strip-pontos-20260603", "photos-names-20260610", "escopo-executivo-20260726"],
+  ["public-candidatos-comparaveis-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "comparaveis-strip-pontos-20260603", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-comparaveis"],
@@ -1493,7 +1549,11 @@ export async function getCandidatosComparaveisResource(
   cargo?: string,
   estado?: string
 ): Promise<DataResource<CandidatoComparavel[]>> {
-  return getCachedCandidatosComparaveisResource(cargo, estado)
+  try {
+    return await getCachedCandidatosComparaveisResource(cargo, estado)
+  } catch (error) {
+    return degradedFromError(error, [] as CandidatoComparavel[])
+  }
 }
 
 function toRankingCandidateSummary(candidate: Pick<Candidato, 'id' | 'nome_urna' | 'slug' | 'partido_sigla' | 'cargo_disputado' | 'estado' | 'foto_url'>): RankingCandidateSummary {
@@ -1623,6 +1683,13 @@ async function getRankingDataResourceUncached(
       ? await getFieldRankingEntriesResource(definition, normalized.cargo, estadoFilter)
       : await getAggregateRankingEntriesResource(definition, normalized.cargo, estadoFilter)
 
+  // Sem USE_MOCK, entries degradadas são sempre falha transiente (cascata dos
+  // comparáveis/lista ou métrica agregada que falhou): ranking vazio ou com
+  // métricas todas nulas não pode ser cacheado por 1h.
+  if (!USE_MOCK && entriesResource.sourceStatus !== "live") {
+    throw new DegradedDataError(entriesResource.sourceMessage)
+  }
+
   return {
     ...entriesResource,
     data: {
@@ -1639,7 +1706,7 @@ const getCachedRankingDataResource = unstable_cache(
     getRankingDataResourceUncached(slug, cargo || undefined, estado || undefined),
   // Bumped 2026-05-21: copy pública de rankings virou "listas temáticas";
   // invalida definition.title/contextExplanation serializados no Data Cache.
-  ["ranking-data-resource-public-copy-20260521", "escopo-executivo-20260726"],
+  ["ranking-data-resource-public-copy-20260521", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["ranking-data"],
@@ -1651,7 +1718,24 @@ export async function getRankingDataResource(
   cargo?: string,
   estado?: string
 ): Promise<DataResource<RankingDataset>> {
-  return getCachedRankingDataResource(slug, cargo ?? "", estado ?? "")
+  try {
+    return await getCachedRankingDataResource(slug, cargo ?? "", estado ?? "")
+  } catch (error) {
+    // "Unknown ranking slug" e afins continuam subindo; só falha transiente degrada.
+    if (!(error instanceof DegradedDataError)) throw error
+    const definition = getRankingDefinitionBySlug(slug)
+    if (!definition) throw error
+    const normalized = normalizeRankingFilters({ cargo, uf: estado })
+    return degradedResource(
+      {
+        definition,
+        cargo: normalized.cargo,
+        estado: definition.supportsUf ? normalized.estado : undefined,
+        entries: [] as RankingEntry[],
+      },
+      error.sourceMessage
+    )
+  }
 }
 
 async function getQuizAlignmentDatasetResourceUncached(
@@ -1980,7 +2064,7 @@ async function getQuizAlignmentDatasetResourceUncached(
 const getCachedQuizAlignmentDatasetResource = unstable_cache(
   async (cargo: string, estado: string) =>
     getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined),
-  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726"],
+  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["quiz-dataset"],
@@ -1991,7 +2075,18 @@ export async function getQuizAlignmentDatasetResource(
   cargo = "Presidente",
   estado?: string
 ): Promise<DataResource<QuizAlignmentDataset>> {
-  return getCachedQuizAlignmentDatasetResource(cargo, estado ?? "")
+  try {
+    return await getCachedQuizAlignmentDatasetResource(cargo, estado ?? "")
+  } catch (error) {
+    // Cascata: getCandidatosResourceUncached lança na falha transiente e o
+    // throw atravessa o dataset do quiz até aqui.
+    return degradedFromError(error, {
+      candidatos: [],
+      votacoes_mapeadas: [],
+      votacao_titulo_to_id: {},
+      votacao_fonte_por_titulo: {},
+    } as QuizAlignmentDataset)
+  }
 }
 
 const INDICADORES_ESTADO_COLUMNS =
@@ -2035,14 +2130,12 @@ async function getIndicadoresEstadoResourceUncached(
   if (error || !data) {
     if (IS_DEV) {
       warnDevSupabaseFailure("getIndicadoresEstadoResource", error)
-      return degradedResource(
-        [],
+      throw new DegradedDataError(
         "Indicadores estaduais indisponíveis. Seção do território pode ficar vazia."
       )
     }
     console.error("getIndicadoresEstadoResource failed:", error?.message)
-    return degradedResource(
-      [],
+    throw new DegradedDataError(
       "Não foi possível carregar indicadores estaduais nesta tentativa."
     )
   }
@@ -2052,7 +2145,7 @@ async function getIndicadoresEstadoResourceUncached(
 
 const getCachedIndicadoresEstadoResource = unstable_cache(
   async (uf: string) => getIndicadoresEstadoResourceUncached(uf),
-  ["public-indicadores-estado-resource"],
+  ["public-indicadores-estado-resource", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-indicadores-estado"],
@@ -2062,7 +2155,11 @@ const getCachedIndicadoresEstadoResource = unstable_cache(
 export async function getIndicadoresEstadoResource(
   uf: string
 ): Promise<DataResource<IndicadorEstadual[]>> {
-  return getCachedIndicadoresEstadoResource(uf)
+  try {
+    return await getCachedIndicadoresEstadoResource(uf)
+  } catch (error) {
+    return degradedFromError(error, [] as IndicadorEstadual[])
+  }
 }
 
 async function getIndicadoresAllEstadosResourceUncached(): Promise<
@@ -2083,14 +2180,12 @@ async function getIndicadoresAllEstadosResourceUncached(): Promise<
   if (error || !data) {
     if (IS_DEV) {
       warnDevSupabaseFailure("getIndicadoresAllEstadosResource", error)
-      return degradedResource(
-        [],
+      throw new DegradedDataError(
         "Ranking nacional de indicadores indisponível nesta tentativa."
       )
     }
     console.error("getIndicadoresAllEstadosResource failed:", error?.message)
-    return degradedResource(
-      [],
+    throw new DegradedDataError(
       "Não foi possível carregar indicadores para ranking nesta tentativa."
     )
   }
@@ -2109,7 +2204,7 @@ async function getIndicadoresAllEstadosResourceUncached(): Promise<
 
 const getCachedIndicadoresAllEstadosResource = unstable_cache(
   async () => getIndicadoresAllEstadosResourceUncached(),
-  ["public-indicadores-all-estados-resource"],
+  ["public-indicadores-all-estados-resource", "cache-poison-fix-20260802"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-indicadores-all"],
@@ -2119,7 +2214,11 @@ const getCachedIndicadoresAllEstadosResource = unstable_cache(
 export async function getIndicadoresAllEstadosResource(): Promise<
   DataResource<IndicadorEstadualRanking[]>
 > {
-  return getCachedIndicadoresAllEstadosResource()
+  try {
+    return await getCachedIndicadoresAllEstadosResource()
+  } catch (error) {
+    return degradedFromError(error, [] as IndicadorEstadualRanking[])
+  }
 }
 
 export { getEstadoNome, getEstadoUFs } from "@/lib/br-uf"
