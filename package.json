@@ -41,6 +41,7 @@
     "check:scripts": "tsc --project tsconfig.scripts.json",
     "audit:public-document-exposure:gate": "tsx scripts/audit-public-document-exposure.ts",
     "audit:public-security-surface:gate": "tsx scripts/audit-public-security-surface.ts",
+    "audit:supabase-abort-signal": "tsx scripts/audit-supabase-abort-signal.ts",
     "validate:seed": "tsx scripts/validate-seed.ts",
     "audit:seed-sq-identity": "tsx scripts/audit-seed-sq-identity.ts",
     "audit:seed-sq-identity:gate": "tsx scripts/audit-seed-sq-identity.ts --gate",
