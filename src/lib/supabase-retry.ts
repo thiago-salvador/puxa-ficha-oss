@@ -10,11 +10,29 @@ const SUPABASE_RETRY_ATTEMPTS = 3
 // query the timeout never fires, so behavior is unchanged.
 const SUPABASE_ATTEMPT_TIMEOUT_MS = 15_000
 
-type SupabaseRunResult<T> = {
+export type SupabaseRunResult<T> = {
   data: T | null
-  error: { message?: string } | null
+  error: { message?: string; code?: string } | null
   /** Preservado quando a consulta Supabase usa `{ count: "exact" }`. */
   count?: number | null
+}
+
+/**
+ * Codigos PostgREST/Postgres deterministicos: o mesmo erro volta identico na
+ * segunda e na terceira tentativa. PGRST116 e `.single()` sem linha (a ficha
+ * inexistente vira 404) e 42501 e permissao negada. Retentar so gasta 3 round
+ * trips, 750ms de backoff e um issue de Sentry para chegar na mesma resposta.
+ */
+const NON_RETRYABLE_ERROR_CODES = new Set(["PGRST116", "42501"])
+
+function errorCode(error: { code?: string } | null | undefined): string | undefined {
+  const code = error?.code
+  return typeof code === "string" && code.length > 0 ? code : undefined
+}
+
+function isNonRetryableError(error: { code?: string } | null | undefined): boolean {
+  const code = errorCode(error)
+  return code !== undefined && NON_RETRYABLE_ERROR_CODES.has(code)
 }
 
 /**
@@ -37,30 +55,40 @@ function reportExhaustedRetries(params: {
   timeouts: number
   attemptTimeoutMs: number
   lastError?: string
+  lastCode?: string
   thrown?: unknown
 }): void {
-  const { label, attempts, timeouts, attemptTimeoutMs, lastError, thrown } = params
+  const { label, attempts, timeouts, attemptTimeoutMs, lastError, lastCode, thrown } = params
   const timedOut = timeouts > 0
 
   Sentry.withScope((scope) => {
     scope.setTag("supabase.operation", retryGroupKey(label))
     scope.setTag("supabase.timed_out", timedOut ? "true" : "false")
     scope.setTag("supabase.outcome", thrown ? "threw" : "error_result")
+    // Sem o codigo, operacoes diferentes do mesmo label caem no mesmo issue e
+    // escondem o PostgREST que realmente falhou.
+    if (lastCode) scope.setTag("supabase.code", lastCode)
     scope.setContext("supabase_retry", {
       label,
       attempts,
       timeouts,
       attemptTimeoutMs,
       lastError: lastError ?? null,
+      lastCode: lastCode ?? null,
     })
-    scope.setFingerprint(["supabase-retry-exhausted", retryGroupKey(label)])
+    scope.setFingerprint(
+      lastCode
+        ? ["supabase-retry-exhausted", retryGroupKey(label), lastCode]
+        : ["supabase-retry-exhausted", retryGroupKey(label)]
+    )
 
     if (thrown !== undefined) {
       Sentry.captureException(thrown)
       return
     }
     Sentry.captureMessage(
-      `Supabase ${timedOut ? "timeout" : "failure"} after ${attempts} attempts: ${retryGroupKey(label)}`,
+      `Supabase ${timedOut ? "timeout" : "failure"} after ${attempts} attempts: ${retryGroupKey(label)}` +
+        (lastCode ? ` [${lastCode}]` : ""),
       "error"
     )
   })
@@ -99,6 +127,11 @@ export async function withSupabaseRetry<T>(
       if (!result.error) {
         return result
       }
+      // Erro deterministico nao melhora na proxima tentativa: devolve na hora,
+      // sem backoff, sem breadcrumb e sem issue de Sentry.
+      if (isNonRetryableError(result.error)) {
+        return result
+      }
       lastResult = result
     } catch (error) {
       lastThrown = error
@@ -132,6 +165,7 @@ export async function withSupabaseRetry<T>(
       timeouts,
       attemptTimeoutMs,
       lastError: lastResult.error?.message,
+      lastCode: errorCode(lastResult.error),
     })
     return lastResult
   }

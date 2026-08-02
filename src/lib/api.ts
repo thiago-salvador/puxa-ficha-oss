@@ -467,7 +467,7 @@ async function getCandidatosResourceUncached(
   }
 
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("getCandidatos", async () => {
+  const { data, error } = await withSupabaseRetry("getCandidatos", async (signal) => {
     let query = supabase
       .from(CANDIDATO_PUBLIC_RELATION)
       .select(CANDIDATO_COLUMNS)
@@ -481,7 +481,7 @@ async function getCandidatosResourceUncached(
       query = query.ilike("estado", estado)
     }
 
-    return query.order("nome_urna")
+    return query.order("nome_urna").abortSignal(signal)
   })
 
   if (error || !data) {
@@ -544,7 +544,7 @@ async function getCandidatoNavResourceUncached(
   }
 
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("getCandidatoNav", async () => {
+  const { data, error } = await withSupabaseRetry("getCandidatoNav", async (signal) => {
     let query = supabase
       .from(CANDIDATO_PUBLIC_RELATION)
       .select("slug, nome_urna")
@@ -554,7 +554,7 @@ async function getCandidatoNavResourceUncached(
       query = query.eq("cargo_disputado", cargo)
     }
 
-    return query.order("nome_urna")
+    return query.order("nome_urna").abortSignal(signal)
   })
 
   if (error || !data) {
@@ -612,11 +612,12 @@ async function fetchAllVotacaoSearchRows(
   for (;;) {
     const { data, error } = await withSupabaseRetry(
       `votos_candidato-global-search-${offset}`,
-      async () =>
+      async (signal) =>
         supabase
           .from("votos_candidato")
           .select("candidato_id, votacao:votacoes_chave(tema, titulo)")
           .range(offset, offset + VOTACAO_SEARCH_PAGE_SIZE - 1)
+          .abortSignal(signal)
     )
     if (error) {
       return { rows, error: { message: error.message ?? "unknown error" } }
@@ -719,11 +720,15 @@ const getCandidatoPublicRowForRequest = cache(async function loadCandidatoPublic
   const supabase = createServerSupabaseClient(cacheMode ? { cacheMode } : undefined)
   const { data, error } = await withSupabaseRetry<Candidato>(
     `getCandidatoPublicRow(${slug})`,
-    async () =>
+    async (signal) =>
       supabase
         .from(CANDIDATO_PUBLIC_RELATION)
         .select(CANDIDATO_COLUMNS)
         .eq("slug", slug)
+        // `.abortSignal()` vem antes de `.single()`: o `.single()` estreita o tipo
+        // para PostgrestBuilder, que nao expoe `abortSignal`. A ordem nao muda o
+        // comportamento, o metodo so grava o signal no builder.
+        .abortSignal(signal)
         .single()
   )
 
@@ -753,8 +758,13 @@ async function getCandidatoSlugParamsUncached(): Promise<{ slug: string }[]> {
   }
 
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("getCandidatoSlugParams", async () =>
-    supabase.from(CANDIDATO_PUBLIC_RELATION).select("slug").neq("status", "removido").order("slug")
+  const { data, error } = await withSupabaseRetry("getCandidatoSlugParams", async (signal) =>
+    supabase
+      .from(CANDIDATO_PUBLIC_RELATION)
+      .select("slug")
+      .neq("status", "removido")
+      .order("slug")
+      .abortSignal(signal)
   )
 
   if (error || !data) {
@@ -858,11 +868,14 @@ async function getCandidatoBySlugFromRelationResource(
   } else {
     const { data, error: candidatoError } = await withSupabaseRetry<Candidato>(
       `getCandidatoBySlug(${slug})`,
-      async () =>
+      async (signal) =>
         supabase
           .from(relation)
           .select(CANDIDATO_COLUMNS)
           .eq("slug", slug)
+          // Mesma ordem de getCandidatoPublicRow: `.abortSignal()` antes de
+          // `.single()`, que estreita o tipo e esconde o metodo.
+          .abortSignal(signal)
           .single()
     )
 
@@ -895,11 +908,12 @@ async function getCandidatoBySlugFromRelationResource(
     const canonicalLookupRelation = shouldUseServiceRole ? "candidatos" : relation
     const { data: relatedCandidates, error: relatedError } = await withSupabaseRetry(
       `getCanonicalCandidates(${slug})`,
-      async () =>
+      async (signal) =>
         supabase
           .from(canonicalLookupRelation)
           .select("id, slug")
           .in("slug", canonical.slugs)
+          .abortSignal(signal)
     )
 
     if (!relatedError && relatedCandidates) {
@@ -920,38 +934,59 @@ async function getCandidatoBySlugFromRelationResource(
       // CPF no tse-resolver e a linha vem do casamento por nome, trazendo
       // candidatura de outra pessoa para a ficha. A linha continua no banco
       // com o motivo gravado, entao a correcao e reversivel.
-      withSupabaseRetry(`historico_politico(${slug})`, async () =>
+      withSupabaseRetry(`historico_politico(${slug})`, async (signal) =>
         supabase
           .from("historico_politico")
           .select("*")
           .eq("candidato_id", id)
           .is("despublicado_em", null)
           .order("periodo_inicio", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`mudancas_partido(${slug})`, async () =>
+      withSupabaseRetry(`mudancas_partido(${slug})`, async (signal) =>
         supabase
           .from("mudancas_partido")
           .select("*")
           .eq("candidato_id", id)
           .order("data_mudanca", { ascending: false, nullsFirst: false })
           .order("ano", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`patrimonio(${slug})`, async () =>
-        supabase.from("patrimonio").select("*").in("candidato_id", personLevelIds).order("ano_eleicao", { ascending: false })
+      withSupabaseRetry(`patrimonio(${slug})`, async (signal) =>
+        supabase
+          .from("patrimonio")
+          .select("*")
+          .in("candidato_id", personLevelIds)
+          .order("ano_eleicao", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`financiamento_publico(${slug})`, async () =>
-        supabase.from("financiamento_publico").select("*").in("candidato_id", personLevelIds).order("ano_eleicao", { ascending: false })
+      withSupabaseRetry(`financiamento_publico(${slug})`, async (signal) =>
+        supabase
+          .from("financiamento_publico")
+          .select("*")
+          .in("candidato_id", personLevelIds)
+          .order("ano_eleicao", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`votos_candidato(${slug})`, async () =>
-        supabase.from("votos_candidato").select("*, votacao:votacoes_chave(*)").eq("candidato_id", id)
+      withSupabaseRetry(`votos_candidato(${slug})`, async (signal) =>
+        supabase
+          .from("votos_candidato")
+          .select("*, votacao:votacoes_chave(*)")
+          .eq("candidato_id", id)
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`processos(${slug})`, async () =>
-        supabase.from("processos").select("*").eq("candidato_id", id)
+      withSupabaseRetry(`processos(${slug})`, async (signal) =>
+        supabase.from("processos").select("*").eq("candidato_id", id).abortSignal(signal)
       ),
-      withSupabaseRetry(`pontos_atencao(${slug})`, async () =>
-        supabase.from("pontos_atencao").select("*").eq("candidato_id", id).eq("visivel", true)
+      withSupabaseRetry(`pontos_atencao(${slug})`, async (signal) =>
+        supabase
+          .from("pontos_atencao")
+          .select("*")
+          .eq("candidato_id", id)
+          .eq("visivel", true)
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`projetos_lei(${slug})`, async () =>
+      withSupabaseRetry(`projetos_lei(${slug})`, async (signal) =>
         supabase
           .from("projetos_lei")
           .select("*", { count: "exact" })
@@ -959,6 +994,7 @@ async function getCandidatoBySlugFromRelationResource(
           .order("ano", { ascending: false })
           .order("numero", { ascending: false })
           .limit(25)
+          .abortSignal(signal)
       ),
       withSupabaseRetry(`legislacao_mandato_executivo(${slug})`, async () =>
         fetchLegislacaoMandatoExecutivoRowsPaged(supabase, id)
@@ -970,18 +1006,39 @@ async function getCandidatoBySlugFromRelationResource(
             },
           }))
       ),
-      withSupabaseRetry(`gastos_parlamentares(${slug})`, async () =>
-        supabase.from("gastos_parlamentares").select("*").eq("candidato_id", id).order("ano", { ascending: false })
+      withSupabaseRetry(`gastos_parlamentares(${slug})`, async (signal) =>
+        supabase
+          .from("gastos_parlamentares")
+          .select("*")
+          .eq("candidato_id", id)
+          .order("ano", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`sancoes_administrativas(${slug})`, async () =>
-        supabase.from("sancoes_administrativas").select("*").eq("candidato_id", id).order("data_inicio", { ascending: false })
+      withSupabaseRetry(`sancoes_administrativas(${slug})`, async (signal) =>
+        supabase
+          .from("sancoes_administrativas")
+          .select("*")
+          .eq("candidato_id", id)
+          .order("data_inicio", { ascending: false })
+          .abortSignal(signal)
       ),
-      withSupabaseRetry(`noticias_candidato(${slug})`, async () =>
-        supabase.from("noticias_candidato").select("*").eq("candidato_id", id).order("data_publicacao", { ascending: false }).limit(20)
+      withSupabaseRetry(`noticias_candidato(${slug})`, async (signal) =>
+        supabase
+          .from("noticias_candidato")
+          .select("*")
+          .eq("candidato_id", id)
+          .order("data_publicacao", { ascending: false })
+          .limit(20)
+          .abortSignal(signal)
       ),
       candidato.cargo_disputado === "Governador" && candidato.estado
-        ? withSupabaseRetry(`indicadores_estaduais(${slug})`, async () =>
-            supabase.from("indicadores_estaduais").select("*").ilike("estado", candidato.estado!).order("ano", { ascending: false })
+        ? withSupabaseRetry(`indicadores_estaduais(${slug})`, async (signal) =>
+            supabase
+              .from("indicadores_estaduais")
+              .select("*")
+              .ilike("estado", candidato.estado!)
+              .order("ano", { ascending: false })
+              .abortSignal(signal)
           )
         : Promise.resolve({ data: [] as IndicadorEstadual[] }),
     ])
@@ -1178,7 +1235,7 @@ export async function getProjetosLeiBySlugResource(
   if (!candidate.data) return liveResource(null)
 
   const supabase = createServerSupabaseClient({ cacheMode: "no-store" })
-  const { data, error, count } = await withSupabaseRetry(`projetos_lei_page(${slug})`, async () =>
+  const { data, error, count } = await withSupabaseRetry(`projetos_lei_page(${slug})`, async (signal) =>
     supabase
       .from("projetos_lei")
       .select("*", { count: "exact" })
@@ -1186,6 +1243,7 @@ export async function getProjetosLeiBySlugResource(
       .order("ano", { ascending: false })
       .order("numero", { ascending: false })
       .range(safeOffset, safeOffset + safeLimit - 1)
+      .abortSignal(signal)
   )
 
   if (error) {
@@ -1255,7 +1313,7 @@ async function getCandidatosComResumoResourceUncached(
   const supabase = createServerSupabaseClient()
   const { data: compareRows, error: compareError } = await withSupabaseRetry(
     "v_comparador(resumo)",
-    async () => {
+    async (signal) => {
       let query = supabase
         .from("v_comparador")
         .select("id, cargo_disputado, estado, total_processos, patrimonio_declarado, pontos_atencao")
@@ -1268,7 +1326,7 @@ async function getCandidatosComResumoResourceUncached(
         query = query.ilike("estado", estado)
       }
 
-      return query
+      return query.abortSignal(signal)
     }
   )
 
@@ -1332,7 +1390,7 @@ async function getCandidatosComparaveisResourceUncached(
   const supabase = createServerSupabaseClient()
   const { data, error: compareError } = await withSupabaseRetry(
     `v_comparador(${cargoFilter}${estado ? `:${estado}` : ""})`,
-    async () => {
+    async (signal) => {
       let query = supabase
         .from("v_comparador")
         .select("*")
@@ -1342,7 +1400,7 @@ async function getCandidatosComparaveisResourceUncached(
         query = query.ilike("estado", estado)
       }
 
-      return query.order("nome_urna")
+      return query.order("nome_urna").abortSignal(signal)
     }
   )
   if (compareError) {
@@ -1635,8 +1693,12 @@ async function getQuizAlignmentDatasetResourceUncached(
 
   const { data: rowsVotacoes, error: errVotacoes } = await withSupabaseRetry(
     "quiz-votacoes-chave",
-    async () =>
-      supabase.from("votacoes_chave").select("id,titulo,casa,proposicao_id").in("titulo", titulos)
+    async (signal) =>
+      supabase
+        .from("votacoes_chave")
+        .select("id,titulo,casa,proposicao_id")
+        .in("titulo", titulos)
+        .abortSignal(signal)
   )
 
   if (errVotacoes || !rowsVotacoes) {
@@ -1690,12 +1752,13 @@ async function getQuizAlignmentDatasetResourceUncached(
   }[] = []
   let votosFailed = false
   if (votacaoIds.length > 0 && candidatoIds.length > 0) {
-    const { data, error: errVotos } = await withSupabaseRetry("quiz-votos-candidato", async () =>
+    const { data, error: errVotos } = await withSupabaseRetry("quiz-votos-candidato", async (signal) =>
       supabase
         .from("votos_candidato")
         .select("candidato_id,votacao_id,voto,contradicao,contradicao_descricao")
         .in("candidato_id", candidatoIds)
         .in("votacao_id", votacaoIds)
+        .abortSignal(signal)
     )
     if (errVotos) {
       votosFailed = true
@@ -1757,12 +1820,13 @@ async function getQuizAlignmentDatasetResourceUncached(
   }
 
   if (candidatoIds.length > 0) {
-    const { data: plData } = await withSupabaseRetry("quiz-projetos-lei", async () =>
+    const { data: plData } = await withSupabaseRetry("quiz-projetos-lei", async (signal) =>
       supabase
         .from("projetos_lei")
         .select("candidato_id,tema,url_inteiro_teor")
         .in("candidato_id", candidatoIds)
         .not("tema", "is", null)
+        .abortSignal(signal)
     )
     for (const row of plData ?? []) {
       const tema = typeof row.tema === "string" ? row.tema.trim() : ""
@@ -1780,11 +1844,12 @@ async function getQuizAlignmentDatasetResourceUncached(
       }
     }
 
-    const { data: mudData } = await withSupabaseRetry("quiz-mudancas-partido", async () =>
+    const { data: mudData } = await withSupabaseRetry("quiz-mudancas-partido", async (signal) =>
       supabase
         .from("mudancas_partido")
         .select("candidato_id,id,ano,partido_anterior,partido_novo,data_mudanca,contexto")
         .in("candidato_id", candidatoIds)
+        .abortSignal(signal)
     )
     const mudancasRowsByCandidato = new Map<string, MudancaPartido[]>()
     for (const c of candidatos) {
@@ -1803,12 +1868,13 @@ async function getQuizAlignmentDatasetResourceUncached(
       )
     }
 
-    const { data: posData, error: posErr } = await withSupabaseRetry("quiz-posicoes-declaradas", async () =>
+    const { data: posData, error: posErr } = await withSupabaseRetry("quiz-posicoes-declaradas", async (signal) =>
       supabase
         .from("posicoes_declaradas")
         .select("candidato_id,tema,posicao,descricao,fonte,url_fonte")
         .in("candidato_id", candidatoIds)
         .eq("verificado", true)
+        .abortSignal(signal)
     )
     if (!posErr && posData) {
       for (const row of posData) {
@@ -1826,11 +1892,12 @@ async function getQuizAlignmentDatasetResourceUncached(
       console.warn("quiz posicoes_declaradas:", posErr.message)
     }
 
-    const { data: finRows, error: finErr } = await withSupabaseRetry("quiz-financiamento", async () =>
+    const { data: finRows, error: finErr } = await withSupabaseRetry("quiz-financiamento", async (signal) =>
       supabase
         .from("financiamento_publico")
         .select("candidato_id,ano_eleicao,total_arrecadado,maiores_doadores")
         .in("candidato_id", candidatoIds)
+        .abortSignal(signal)
     )
     if (!finErr && finRows?.length) {
       const latestByCandidato = new Map<
@@ -1956,12 +2023,13 @@ async function getIndicadoresEstadoResourceUncached(
   const supabase = createServerSupabaseClient()
   const { data, error } = await withSupabaseRetry(
     `indicadores_estaduais(${uf})`,
-    async () =>
+    async (signal) =>
       supabase
         .from("indicadores_estaduais")
         .select(INDICADORES_ESTADO_COLUMNS)
         .ilike("estado", uf)
         .order("ano", { ascending: false })
+        .abortSignal(signal)
   )
 
   if (error || !data) {
@@ -2004,11 +2072,12 @@ async function getIndicadoresAllEstadosResourceUncached(): Promise<
     return degradedResource([], SUPABASE_REQUIRED_MESSAGE)
   }
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("indicadores_estaduais_all", async () =>
+  const { data, error } = await withSupabaseRetry("indicadores_estaduais_all", async (signal) =>
     supabase
       .from("indicadores_estaduais")
       .select(INDICADORES_RANKING_COLUMNS)
       .order("ano", { ascending: false })
+      .abortSignal(signal)
   )
 
   if (error || !data) {
