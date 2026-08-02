@@ -292,6 +292,48 @@ describe("falha transiente não pode entrar no Data Cache", () => {
   })
 })
 
+describe("falha parcial fora do cache preserva os dados que sobreviveram", () => {
+  /**
+   * Regressão do review 2026-08-02: manter a falha fora do cache é correto, mas
+   * a primeira versão descartava as entries junto. No ranking agregado
+   * (gastos-parlamentares) a lista de candidatos continua VIVA quando só a
+   * métrica falha, então esvaziar a página era perda de fidelidade
+   * desnecessária: a rejeição carrega o dataset real via `payload`.
+   */
+  it("ranking agregado: métrica falha, lista de candidatos sobrevive na tela e nada é cacheado", async () => {
+    const api = await loadApi()
+    // candidatos_publico responde; gastos_parlamentares (a métrica) falha.
+    stubFetchByTable(
+      {
+        candidatos_publico: () => okJson([CANDIDATO_ROW]),
+        gastos_parlamentares: failResponse,
+      },
+      () => okJson([])
+    )
+
+    const resource = await api.getRankingDataResource("gastos-parlamentares", "Presidente")
+
+    assert.equal(resource.sourceStatus, "degraded")
+    assert.equal(
+      resource.sourceMessage,
+      "Não foi possível calcular esta métrica nesta tentativa."
+    )
+    // O ponto da regressão: a lista NÃO pode vir vazia.
+    assert.equal(
+      resource.data.entries.length,
+      1,
+      "entries foram descartadas: a pagina de ranking perderia a lista inteira"
+    )
+    assert.equal(resource.data.entries[0].candidato.nome_urna, "Candidata Teste")
+    assert.equal(resource.data.entries[0].metricValue, null)
+    // E continua fora do cache.
+    assert.equal(
+      lastCacheCall("ranking-data-resource-public-copy-20260521")?.outcome,
+      "rejected"
+    )
+  })
+})
+
 describe("fail-soft legítimo continua cacheável", () => {
   it("lista vazia real (query ok, 0 linhas) é live e resolve dentro do cache", async () => {
     const api = await loadApi()

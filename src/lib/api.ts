@@ -143,21 +143,34 @@ function requireLiveResourceForCache<T>(resource: DataResource<T>): DataResource
  * Degradação PARCIAL com dados reais (busca sem temas de votação, resumo sem
  * enriquecimento, quiz sem mapa de votações) continua retornando resource e
  * sendo cacheável de propósito: há conteúdo verdadeiro para servir.
+ *
+ * `payload` carrega dados reais que a rejeição atravessa. Nem toda degradação
+ * que precisa ficar fora do cache tem payload vazio: o ranking agregado falha
+ * com a lista de candidatos VIVA e só a métrica nula, e sem carregar as entries
+ * a página perderia a lista inteira (review 2026-08-02). Quem não tem nada de
+ * verdadeiro para carregar omite e o wrapper usa o vazio de sempre.
  */
-class DegradedDataError extends Error {
+class DegradedDataError<P = unknown> extends Error {
   readonly sourceMessage: string | null
+  readonly payload?: P
 
-  constructor(sourceMessage: string | null | undefined) {
+  constructor(sourceMessage: string | null | undefined, payload?: P) {
     super(sourceMessage ?? "recurso degradado por falha transiente")
     this.name = "DegradedDataError"
     this.sourceMessage = sourceMessage ?? null
+    this.payload = payload
   }
 }
 
-/** Converte o throw da camada de cache no degradedResource de sempre; o resto sobe. */
+/**
+ * Converte o throw da camada de cache no degradedResource de sempre; o resto
+ * sobe. Quando o erro carrega `payload`, ele vence o `fallbackData` vazio: é o
+ * que preserva na tela os dados reais que sobreviveram à falha parcial.
+ */
 function degradedFromError<T>(error: unknown, fallbackData: T): DataResource<T> {
   if (error instanceof DegradedDataError) {
-    return degradedResource(fallbackData, error.sourceMessage)
+    const payload = error.payload as T | undefined
+    return degradedResource(payload ?? fallbackData, error.sourceMessage)
   }
   throw error
 }
@@ -1686,8 +1699,17 @@ async function getRankingDataResourceUncached(
   // Sem USE_MOCK, entries degradadas são sempre falha transiente (cascata dos
   // comparáveis/lista ou métrica agregada que falhou): ranking vazio ou com
   // métricas todas nulas não pode ser cacheado por 1h.
+  //
+  // As entries viajam no erro: na falha só da métrica agregada a lista de
+  // candidatos continua viva e real, e descartá-la esvaziaria a página inteira
+  // em vez de só zerar a coluna da métrica.
   if (!USE_MOCK && entriesResource.sourceStatus !== "live") {
-    throw new DegradedDataError(entriesResource.sourceMessage)
+    throw new DegradedDataError<RankingDataset>(entriesResource.sourceMessage, {
+      definition,
+      cargo: normalized.cargo,
+      estado: estadoFilter,
+      entries: entriesResource.data,
+    })
   }
 
   return {
@@ -1726,15 +1748,14 @@ export async function getRankingDataResource(
     const definition = getRankingDefinitionBySlug(slug)
     if (!definition) throw error
     const normalized = normalizeRankingFilters({ cargo, uf: estado })
-    return degradedResource(
-      {
-        definition,
-        cargo: normalized.cargo,
-        estado: definition.supportsUf ? normalized.estado : undefined,
-        entries: [] as RankingEntry[],
-      },
-      error.sourceMessage
-    )
+    // `degradedFromError` prefere o payload do erro (dataset com as entries
+    // reais); o vazio abaixo só entra se a rejeição não carregou nada.
+    return degradedFromError<RankingDataset>(error, {
+      definition,
+      cargo: normalized.cargo,
+      estado: definition.supportsUf ? normalized.estado : undefined,
+      entries: [] as RankingEntry[],
+    })
   }
 }
 
