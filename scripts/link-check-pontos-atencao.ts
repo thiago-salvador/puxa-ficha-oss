@@ -77,7 +77,22 @@
  *   npx tsx scripts/link-check-pontos-atencao.ts --apply
  *
  * Flags extras: --limit=N, --timeout=MS, --concurrency=N, --host-delay=MS,
- * --max-bytes=N, --only-visible, --gate-somente-publicos
+ * --max-bytes=N, --only-visible, --gate-somente-publicos,
+ * --revalidar=slug1,slug2
+ *
+ * GATE DE REVALIDAÇÃO ANTES DE PUBLICAR (2026-08-02)
+ *
+ * `--revalidar=` trata os slugs nomeados como se já fossem públicos, só para
+ * efeito do critério de falha. Serve ao caso que o gate normal não cobre: o
+ * candidato que está fora da coorte hoje (`removido`, `desistente`, ou nunca
+ * publicado) e vai entrar. Decisão do Thiago no mesmo dia: claim de quem está
+ * fora não é despublicada preventivamente, mas a fonte tem que ser revalidada
+ * ANTES da volta, senão a claim reaparece junto com a fonte podre.
+ *
+ * Uso na publicação:
+ *   npm run data:link-check-fontes:revalidar -- --revalidar=ciro-gomes,aldo-rebelo
+ *
+ * Exit code 1 = não publique esses candidatos ainda.
  */
 
 import { pathToFileURL } from "node:url"
@@ -559,6 +574,17 @@ function parseNumberFlag(prefixo: string, padrao: number | null): number | null 
   return Number.isFinite(valor) && valor > 0 ? valor : padrao
 }
 
+/** Lista separada por vírgula, vazia quando a flag não veio. */
+export function parseListaFlag(prefixo: string, argv: readonly string[]): string[] {
+  const arg = argv.find((a) => a.startsWith(prefixo))
+  if (!arg) return []
+  return arg
+    .slice(prefixo.length)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 /**
  * Escrita da despublicação.
  *
@@ -613,6 +639,37 @@ async function despublicarNoBanco(row: PontoAtencaoLinkRow, motivo: string): Pro
  * mesma view que o app consulta, então o recorte aqui é o recorte do site, e
  * não uma segunda definição de "público" que poderia divergir com o tempo.
  */
+/**
+ * Ids dos candidatos nomeados em `--revalidar=slug,slug`.
+ *
+ * Existe por causa da decisão do Thiago de 2026-08-02: claim de candidato fora
+ * da coorte (`removido`, `desistente`) NÃO é despublicada preventivamente, mas
+ * a fonte tem que ser revalidada ANTES de o candidato voltar a `candidatos_publico`.
+ *
+ * Sem isto o gate só olha quem já é público, o que é tarde demais: no instante
+ * em que o candidato volta, a claim vai junto, com a fonte podre que ninguém
+ * checou. Marcar o slug como público durante a checagem faz o critério de falha
+ * do `--gate-somente-publicos` valer para ele antes da publicação, que é
+ * exatamente o momento útil. Vale igual para candidato novo entrando na coorte.
+ *
+ * Lê de `candidatos` (não da view), porque o alvo é justamente quem ainda não
+ * está na view.
+ */
+async function idsDosSlugs(slugs: readonly string[]): Promise<Set<string>> {
+  if (slugs.length === 0) return new Set()
+  const { data, error: err } = await supabase.from("candidatos").select("id, slug").in("slug", slugs)
+  if (err) throw new Error(`candidatos por slug: ${err.message}`)
+  const linhas = (data ?? []) as Array<{ id: string; slug: string }>
+  const achados = new Set(linhas.map((l) => l.slug))
+  const faltando = slugs.filter((s) => !achados.has(s))
+  if (faltando.length > 0) {
+    // Slug errado silenciosamente checaria nada e passaria verde, que é o pior
+    // resultado possível num gate de publicação.
+    throw new Error(`--revalidar: slug(s) inexistente(s) em candidatos: ${faltando.join(", ")}`)
+  }
+  return new Set(linhas.map((l) => l.id))
+}
+
 async function idsDeCandidatosPublicos(): Promise<Set<string>> {
   const pageSize = 1000
   const ids = new Set<string>()
@@ -637,6 +694,7 @@ async function main() {
   const failOnDead = process.argv.includes("--fail-on-dead")
   const failOnSemSubstancia = process.argv.includes("--fail-on-sem-substancia")
   const gateSomentePublicos = process.argv.includes("--gate-somente-publicos")
+  const slugsRevalidacao = parseListaFlag("--revalidar=", process.argv)
   const limit = parseNumberFlag("--limit=", null)
   const timeoutMs = parseNumberFlag("--timeout=", 20000) ?? 20000
   const concurrency = parseNumberFlag("--concurrency=", 6) ?? 6
@@ -655,6 +713,10 @@ async function main() {
     limit,
     async fetchRows() {
       const publicos = await idsDeCandidatosPublicos()
+      // Modo revalidação: trata os slugs pedidos como se já fossem públicos, para
+      // que o critério de falha do gate caia sobre eles ANTES de entrarem na
+      // coorte. Ver `idsDosSlugs` para o porquê.
+      const revalidar = await idsDosSlugs(slugsRevalidacao)
       const pageSize = 500
       const todas: PontoAtencaoLinkRow[] = []
       for (let from = 0; ; from += pageSize) {
@@ -669,7 +731,9 @@ async function main() {
         todas.push(
           ...pagina.map((row) => ({
             ...row,
-            publico: row.candidato_id !== null && publicos.has(row.candidato_id),
+            publico:
+              row.candidato_id !== null &&
+              (publicos.has(row.candidato_id) || revalidar.has(row.candidato_id)),
           })),
         )
         if (pagina.length < pageSize) break
