@@ -17,7 +17,11 @@ import assert from "node:assert/strict"
 import { createRequire } from "node:module"
 import { afterEach, describe, it } from "node:test"
 
-import { PostgrestClient } from "@supabase/postgrest-js"
+// `@supabase/postgrest-js` e dependencia transitiva, nao declarada no
+// package.json: importar dela direto quebra o gate do knip. `createClient` da
+// o mesmo builder (`.from().select().abortSignal()`) por uma dependencia
+// declarada, e ainda por cima e o caminho literal que a producao monta.
+import { createClient } from "@supabase/supabase-js"
 
 const require = createRequire(import.meta.url)
 const serverOnlyPath = require.resolve("server-only")
@@ -74,12 +78,11 @@ describe("cadeia PostgREST -> fetch configurado -> fetch global", () => {
     const limiter = createSupabaseFetchLimiter({ maxConcurrent: 2, queueTimeoutMs: 500 })
     const configuredFetch = createConfiguredFetch({ cacheMode: "no-store" }, limiter)
 
-    // Cliente PostgREST real apontado para o fetch configurado: e exatamente o
-    // caminho que `createServerSupabaseClient` monta em producao. `retry: false`
-    // tira a retentativa interna do postgrest-js da equacao.
-    const postgrest = new PostgrestClient("https://project.supabase.co/rest/v1", {
-      fetch: configuredFetch as unknown as typeof fetch,
-      retry: false,
+    // Cliente Supabase real apontado para o fetch configurado: e exatamente o
+    // caminho que `createServerSupabaseClient` monta em producao.
+    const postgrest = createClient("https://project.supabase.co", "anon-key-de-teste", {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: configuredFetch as unknown as typeof fetch },
     })
 
     const controller = new AbortController()
@@ -120,9 +123,9 @@ describe("cadeia PostgREST -> fetch configurado -> fetch global", () => {
     const limiter = createSupabaseFetchLimiter({ maxConcurrent: 1, queueTimeoutMs: 5_000 })
     const configuredFetch = createConfiguredFetch({}, limiter)
 
-    const postgrest = new PostgrestClient("https://project.supabase.co/rest/v1", {
-      fetch: configuredFetch as unknown as typeof fetch,
-      retry: false,
+    const postgrest = createClient("https://project.supabase.co", "anon-key-de-teste", {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: configuredFetch as unknown as typeof fetch },
     })
 
     const controller = new AbortController()
