@@ -114,8 +114,17 @@ const MARCADORES_ANTI_ROBO: RegExp[] = [
 ]
 
 /** Content-types cujo corpo não é HTML e não deve passar por strip de tags. */
+// XML entrou em 2026-08-02. O endpoint oficial de dados abertos do Senado
+// (legis.senado.leg.br/dadosabertos/...) responde `application/xml` com dado
+// estruturado real, e sem esta linha o analisador tentava extrair texto de HTML,
+// nao achava TEXTO_MINIMO_UTIL e devolvia `sem_substancia`, que e defeito REAL e
+// derruba o gate. Fonte primaria de governo virava motivo de falha.
+//
+// `xhtml+xml` fica DE FORA de proposito: aquilo e pagina para ler, nao payload
+// de dados, e deve continuar sendo julgado pelo texto extraido. Por isso o
+// `(?!xhtml)` antes do ramo generico `.*\+xml`.
 const TIPOS_NAO_HTML =
-  /^(application\/(pdf|zip|json|.*\+json|octet-stream|vnd\.|msword)|image\/|audio\/|video\/|text\/csv)/i
+  /^(application\/(pdf|zip|json|xml|.*\+json|(?!xhtml)[a-z0-9.-]*\+xml|octet-stream|vnd\.|msword)|text\/xml|image\/|audio\/|video\/|text\/csv)/i
 
 /** Remove acento e caixa para o texto casar com os marcadores. */
 function normalizarParaMarcador(texto: string): string {

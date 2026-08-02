@@ -240,3 +240,56 @@ describe("analisarSubstancia", () => {
     assert.equal(r.veredito, "com_conteudo")
   })
 })
+
+describe("dados abertos em XML nao sao defeito de fonte", () => {
+  /**
+   * Regressao encontrada em 2026-08-02 pelo run de link-check no CI: a claim
+   * "Carreira politica" do Jorginho Mello citava
+   * https://legis.senado.leg.br/dadosabertos/senador/5350/mandatos, endpoint
+   * OFICIAL de dados abertos do Senado, que responde 200 com
+   * `Content-Type: application/xml` e 2166 bytes de dado estruturado real.
+   *
+   * `TIPOS_NAO_HTML` cobria json e pdf mas nao xml, entao o analisador tentava
+   * extrair texto de HTML, nao achava os 500 caracteres legiveis e devolvia
+   * `sem_substancia`, que é defeito REAL e derruba o gate. Fonte primaria de
+   * governo virava motivo de falha, e gate que reprova fonte boa é gate que
+   * alguem silencia.
+   */
+  it("classifica application/xml como tipo nao-HTML", () => {
+    assert.equal(ehTipoNaoHtml("application/xml"), true)
+    assert.equal(ehTipoNaoHtml("application/xml; charset=UTF-8"), true)
+    assert.equal(ehTipoNaoHtml("text/xml"), true)
+    assert.equal(ehTipoNaoHtml("application/rss+xml"), true)
+    assert.equal(ehTipoNaoHtml("application/atom+xml"), true)
+  })
+
+  it("NAO trata xhtml como binario: continua sendo pagina para analisar", () => {
+    assert.equal(ehTipoNaoHtml("application/xhtml+xml"), false)
+    assert.equal(ehTipoNaoHtml("text/html"), false)
+  })
+
+  it("o payload real do Senado passa como conteudo, nao como sem_substancia", () => {
+    const corpoSenado = `<?xml version='1.0' encoding='UTF-8'?>
+<MandatoParlamentar xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance'>
+  <Parlamentar><CodigoParlamentar>5350</CodigoParlamentar></Parlamentar>
+</MandatoParlamentar>`.repeat(12)
+    const analise = analisarSubstancia({
+      httpStatus: 200,
+      contentType: "application/xml",
+      corpo: corpoSenado,
+      bytes: corpoSenado.length,
+    })
+    assert.equal(analise.veredito, "com_conteudo")
+  })
+
+  it("xml pequeno demais continua sendo sem_substancia", () => {
+    const vazio = "<?xml version='1.0'?><vazio/>"
+    const analise = analisarSubstancia({
+      httpStatus: 200,
+      contentType: "application/xml",
+      corpo: vazio,
+      bytes: vazio.length,
+    })
+    assert.equal(analise.veredito, "sem_substancia")
+  })
+})

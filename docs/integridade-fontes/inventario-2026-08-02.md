@@ -215,3 +215,54 @@ uma fonte 404 como único lastro.
 | **alta** | Tarcísio de Freitas | Tiro durante comicio em Paraisopolis (2022) | `https://g1.globo.com/sp/sao-paulo/eleicoes/2022/noticia/2022` (404) |
 
 Nenhuma delas foi tocada. Correção exige decisão editorial, não script.
+
+---
+
+# Correções a este inventário (2026-08-02, depois da verificação no CI)
+
+Três coisas que a execução no CI expôs e que este documento afirmava errado.
+
+## 1. A cobertura era parcial e não estava dito
+
+O inventário acima analisou os **129 pontos visíveis**. A base tem **249**: os outros
+**120 estão com `visivel = false`**, e entre eles há **22 de gravidade crítica ou alta**.
+Eles estão fora do ar, então não são risco de publicação hoje, mas são o mesmo backlog e
+foram omitidos sem ressalva.
+
+## 2. As contagens exatas não são estáveis
+
+O veredito por URL varia com o IP de origem, porque parte dos portais bloqueia robô.
+Três medições do mesmo dia:
+
+| | local | CI, run A | CI, run B (6 min depois) |
+|---|---|---|---|
+| Vivas | 78 | 65 | 56 |
+| Indisponíveis | 11 | 32 | 43 |
+
+Isso **não** muda veredito de defeito, porque claim com todas as fontes `indisponivel` já
+é excluída do critério de falha por desenho. Mas significa que os números absolutos deste
+inventário são uma fotografia de uma execução, não uma medida estável. O que é estável é
+a classe do defeito: URL morta continua morta, raiz de portal continua sem caminho.
+
+## 3. Um `sem_substancia` era falso positivo, e virou fix de código
+
+A claim de carreira política do Jorginho Mello citava
+`legis.senado.leg.br/dadosabertos/senador/5350/mandatos`, endpoint **oficial de dados
+abertos do Senado**, que responde 200 com `application/xml` e 2166 bytes de dado real.
+`TIPOS_NAO_HTML` cobria `json` e `pdf` mas não `xml`, então o analisador tentava extrair
+texto de HTML, não achava os 500 caracteres mínimos e devolvia `sem_substancia`, que é
+defeito real e derruba o gate.
+
+Fonte primária de governo estava sendo classificada como defeito. Corrigido em
+`src/lib/fonte-substancia.ts` (com `xhtml+xml` deliberadamente de fora, porque aquilo é
+página para ler). A URL agora sonda `viva`.
+
+## Estado depois das correções
+
+- **Ficha pública: 1 claim** reprovando o gate. `Marcelo Brigadeiro` [baixa], "Sem
+  histórico de mandato eletivo registrado", com fonte `https://www.tse.jus.br` (raiz de
+  portal). É correção de **dado**, não de código, e não foi aplicada.
+- **Backlog de quem está na disputa: 42 claims** visíveis com defeito real (34 baixa,
+  5 média, 3 alta, zero crítica).
+- O padrão dominante do backlog continua sendo claim que cita raiz de portal
+  (`tse.jus.br`, `camara.leg.br`, `senado.leg.br`), não link que morreu.
