@@ -148,6 +148,7 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
     let sent = 0
     let failed = 0
     let skipped = 0
+    let enviadosSemRegistro = 0
 
     for (const subscriber of (subscribers ?? []) as DigestSubscriberRow[]) {
       processed += 1
@@ -373,6 +374,11 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
         logId = insertedLog.id
       }
 
+      // Divide o try em dois estados: antes e depois de o email existir no mundo.
+      // Tudo que der errado DEPOIS disto e problema de registro, nao de envio, e
+      // registro perdido nunca pode virar reenvio.
+      let emailEnviado = false
+
       try {
         await deps.sendTransactionalEmail({
           to: subscriber.email,
@@ -383,6 +389,7 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
             "List-Unsubscribe": `<${unsubscribeUrl}>`,
           },
         })
+        emailEnviado = true
 
         const { error: sentLogError } = await supabase
           .from("notification_log")
@@ -442,6 +449,61 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
         sent += 1
       } catch (error) {
         const errMsg = error instanceof Error ? error.message.slice(0, 500) : "Unknown error"
+
+        // O email SAIU e so o registro falhou.
+        //
+        // Marcar 'failed' aqui era o defeito: 'failed' nao e 'sent', entao a
+        // proxima execucao do mesmo dia passava direto pela guarda
+        // `existingLog?.status === "sent"` e MANDAVA O DIGEST DE NOVO, com o
+        // mesmo conteudo, para quem ja tinha recebido. A falha era de escrita no
+        // banco, e o preco era pago na caixa de entrada do assinante.
+        //
+        // Nao ha status novo a gravar: `notification_log.status` tem CHECK em
+        // ('pending','sent','failed','skipped'), e de todo jeito a escrita que
+        // acabou de falhar e a mesma que precisariamos para corrigir. Entao a
+        // linha fica como esta (tipicamente 'pending') e o que impede o reenvio
+        // e avancar a janela do assinante: com `last_digest_sent_at` no instante
+        // desta execucao, as mudancas ja enviadas saem do recorte
+        // `created_at > windowStart` e a proxima execucao classifica como
+        // "no_changes_in_window" em vez de reenviar.
+        //
+        // Risco residual, assumido e nomeado: se ESTA escrita tambem falhar, o
+        // reenvio volta a ser possivel. Nesse ponto o banco esta inacessivel
+        // para escrita e nao ha o que fazer de dentro do request; o que se
+        // ganha e que o caso sai em log de erro e leva a resposta a 500.
+        if (emailEnviado) {
+          deps.logAlertsEvent({
+            route: "send-digest",
+            event: "digest_enviado_sem_registro",
+            level: "error",
+            detail: { subscriberId: subscriber.id, errorMessage: errMsg },
+          })
+
+          const { error: janelaError } = await supabase
+            .from("alert_subscribers")
+            .update({ last_digest_sent_at: runStartedAt })
+            .eq("id", subscriber.id)
+
+          if (janelaError) {
+            deps.logAlertsEvent({
+              route: "send-digest",
+              event: "subscriber_step_failed",
+              level: "error",
+              detail: {
+                subscriberId: subscriber.id,
+                step: "alert_subscriber_digest_update_pos_envio",
+                errorMessage: formatDatabaseWriteError(
+                  "alert_subscriber_digest_update_pos_envio",
+                  janelaError,
+                ),
+              },
+            })
+          }
+
+          enviadosSemRegistro += 1
+          continue
+        }
+
         deps.logAlertsEvent({
           route: "send-digest",
           event: "digest_email_failed",
@@ -512,20 +574,32 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
     //   1. o lote inteiro falhou (nenhum envio saiu, mas havia gente pra enviar)
     //   2. o teto de encadeamento cortou com fila pendente, ou seja parte da base
     //      nao foi processada hoje e nao sera sem intervencao
+    //   3. algum email saiu sem conseguir ser registrado. O assinante recebeu,
+    //      entao nao e perda de entrega, mas o registro do dia ficou incompleto
+    //      e a camada de escrita esta falhando: exatamente o tipo de coisa que
+    //      so aparece se alguem for avisado.
     const loteInteiroFalhou = failed > 0 && sent === 0
     const filaTruncada = hasMore && !shouldChain
-    const degradado = loteInteiroFalhou || filaTruncada
+    const registroPerdido = enviadosSemRegistro > 0
+    const degradado = loteInteiroFalhou || filaTruncada || registroPerdido
     const status = degradado ? 500 : 200
+
+    const motivoDegradacao = loteInteiroFalhou
+      ? "nenhum envio concluido no lote"
+      : filaTruncada
+        ? "teto de encadeamento atingido com fila pendente"
+        : "email enviado sem registro gravado"
 
     const corpo = {
       ok: !degradado,
       degradado: degradado
-        ? { loteInteiroFalhou, filaTruncada, motivo: loteInteiroFalhou ? "nenhum envio concluido no lote" : "teto de encadeamento atingido com fila pendente" }
+        ? { loteInteiroFalhou, filaTruncada, registroPerdido, motivo: motivoDegradacao }
         : null,
       processed,
       sent,
       failed,
       skipped,
+      enviadosSemRegistro,
       cursor,
       nextCursor: hasMore ? nextCursor : null,
       chainScheduled: hasMore && shouldChain,
@@ -536,9 +610,23 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
     if (degradado) {
       deps.logAlertsEvent({
         route: "send-digest",
-        event: loteInteiroFalhou ? "digest_lote_inteiro_falhou" : "digest_chain_depth_exhausted",
+        event: loteInteiroFalhou
+          ? "digest_lote_inteiro_falhou"
+          : filaTruncada
+            ? "digest_chain_depth_exhausted"
+            : "digest_registro_perdido",
         level: "error",
-        detail: { processed, sent, failed, skipped, cursor, nextCursor, total, chainDepth },
+        detail: {
+          processed,
+          sent,
+          failed,
+          skipped,
+          enviadosSemRegistro,
+          cursor,
+          nextCursor,
+          total,
+          chainDepth,
+        },
       })
     }
 
@@ -547,6 +635,7 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
       sent,
       failed,
       skipped,
+      enviadosSemRegistro,
       cursor,
       nextCursor: hasMore ? nextCursor : null,
       chainScheduled: hasMore && shouldChain,

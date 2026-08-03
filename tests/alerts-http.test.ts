@@ -959,6 +959,7 @@ describe("alerts HTTP routes", () => {
         sent: 0,
         failed: 0,
         skipped: 0,
+        enviadosSemRegistro: 0,
         cursor: 0,
         nextCursor: null,
         chainScheduled: false,
@@ -1058,7 +1059,18 @@ describe("alerts HTTP routes", () => {
       assert.equal(logRow?.error_message, "resend down")
     })
 
-    it("does not count the digest as sent when notification_log sent update fails", async () => {
+    /**
+     * Regressao de 2026-08-03 (master review). Quando o email SAIA e so o
+     * UPDATE do notification_log falhava, a rota gravava status 'failed'. Como
+     * 'failed' nao e 'sent', a proxima execucao do mesmo dia passava direto pela
+     * guarda `existingLog?.status === "sent"` e REENVIAVA o mesmo digest para
+     * quem ja tinha recebido: a falha era de escrita no banco e o preco era pago
+     * na caixa de entrada do assinante.
+     *
+     * O contrato mudou de proposito. O envio nao pode mais ser contado como
+     * falha de envio, e o que impede o reenvio e a janela do assinante avancar.
+     */
+    it("nao marca como falha o digest que saiu e so nao conseguiu ser registrado", async () => {
       const fixture = baseDigestFixture()
       fixture.setTable("candidate_changes", [
         {
@@ -1077,17 +1089,77 @@ describe("alerts HTTP routes", () => {
         ok: boolean
         sent: number
         failed: number
+        enviadosSemRegistro: number
+        degradado: { registroPerdido: boolean; motivo: string } | null
       }>(response)
       const logRow = fixture.getTable("notification_log")[0]
+      const subscriber = fixture.getTable("alert_subscribers")[0]
 
-      // 500: o lote nao concluiu nenhum envio contabilizado. Ver comentario acima.
+      // 500 continua: registro perdido e anomalia dura, e o unico mecanismo de
+      // alerta de cron do projeto e a notificacao nativa da Vercel no 500.
       assert.equal(response.status, 500)
       assert.equal(body.ok, false)
-      assert.equal(body.sent, 0)
-      assert.equal(body.failed, 1)
       assert.equal(fixture.emails.length, 1)
-      assert.equal(logRow?.status, "failed")
-      assert.equal(logRow?.error_message, "notification_log_sent_update: notification log unavailable")
+
+      assert.equal(body.enviadosSemRegistro, 1)
+      assert.equal(body.failed, 0, "o email saiu; isso nao e falha de envio")
+      assert.equal(body.sent, 0, "tambem nao e envio concluido: o registro nao existe")
+      assert.equal(body.degradado?.registroPerdido, true)
+      assert.equal(body.degradado?.motivo, "email enviado sem registro gravado")
+
+      assert.notEqual(
+        logRow?.status,
+        "failed",
+        "'failed' aqui e o que fazia a proxima execucao reenviar",
+      )
+      assert.equal(
+        subscriber?.last_digest_sent_at,
+        "2026-04-10T15:00:00.000Z",
+        "a janela precisa avancar, senao a proxima execucao reenvia as mesmas mudancas",
+      )
+      assert.ok(
+        fixture.events.some((event) => event.event === "digest_enviado_sem_registro"),
+      )
+    })
+
+    it("nao reenvia o digest na re-execucao do mesmo dia depois de perder o registro", async () => {
+      const fixture = baseDigestFixture()
+      fixture.setTable("candidate_changes", [
+        {
+          id: "chg_1",
+          candidato_id: "cand_lula",
+          titulo: "Nova atualização editorial",
+          descricao: "Texto curto da mudança.",
+          created_at: "2026-04-10T12:00:00.000Z",
+        },
+      ])
+      fixture.failNextUpdate("notification_log", "notification log unavailable")
+
+      const handler = createSendDigestHandler(createDeps(fixture))
+
+      const primeira = await handler(buildDigestRequest(fixture))
+      assert.equal(primeira.status, 500)
+      assert.equal(fixture.emails.length, 1, "o primeiro envio saiu")
+
+      // Mesmo dia, mesmo digest_date, banco ja de volta ao normal.
+      const segunda = await handler(buildDigestRequest(fixture))
+      const corpo = await readJson<{ sent: number; skipped: number; failed: number }>(segunda)
+
+      assert.equal(
+        fixture.emails.length,
+        1,
+        "o assinante nao pode receber o mesmo digest duas vezes porque uma escrita falhou",
+      )
+      assert.equal(corpo.sent, 0)
+      assert.equal(corpo.failed, 0)
+      assert.equal(corpo.skipped, 1)
+      assert.equal(segunda.status, 200)
+      assert.ok(
+        fixture.events.some(
+          (event) => event.detail?.reason === "no_changes_in_window",
+        ),
+        "a janela avancada e o que faz a segunda execucao pular",
+      )
     })
 
     it("surfaces failure when last_digest_sent_at update fails after email delivery", async () => {
