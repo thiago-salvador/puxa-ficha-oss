@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import { secretsMatch } from "@/lib/crypto-utils"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -33,7 +34,11 @@ function bearer(req: NextRequest): string | null {
 
 export function createRuntimeSmokeHandler(deps: RuntimeSmokeDeps) {
   return async function runtimeSmoke(req: NextRequest) {
-    if (!deps.expectedSecret?.trim() || bearer(req) !== deps.expectedSecret.trim()) {
+    // `secretsMatch` compara em tempo constante. Era a unica das cinco rotas de
+    // segredo que usava `!==`, e comparacao de string sai no primeiro byte
+    // diferente. Falha fechada dos dois lados: segredo ausente no env ou no
+    // header devolve false.
+    if (!secretsMatch(bearer(req), deps.expectedSecret)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
