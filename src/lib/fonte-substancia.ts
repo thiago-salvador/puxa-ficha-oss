@@ -93,6 +93,29 @@ export const LIMITE_PAGINA_DE_DESAFIO = 3000
  */
 export const DOMINIOS_VERIFICACAO_MANUAL = ["noticias.stf.jus.br"] as const
 
+/**
+ * Marcadores de página que se declara de erro, lidos SÓ no `<title>` e no
+ * primeiro `<h1>`.
+ *
+ * Medido em 2026-08-03: `https://revistaforum.com.br/404.html` entrega 623
+ * caracteres de texto útil, ACIMA do piso de 500. Ou seja, site que sirva a
+ * própria página de erro com HTTP 200 (soft 404) hoje passa como
+ * `com_conteudo` e sustenta uma afirmação com uma tela que diz "não
+ * encontrado".
+ *
+ * Lidos só no título e no h1 de propósito. Matéria sobre um processo pode citar
+ * "404" ou "não encontrado" no meio do texto sem ser página de erro, e
+ * transformar fonte boa em alerta é justamente o defeito que este arquivo
+ * tenta evitar.
+ */
+const MARCADORES_CORPO_DE_ERRO: RegExp[] = [
+  /^\s*(erro\s*)?(404|410)\s*$/,
+  /\b(pagina|conteudo|noticia|materia) (nao|nao foi) (encontrad|localizad)/,
+  /\bpage not found\b/,
+  /\b(erro|error) (404|410)\b/,
+  /\b404\b[^a-z0-9]{0,3}(nao encontrad|not found)/,
+]
+
 /** Marcadores de página desativada por legislação eleitoral. */
 const MARCADORES_VEDACAO: RegExp[] = [
   /cumprimento (a|as) legislacao eleitoral/,
@@ -169,6 +192,71 @@ export function pareceDesafioAntiRobo(texto: string): boolean {
   return MARCADORES_ANTI_ROBO.some((re) => re.test(alvo))
 }
 
+/**
+ * Título e primeiro `<h1>` de um HTML, já normalizados. Vazio quando o corpo
+ * não tem nenhum dos dois.
+ */
+export function rotulosDoDocumento(html: string): string[] {
+  const rotulos: string[] = []
+  const titulo = /<title[^>]*>([\s\S]{0,300}?)<\/title[^>]*>/i.exec(html)
+  const h1 = /<h1[^>]*>([\s\S]{0,300}?)<\/h1[^>]*>/i.exec(html)
+  for (const achado of [titulo, h1]) {
+    if (!achado?.[1]) continue
+    const texto = extrairTextoUtil(achado[1])
+    if (texto !== "") rotulos.push(normalizarParaMarcador(texto))
+  }
+  return rotulos
+}
+
+/**
+ * A página se declara de erro no próprio título ou h1 (soft 404).
+ *
+ * Só olha rótulo, nunca o corpo inteiro. Ver `MARCADORES_CORPO_DE_ERRO`.
+ */
+export function pareceCorpoDeErro(html: string): boolean {
+  return rotulosDoDocumento(html).some((rotulo) => MARCADORES_CORPO_DE_ERRO.some((re) => re.test(rotulo)))
+}
+
+/**
+ * O corpo de uma resposta 404/410 é, na verdade, um bloqueio ou uma vedação
+ * eleitoral disfarçada de "não existe".
+ *
+ * Existe porque `scripts/link-check-pontos-atencao.ts` decidia `morta` só pelo
+ * status, sem nunca ler o corpo de um 404. WAF que responde 404 em vez de 403
+ * (e portal que responde 404 durante a vedação) viravam morte, e morte é o
+ * único veredito que autoriza despublicação.
+ *
+ * ATENÇÃO ao alcance real: no falso negativo medido em 2026-08-03
+ * (`revistaforum.com.br`, 404 servido a sonda de datacenter para uma matéria
+ * que existe), o corpo era a página de erro NORMAL do site, sem nenhum
+ * marcador. Esta função não pega esse caso, e nada que leia só o corpo pegaria.
+ * Quem separa aquele caso é a confirmação em execuções distintas, no script.
+ */
+export function corpoDeErroIndicaBloqueio(entrada: Omit<SubstanciaEntrada, "httpStatus">): {
+  bloqueio: boolean
+  motivo: string
+} {
+  const { contentType, corpo, bytes } = entrada
+
+  // 404 com corpo vazio é a forma normal de muita API dizer "não existe".
+  // Tratar isso como bloqueio seria dar anistia à morte de verdade.
+  if (bytes === 0 || ehTipoNaoHtml(contentType)) {
+    return { bloqueio: false, motivo: "" }
+  }
+
+  const texto = extrairTextoUtil(corpo)
+
+  if (pareceVedacaoEleitoral(texto)) {
+    return { bloqueio: true, motivo: "404 com aviso de legislacao eleitoral no corpo, nao e pagina inexistente" }
+  }
+
+  if (texto.length < LIMITE_PAGINA_DE_DESAFIO && pareceDesafioAntiRobo(texto)) {
+    return { bloqueio: true, motivo: "404 com desafio anti-robo no corpo (WAF respondendo 404 em vez de 403)" }
+  }
+
+  return { bloqueio: false, motivo: "" }
+}
+
 export function ehTipoNaoHtml(contentType: string | null): boolean {
   return typeof contentType === "string" && TIPOS_NAO_HTML.test(contentType.trim())
 }
@@ -231,6 +319,18 @@ export function analisarSubstancia(entrada: SubstanciaEntrada): SubstanciaAnalis
     return {
       veredito: "indisponivel",
       motivo: "desafio anti-robo no lugar do conteudo (WAF, captcha ou verificacao de navegador)",
+      caracteresUteis: texto.length,
+    }
+  }
+
+  // Soft 404: responde 2xx mas o próprio título ou h1 diz que não achou nada.
+  // O teto de tamanho é o mesmo do desafio anti-robô, e pela mesma razão:
+  // página de erro é curta (a da revistaforum tem 623 caracteres), matéria
+  // longa que cite "não encontrado" no texto não pode ser derrubada por isso.
+  if (texto.length < LIMITE_PAGINA_DE_DESAFIO && pareceCorpoDeErro(corpo)) {
+    return {
+      veredito: "sem_substancia",
+      motivo: `pagina de erro servida com HTTP ${httpStatus} (soft 404), ${texto.length} caracteres`,
       caracteresUteis: texto.length,
     }
   }

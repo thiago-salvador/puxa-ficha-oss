@@ -16,11 +16,13 @@ import { describe, it } from "node:test"
 import {
   analisarSubstancia,
   BYTES_MINIMO_BINARIO,
+  corpoDeErroIndicaBloqueio,
   DOMINIOS_VERIFICACAO_MANUAL,
   dominioExigeVerificacaoManual,
   ehTipoNaoHtml,
   extrairTextoUtil,
   LIMITE_PAGINA_DE_DESAFIO,
+  pareceCorpoDeErro,
   pareceDesafioAntiRobo,
   pareceVedacaoEleitoral,
   TEXTO_MINIMO_UTIL,
@@ -291,5 +293,93 @@ describe("dados abertos em XML nao sao defeito de fonte", () => {
       bytes: vazio.length,
     })
     assert.equal(analise.veredito, "sem_substancia")
+  })
+})
+
+/**
+ * Bloqueio disfarçado de 404, e página de erro servida com 200 (2026-08-03).
+ *
+ * Os corpos aqui são recortes do que foi realmente baixado em 2026-08-03. O
+ * `CORPO_404_REVISTAFORUM` é a página que `revistaforum.com.br/404.html` devolve
+ * de verdade, medida em 623 caracteres úteis: ela é a prova de que existe
+ * página de erro ACIMA do piso de 500, e é também o corpo exato que a sonda de
+ * datacenter recebeu para uma matéria que estava viva.
+ */
+describe("bloqueio disfarcado de 404 e soft 404", () => {
+  const CORPO_404_REVISTAFORUM = `<html><head><title>Revista Fórum</title></head><body>
+    <h1>404</h1>
+    <p>Lamentamos que a pagina que você procurou pode estar fora do ar</p>
+    <a href="/">Voltar</a>
+    <footer>Inspirada no Fórum Social Mundial, a Fórum foi lançada com a cobertura do primeiro
+    evento, realizado em janeiro de 2001 em Porto Alegre. ${"Texto institucional de rodapé. ".repeat(14)}</footer>
+    </body></html>`
+
+  it("404 com desafio anti-robo no corpo e bloqueio, nao morte", () => {
+    const corpo = "<html><body><h1>Attention Required!</h1><p>Support ID: 1234567890</p></body></html>"
+    const r = corpoDeErroIndicaBloqueio({ contentType: "text/html", corpo, bytes: corpo.length })
+    assert.equal(r.bloqueio, true)
+  })
+
+  it("404 com aviso de vedacao eleitoral e bloqueio, nao morte", () => {
+    const corpo =
+      "<html><body><p>Em cumprimento à legislação eleitoral, este site encontra-se com as funcionalidades desativadas.</p></body></html>"
+    const r = corpoDeErroIndicaBloqueio({ contentType: "text/html", corpo, bytes: corpo.length })
+    assert.equal(r.bloqueio, true)
+  })
+
+  it("404 de verdade NAO e tratado como bloqueio: a pagina real da revistaforum nao tem marcador", () => {
+    // Este é o teste que impede o afrouxamento. O falso negativo de 03/08 veio
+    // exatamente com este corpo, e mesmo assim ele não pode virar anistia: um
+    // 404 verdadeiro tem o mesmo corpo, e quem separa os dois é a confirmação
+    // em execuções distintas, no script, não uma regra sobre o corpo.
+    const r = corpoDeErroIndicaBloqueio({
+      contentType: "text/html",
+      corpo: CORPO_404_REVISTAFORUM,
+      bytes: CORPO_404_REVISTAFORUM.length,
+    })
+    assert.equal(r.bloqueio, false)
+  })
+
+  it("404 com corpo vazio continua morte: e a forma normal de API dizer que nao existe", () => {
+    const r = corpoDeErroIndicaBloqueio({ contentType: "text/html", corpo: "", bytes: 0 })
+    assert.equal(r.bloqueio, false)
+  })
+
+  it("pareceCorpoDeErro le titulo e h1, nao o corpo inteiro", () => {
+    assert.equal(pareceCorpoDeErro("<h1>404</h1>"), true)
+    assert.equal(pareceCorpoDeErro("<title>Página não encontrada</title>"), true)
+    assert.equal(pareceCorpoDeErro("<title>Page Not Found</title>"), true)
+    assert.equal(
+      pareceCorpoDeErro("<title>STF julga recurso</title><p>O documento 404 não foi encontrado nos autos</p>"),
+      false,
+      "materia que cita 404 no meio do texto nao pode ser derrubada",
+    )
+  })
+
+  it("soft 404: pagina de erro servida com HTTP 200 nao sustenta afirmacao", () => {
+    // 623 caracteres úteis, ACIMA do piso de 500. Sem esta regra, este corpo
+    // passava como `com_conteudo`.
+    const analise = analisarSubstancia({
+      httpStatus: 200,
+      contentType: "text/html",
+      corpo: CORPO_404_REVISTAFORUM,
+      bytes: CORPO_404_REVISTAFORUM.length,
+    })
+    assert.ok(extrairTextoUtil(CORPO_404_REVISTAFORUM).length > 500, "o corpo passa do piso de tamanho")
+    assert.equal(analise.veredito, "sem_substancia")
+    assert.match(analise.motivo, /soft 404/)
+  })
+
+  it("materia longa que mencione 'nao encontrado' segue com_conteudo", () => {
+    const materia = `<html><head><title>Justiça manda soltar réu</title></head><body><h1>Justiça manda soltar réu</h1>
+      <p>${"O relator afirmou que o documento não foi encontrado nos autos do processo. ".repeat(60)}</p>
+      </body></html>`
+    const analise = analisarSubstancia({
+      httpStatus: 200,
+      contentType: "text/html",
+      corpo: materia,
+      bytes: materia.length,
+    })
+    assert.equal(analise.veredito, "com_conteudo")
   })
 })

@@ -28,9 +28,33 @@ name: Link-check das fontes
 # lugar da matéria. Sem essa separação, o job despublicaria fonte legítima que
 # volta sozinha ao fim do período de vedação.
 #
-# SEMPRE em modo dry-run. Nenhuma execução automática escreve no banco: a
-# despublicação (`npm run data:link-check-fontes`) é decisão humana, rodada à
-# mão depois de olhar o relatório. É a falha do job que serve de alerta.
+# SEMPRE em modo dry-run: nenhuma execução automática altera o que está
+# publicado. A despublicação (`npm run data:link-check-fontes`) é decisão
+# humana, rodada à mão depois de olhar o relatório. É a falha do job que serve
+# de alerta.
+#
+# MORTE PRECISA SER CONFIRMADA (2026-08-03). Em 03/08 o run 30837180265 marcou
+# como defeituosas duas fontes VIVAS (`revistaforum.com.br` como `morta`,
+# `agorarn.com.br` como `sem_substancia`), e as duas voltaram a passar no run
+# seguinte, 30837640630. A investigação do dia mediu que o 404 falso é a
+# PRÓPRIA página de erro do site, sem marcador de WAF, indistinguível no corpo
+# de um 404 verdadeiro; que o eixo não é geografia (sonda de datacenter saindo
+# do Brasil também levou o 404, enquanto IP residencial brasileiro recebeu o
+# artigo em 12 de 12 tentativas); e que a falha é correlacionada por EXECUÇÃO,
+# porque dois hosts independentes degradaram e voltaram juntos.
+#
+# Como 404 verdadeiro é estável para sempre e bloqueio não sobrevive à troca de
+# runner, `morta` e `sem_substancia` só contam depois de aparecerem em duas
+# execuções distintas. A primeira aparição vira MORTE SUSPEITA: sai no
+# relatório, não derruba o job e não autoriza despublicação. Isso custa até uma
+# rodada semanal a mais para uma morte real virar vermelho, e é a mesma troca
+# já feita nos dois níveis de alarme acima.
+#
+# Consequência operacional: a execução agendada passou a escrever numa tabela,
+# `link_check_url_observacao` (migration 20260803150000). É a única escrita, ela
+# guarda observação sobre URL de terceiro e NUNCA toca `pontos_atencao`. Sem a
+# migration aplicada, o script avisa em log, não confirma nada e portanto não
+# despublica nada.
 #
 # DOIS NÍVEIS DE ALARME (2026-07-29). A primeira execução com credencial
 # reprovou 71 claims e 36 URLs mortas, mas só 7 dessas claims estavam em ficha
@@ -105,6 +129,11 @@ jobs:
       # Gate de publicação sob demanda (2026-08-02). Existe para que a
       # revalidação exigida antes de um candidato entrar (ou voltar) à coorte
       # possa ser rodada SEM a service role sair do CI. Falha = não publique.
+      #
+      # Roda com `--fail-on-morte-suspeita`, e portanto barra também a morte que
+      # ainda não foi confirmada em segunda execução, ao contrário do gate
+      # semanal acima. A assimetria é de propósito: aqui o dano é publicar claim
+      # com fonte podre, e vermelho falso custa só disparar de novo.
       - name: Revalidação pré-publicação dos slugs informados
         if: ${{ inputs.revalidar }}
         env:

@@ -65,8 +65,53 @@
  *      menos uma fonte `morta`, `sem_caminho` ou `sem_substancia`. É o que o
  *      cabeçalho acima já dizia sobre despublicação, aplicado também ao gate.
  *
+ * O QUE MUDOU EM 2026-08-03: MORTE PRECISA SER CONFIRMADA
+ *
+ * O run 30837180265 marcou `revistaforum.com.br/...renan-santos...` como
+ * `morta` (404) e `agorarn.com.br/...alvaro-dias...` como `sem_substancia`. As
+ * duas estavam vivas: do Brasil respondiam 200 com 3980 e 4844 caracteres, e as
+ * duas voltaram a passar no run seguinte, 30837640630.
+ *
+ * A investigação mediu três coisas:
+ *
+ *   1. O 404 falso é a PRÓPRIA página de erro do site (623 caracteres úteis,
+ *      `server: cloudflare`), sem marcador de WAF nenhum. No corpo, é
+ *      indistinguível do 404 verdadeiro do mesmo host. Nenhuma regra que leia
+ *      só a resposta separa os dois.
+ *   2. O eixo não é geografia. Sonda de datacenter saindo do BRASIL levou o
+ *      404 no mesmo minuto em que 12 sondas seguidas de IP residencial
+ *      brasileiro receberam o artigo.
+ *   3. A falha é correlacionada por EXECUÇÃO: dois hosts independentes
+ *      degradaram juntos e voltaram juntos. É propriedade da posição de rede
+ *      da execução, não da URL.
+ *
+ * Daí a regra nova: 404 verdadeiro é estável para sempre, bloqueio não
+ * sobrevive à troca de runner. `morta` e `sem_substancia` só valem quando a
+ * MESMA URL apresenta o MESMO defeito em duas execuções distintas, separadas
+ * por pelo menos `--intervalo-confirmacao-horas` (padrão 6). A memória entre
+ * execuções fica em `link_check_url_observacao` (migration 20260803150000), e é
+ * a única escrita que uma execução automática faz.
+ *
+ * Consequências:
+ *
+ *   - Morte vista pela primeira vez é MORTE SUSPEITA: aparece no relatório em
+ *     destaque, não derruba o gate e não autoriza despublicação.
+ *   - Despublicação exige que TODAS as fontes da claim estejam mortas E que
+ *     cada uma dessas mortes esteja confirmada.
+ *   - URL que volta a entregar conteúdo tem o registro apagado. `indisponivel`
+ *     não mexe no registro: não é prova de vida nem de morte.
+ *   - Sem a migration aplicada, nada é confirmado, logo nada é despublicado. A
+ *     degradação é para o lado seguro, e é avisada em log.
+ *
+ * O preço, assumido de propósito: fonte que morrer de verdade leva até uma
+ * rodada semanal a mais para virar vermelho. É o mesmo raciocínio dos dois
+ * níveis de alarme acima, gate que grita sem motivo é gate que alguém silencia.
+ *
+ * `sem_caminho` continua valendo de imediato: é defeito de formato da URL,
+ * decidido sem rede, e não tem como ser artefato de bloqueio.
+ *
  * Modos:
- *   --dry-run   (padrão) só reporta, nunca escreve
+ *   --dry-run   (padrão) só reporta, nunca escreve em `pontos_atencao`
  *   --apply     despublica (visivel = false) a claim cujas fontes estão TODAS
  *               mortas. Nunca deleta nada.
  *
@@ -78,7 +123,7 @@
  *
  * Flags extras: --limit=N, --timeout=MS, --concurrency=N, --host-delay=MS,
  * --max-bytes=N, --only-visible, --gate-somente-publicos,
- * --revalidar=slug1,slug2
+ * --revalidar=slug1,slug2, --intervalo-confirmacao-horas=N, --sem-estado
  *
  * GATE DE REVALIDAÇÃO ANTES DE PUBLICAR (2026-08-02)
  *
@@ -93,13 +138,22 @@
  *   npm run data:link-check-fontes:revalidar -- --revalidar=ciro-gomes,aldo-rebelo
  *
  * Exit code 1 = não publique esses candidatos ainda.
+ *
+ * Este gate roda com `--fail-on-morte-suspeita`, ou seja, barra também a morte
+ * ainda NÃO confirmada, ao contrário do job semanal. A assimetria é
+ * deliberada: aqui o dano é publicar claim com fonte podre, e um vermelho falso
+ * custa só um novo disparo. Lá o dano é o gate virar ruído semanal.
  */
 
 import { pathToFileURL } from "node:url"
 import { supabase } from "./lib/supabase"
 import { log as baseLog, warn as baseWarn, error as baseError } from "./lib/logger"
 import { fonteUrlApontaParaDocumento } from "../src/lib/public-attention-point"
-import { analisarSubstancia, dominioExigeVerificacaoManual } from "../src/lib/fonte-substancia"
+import {
+  analisarSubstancia,
+  corpoDeErroIndicaBloqueio,
+  dominioExigeVerificacaoManual,
+} from "../src/lib/fonte-substancia"
 
 const SOURCE = "link-check"
 
@@ -131,10 +185,71 @@ export interface PontoAtencaoLinkRow {
   publico?: boolean
 }
 
+/** Defeito que exige confirmação em execuções distintas para valer. */
+export type VereditoConfirmavel = "morta" | "sem_substancia"
+
+export interface ObservacaoDeDefeito {
+  url: string
+  veredito: VereditoConfirmavel
+  execucoes: number
+  primeiraVezEm: string
+  ultimaVezEm: string
+  primeiraExecucao: string
+  ultimaExecucao: string
+}
+
+/**
+ * Memória do link-check entre execuções.
+ *
+ * Guarda só o que precisa sobreviver a uma execução para que a segunda possa
+ * confirmar a primeira. Fica atrás de uma interface para que `runLinkCheck`
+ * continue testável sem rede e sem banco, e para que a troca do meio de
+ * persistência não mexa em regra de decisão nenhuma.
+ */
+export interface EstadoDeFontes {
+  /**
+   * `false` quando a memória não pôde ser lida (migration ainda não aplicada,
+   * por exemplo). Nesse estado nada é confirmado, e portanto nada é
+   * despublicado: a degradação é para o lado seguro.
+   */
+  disponivel: boolean
+  ler: (urls: string[]) => Promise<Map<string, ObservacaoDeDefeito>>
+  registrar: (
+    defeitos: Array<{ url: string; veredito: VereditoConfirmavel; detalhe: string }>,
+    agora: Date,
+    execucao: string,
+  ) => Promise<void>
+  /** URL que voltou a entregar conteúdo: o defeito anterior era transitório. */
+  esquecer: (urls: string[]) => Promise<void>
+}
+
+/** Memória inerte, para teste e para o modo `--sem-estado`. */
+export function estadoDesligado(): EstadoDeFontes {
+  return {
+    disponivel: false,
+    ler: async () => new Map(),
+    registrar: async () => {},
+    esquecer: async () => {},
+  }
+}
+
 export interface LinkCheckDeps {
   apply: boolean
   onlyVisible: boolean
   limit: number | null
+  /**
+   * Identificador desta execução. Duas observações com a mesma identidade não
+   * se confirmam: confirmação exige execução diferente, que é o que troca o IP
+   * de saída do runner.
+   */
+  execucaoId: string
+  estado: EstadoDeFontes
+  /**
+   * Intervalo mínimo entre a primeira observação de um defeito e a
+   * confirmação. Impede que duas execuções em sequência, do mesmo lugar e no
+   * mesmo minuto, se confirmem uma à outra.
+   */
+  intervaloConfirmacaoMs: number
   fetchRows: () => Promise<PontoAtencaoLinkRow[]>
   /**
    * Recebe a lista inteira de URLs de uma vez, e não uma por vez, porque o
@@ -162,8 +277,18 @@ export interface ClaimVeredito {
   indisponiveis: number
   semSubstancia: number
   semCaminho: number
+  /**
+   * Mortas já vistas mortas em execução ANTERIOR e distinta. Só estas contam
+   * como defeito: ver o cabeçalho do arquivo.
+   */
+  mortasConfirmadas: number
+  /** Idem para `sem_substancia`. */
+  semSubstanciaConfirmadas: number
   urlsMortas: string[]
   urlsSemSubstancia: string[]
+  urlsMortasConfirmadas: string[]
+  /** Mortas vistas pela primeira vez: podem ser bloqueio desta execução. */
+  urlsMortasSuspeitas: string[]
 }
 
 export interface LinkCheckResult {
@@ -184,10 +309,21 @@ export interface LinkCheckResult {
    * definição e volta sozinha.
    */
   claimsSemFonteUtilizavel: ClaimVeredito[]
-  /** Claims visíveis com ao menos uma fonte morta, total ou parcialmente. */
+  /**
+   * Claims visíveis com ao menos uma fonte morta CONFIRMADA em execução
+   * anterior. É o que derruba o gate.
+   */
   claimsComFonteMorta: ClaimVeredito[]
+  /**
+   * Claims visíveis cuja morte foi vista pela primeira vez agora. Entram no
+   * relatório em destaque, mas NÃO derrubam o gate e NÃO despublicam: podem
+   * ser bloqueio desta execução. Na execução seguinte, ou confirmam ou somem.
+   */
+  claimsComMorteSuspeita: ClaimVeredito[]
   despublicadas: number
   bloqueadasPorVerificacaoManual: number
+  /** Claims com todas as fontes mortas, retidas por falta de confirmação. */
+  bloqueadasPorFaltaDeConfirmacao: number
   erros: number
 }
 
@@ -292,10 +428,23 @@ export async function probeUrlReal(url: string, opcoes: ProbeOpcoes): Promise<Ur
   // limitador de taxa. Uma segunda tentativa depois de uma pausa distingue
   // "servidor cansado" de "servidor sempre assim", e foi exatamente o que
   // separou `noticias.stf.jus.br` (vivo) de página morta em 2026-07-25.
-  if (primeira.status === "indisponivel" && opcoes.retryDelayMs > 0) {
+  //
+  // Desde 2026-08-03 o 404 também é retentado. A auditoria daquele dia mostrou
+  // `revistaforum.com.br` devolvendo 404 para uma matéria que existe quando a
+  // sonda sai de datacenter, e `morta` é o único veredito que despublica: não
+  // pode continuar sendo decidido em tiro único. DNS inexistente fica de fora
+  // (`httpStatus === null`), porque ali a ausência do nome já é estável.
+  //
+  // Isto NÃO substitui a confirmação em execuções distintas: dentro da mesma
+  // execução o IP de saída é o mesmo, então a retentativa só pega a fatia de
+  // bloqueio que varia por requisição.
+  const valeRetentar =
+    primeira.status === "indisponivel" || (primeira.status === "morta" && primeira.httpStatus !== null)
+
+  if (valeRetentar && opcoes.retryDelayMs > 0) {
     await esperar(opcoes.retryDelayMs)
     const segunda = await requisitar(url, opcoes)
-    if (segunda.status !== "indisponivel") return segunda
+    if (segunda.status !== primeira.status) return segunda
     return { ...segunda, detalhe: `${segunda.detalhe} (2 tentativas)` }
   }
 
@@ -318,6 +467,23 @@ async function requisitar(url: string, opcoes: ProbeOpcoes): Promise<UrlProbe> {
     // script depois da etapa 5B.
     const res = await fetch(url, { method: "GET", redirect: "follow", headers, signal: controller.signal })
     const porStatus = classificarHttp(res.status)
+
+    // Em 404/410 o corpo passou a ser lido (2026-08-03). Antes disso o script
+    // decidia morte só pelo status e nunca olhava a resposta, então WAF que
+    // responde 404 em vez de 403, e portal que responde 404 durante a vedação
+    // eleitoral, viravam `morta`, que é o veredito que despublica.
+    if (porStatus === "morta") {
+      const { corpo, bytes } = await lerCorpoLimitado(res, opcoes.maxBytes)
+      const bloqueio = corpoDeErroIndicaBloqueio({
+        contentType: res.headers.get("content-type"),
+        corpo,
+        bytes,
+      })
+      if (bloqueio.bloqueio) {
+        return { url, status: "indisponivel", httpStatus: res.status, detalhe: `GET ${res.status}, ${bloqueio.motivo}` }
+      }
+      return { url, status: "morta", httpStatus: res.status, detalhe: `GET ${res.status}` }
+    }
 
     if (porStatus !== "viva") {
       return { url, status: porStatus, httpStatus: res.status, detalhe: `GET ${res.status}` }
@@ -407,10 +573,13 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
   const probes = await deps.probeUrls(urls)
   const porUrl = new Map(probes.map((probe) => [probe.url, probe]))
 
+  const confirmadas = await resolverConfirmacoes(probes, deps)
+
   const claimsTotalmenteMortas: ClaimVeredito[] = []
   const claimsParcialmenteMortas: ClaimVeredito[] = []
   const claimsSemFonteComConteudo: ClaimVeredito[] = []
   const claimsComFonteMorta: ClaimVeredito[] = []
+  const claimsComMorteSuspeita: ClaimVeredito[] = []
 
   for (const row of rows) {
     const lista = urlsDaFonte(row.fontes)
@@ -429,8 +598,12 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
       indisponiveis: status.filter((s) => s === "indisponivel").length,
       semSubstancia: status.filter((s) => s === "sem_substancia").length,
       semCaminho: status.filter((s) => s === "sem_caminho").length,
+      mortasConfirmadas: lista.filter((url, i) => status[i] === "morta" && confirmadas.has(url)).length,
+      semSubstanciaConfirmadas: lista.filter((url, i) => status[i] === "sem_substancia" && confirmadas.has(url)).length,
       urlsMortas: lista.filter((_, i) => status[i] === "morta"),
       urlsSemSubstancia: lista.filter((_, i) => status[i] === "sem_substancia"),
+      urlsMortasConfirmadas: lista.filter((url, i) => status[i] === "morta" && confirmadas.has(url)),
+      urlsMortasSuspeitas: lista.filter((url, i) => status[i] === "morta" && !confirmadas.has(url)),
     }
 
     // Claim publicada sem nenhuma fonte que entregue conteúdo é o caso do
@@ -440,7 +613,13 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
     if (veredito.vivas === 0 && veredito.visivel) claimsSemFonteComConteudo.push(veredito)
 
     if (veredito.mortas === 0) continue
-    if (veredito.visivel) claimsComFonteMorta.push(veredito)
+    // Morte não confirmada não derruba o gate. Ela aparece em
+    // `claimsComMorteSuspeita`, que é ruidoso de propósito no relatório e mudo
+    // no exit code, até que uma execução posterior veja o mesmo 404.
+    if (veredito.visivel) {
+      if (veredito.mortasConfirmadas > 0) claimsComFonteMorta.push(veredito)
+      else claimsComMorteSuspeita.push(veredito)
+    }
     // "Todas mortas" exige zero vivas, zero indisponíveis e zero sem
     // substância: fonte que só bloqueou robô ou que está sob vedação eleitoral
     // não pode contribuir para tirar a claim do ar.
@@ -450,6 +629,7 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
 
   let despublicadas = 0
   let bloqueadasPorVerificacaoManual = 0
+  let bloqueadasPorFaltaDeConfirmacao = 0
   let erros = 0
 
   for (const veredito of claimsTotalmenteMortas) {
@@ -457,6 +637,20 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
 
     if (!veredito.visivel) {
       log(`ja fora do ar, nada a fazer: ${linha}`)
+      continue
+    }
+
+    // Despublicação exige que TODAS as mortas estejam confirmadas em execução
+    // anterior. Uma única morte vista pela primeira vez segura a claim inteira:
+    // é exatamente o caso do 404 servido a robô, em que a fonte está viva.
+    if (veredito.mortasConfirmadas < veredito.total) {
+      bloqueadasPorFaltaDeConfirmacao += 1
+      warn(
+        `NAO despublicado por falta de confirmacao em segunda execucao ` +
+          `(${veredito.mortasConfirmadas}/${veredito.total} mortes confirmadas): ${linha}. ` +
+          `Ainda sem confirmar: ${veredito.urlsMortasSuspeitas.join(", ")}` +
+          (deps.estado.disponivel ? "" : " [memoria de execucoes indisponivel: nada pode ser confirmado]"),
+      )
       continue
     }
 
@@ -477,7 +671,8 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
 
     const motivo =
       `Link-check de ${agora().toISOString().slice(0, 10)}: todas as ${veredito.total} fontes retornaram morta ` +
-      `(${veredito.urlsMortas.join(", ")}). Despublicado automaticamente por scripts/link-check-pontos-atencao.ts.`
+      `(${veredito.urlsMortas.join(", ")}), com a morte de cada uma confirmada em execucao anterior e distinta. ` +
+      `Despublicado automaticamente por scripts/link-check-pontos-atencao.ts.`
 
     try {
       const row = rows.find((r) => r.id === veredito.id)!
@@ -494,6 +689,14 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
     warn(
       `fonte morta mas claim mantida (ainda tem ${veredito.vivas} viva(s), ${veredito.indisponiveis} indisponivel(is) e ` +
         `${veredito.semSubstancia} sem substancia): ${veredito.id} "${veredito.titulo}" -> ${veredito.urlsMortas.join(", ")}`,
+    )
+  }
+
+  for (const veredito of claimsComMorteSuspeita) {
+    warn(
+      `MORTE SUSPEITA, ainda nao confirmada (nao derruba o gate, nao despublica; ` +
+        `a proxima execucao confirma ou descarta): ${veredito.id} ` +
+        `[${veredito.gravidade ?? "sem gravidade"}] "${veredito.titulo}" -> ${veredito.urlsMortasSuspeitas.join(", ")}`,
     )
   }
 
@@ -520,8 +723,10 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
     claimsSemFonteComConteudo,
     claimsSemFonteUtilizavel: claimsSemFonteComConteudo.filter(temDefeitoRealDeFonte),
     claimsComFonteMorta,
+    claimsComMorteSuspeita,
     despublicadas,
     bloqueadasPorVerificacaoManual,
+    bloqueadasPorFaltaDeConfirmacao,
     erros,
   }
 
@@ -535,7 +740,9 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
       `  Vivas: ${resultado.urlsVivas} | Mortas: ${resultado.urlsMortas} | ` +
       `Indisponiveis: ${resultado.urlsIndisponiveis} | Sem substancia: ${resultado.urlsSemSubstancia} | ` +
       `Sem caminho: ${resultado.urlsSemCaminho}\n` +
+      `${deps.estado.disponivel ? "" : "  AVISO: memoria de execucoes indisponivel. Nenhuma morte pode ser confirmada nesta execucao.\n"}` +
       `  Claims com TODAS as fontes mortas: ${resultado.claimsTotalmenteMortas.length}\n` +
+      `  Claims com morte SUSPEITA (1a vez, nao derruba o gate): ${resultado.claimsComMorteSuspeita.length}\n` +
       `  Claims com fonte morta mas nao todas: ${resultado.claimsParcialmenteMortas.length}\n` +
       `  Claims publicadas sem fonte com conteudo: ${resultado.claimsSemFonteComConteudo.length}\n` +
       `    destas, com defeito real de fonte: ${resultado.claimsSemFonteUtilizavel.length} ` +
@@ -547,11 +754,53 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
       `    com fonte morta: ${resultado.claimsComFonteMorta.filter(foraDoFront).length}\n` +
       `    sem fonte utilizavel: ${resultado.claimsSemFonteUtilizavel.filter(foraDoFront).length}\n` +
       `  Despublicadas nesta execucao: ${resultado.despublicadas}\n` +
+      `  Retidas por falta de confirmacao em 2a execucao: ${resultado.bloqueadasPorFaltaDeConfirmacao}\n` +
       `  Retidas para verificacao humana: ${resultado.bloqueadasPorVerificacaoManual}\n` +
       `  Erros de escrita: ${resultado.erros}`,
   )
 
   return resultado
+}
+
+/**
+ * Confronta os defeitos desta execução com a memória das anteriores e devolve
+ * o conjunto de URLs cujo defeito está CONFIRMADO.
+ *
+ * Confirmado = a mesma URL, com o mesmo veredito, já foi vista assim numa
+ * execução anterior e distinta, e a primeira observação é velha o bastante
+ * (`intervaloConfirmacaoMs`). O intervalo existe para que duas execuções
+ * seguidas do mesmo lugar não confirmem uma à outra, que é o cenário em que o
+ * IP de saída, a causa medida do falso 404, ainda é o mesmo.
+ *
+ * Efeitos na memória, nesta ordem: apaga o registro das URLs que voltaram a
+ * entregar conteúdo (defeito era transitório) e grava as observações desta
+ * execução. URL que veio `indisponivel` não mexe em nada: não é prova de vida
+ * nem de morte, e deixar o registro intacto preserva a âncora de tempo.
+ */
+async function resolverConfirmacoes(probes: UrlProbe[], deps: LinkCheckDeps): Promise<Set<string>> {
+  const defeitos = probes
+    .filter((p): p is UrlProbe & { status: VereditoConfirmavel } => p.status === "morta" || p.status === "sem_substancia")
+    .map((p) => ({ url: p.url, veredito: p.status, detalhe: p.detalhe }))
+
+  const ressuscitadas = probes.filter((p) => p.status === "viva").map((p) => p.url)
+  const agora = deps.agora()
+  const confirmadas = new Set<string>()
+
+  const anteriores = await deps.estado.ler(defeitos.map((d) => d.url))
+
+  for (const defeito of defeitos) {
+    const antes = anteriores.get(defeito.url)
+    if (!antes || antes.veredito !== defeito.veredito) continue
+    if (antes.ultimaExecucao === deps.execucaoId) continue
+    const idade = agora.getTime() - new Date(antes.primeiraVezEm).getTime()
+    if (idade < deps.intervaloConfirmacaoMs) continue
+    confirmadas.add(defeito.url)
+  }
+
+  if (ressuscitadas.length > 0) await deps.estado.esquecer(ressuscitadas)
+  if (defeitos.length > 0) await deps.estado.registrar(defeitos, agora, deps.execucaoId)
+
+  return confirmadas
 }
 
 /**
@@ -562,9 +811,16 @@ export async function runLinkCheck(deps: LinkCheckDeps): Promise<LinkCheckResult
  * O gate segue a mesma doutrina. Já `morta`, `sem_caminho` e `sem_substancia`
  * descrevem fonte que não sustenta a afirmação, e nenhuma delas se resolve com
  * o tempo.
+ *
+ * Desde 2026-08-03, `morta` e `sem_substancia` só contam CONFIRMADAS. As duas
+ * foram observadas em falso na mesma execução (a de 03/08, contra
+ * `revistaforum.com.br` e `agorarn.com.br`, ambas vivas), porque o defeito não
+ * estava na fonte e sim na posição de rede do runner. `sem_caminho` continua
+ * valendo de imediato: é defeito de formato da própria URL, decidido sem rede,
+ * e não tem como ser artefato de bloqueio.
  */
 export function temDefeitoRealDeFonte(veredito: ClaimVeredito): boolean {
-  return veredito.mortas > 0 || veredito.semCaminho > 0 || veredito.semSubstancia > 0
+  return veredito.mortasConfirmadas > 0 || veredito.semCaminho > 0 || veredito.semSubstanciaConfirmadas > 0
 }
 
 function parseNumberFlag(prefixo: string, padrao: number | null): number | null {
@@ -634,6 +890,105 @@ async function despublicarNoBanco(row: PontoAtencaoLinkRow, motivo: string): Pro
   if (semColunas.error) throw new Error(semColunas.error.message)
 }
 
+const TABELA_ESTADO = "link_check_url_observacao"
+
+/** A tabela de memória ainda não existe neste banco. */
+function ehTabelaAusente(mensagem: string): boolean {
+  return new RegExp(`relation .*${TABELA_ESTADO}|${TABELA_ESTADO}.* does not exist|schema cache`, "i").test(mensagem)
+}
+
+/**
+ * Memória do link-check em `link_check_url_observacao` (migration
+ * 20260803150000).
+ *
+ * Degrada sozinha quando a migration ainda não foi aplicada, do mesmo jeito
+ * que `despublicarNoBanco` degrada quando faltam as colunas de despublicação:
+ * o erro do Postgres é DETECTADO, nunca presumido. Sem memória, nada é
+ * confirmado e portanto nada é despublicado, que é o lado seguro de errar.
+ */
+async function estadoNoBanco(): Promise<EstadoDeFontes> {
+  const sonda = await supabase.from(TABELA_ESTADO).select("url").limit(1)
+
+  if (sonda.error) {
+    if (!ehTabelaAusente(sonda.error.message)) throw new Error(`${TABELA_ESTADO}: ${sonda.error.message}`)
+    baseWarn(
+      SOURCE,
+      `tabela ${TABELA_ESTADO} ausente (migration 20260803150000 nao aplicada). ` +
+        `Nenhuma morte sera confirmada, e portanto nada sera despublicado nesta execucao.`,
+    )
+    return estadoDesligado()
+  }
+
+  const ler: EstadoDeFontes["ler"] = async (urls) => {
+    const achados = new Map<string, ObservacaoDeDefeito>()
+    const lote = 200
+    for (let i = 0; i < urls.length; i += lote) {
+      const { data, error: err } = await supabase
+        .from(TABELA_ESTADO)
+        .select("url, veredito, execucoes, primeira_vez_em, ultima_vez_em, primeira_execucao, ultima_execucao")
+        .in("url", urls.slice(i, i + lote))
+
+      if (err) throw new Error(`${TABELA_ESTADO} (leitura): ${err.message}`)
+      for (const linha of (data ?? []) as Array<Record<string, string | number>>) {
+        achados.set(String(linha.url), {
+          url: String(linha.url),
+          veredito: String(linha.veredito) as VereditoConfirmavel,
+          execucoes: Number(linha.execucoes),
+          primeiraVezEm: String(linha.primeira_vez_em),
+          ultimaVezEm: String(linha.ultima_vez_em),
+          primeiraExecucao: String(linha.primeira_execucao),
+          ultimaExecucao: String(linha.ultima_execucao),
+        })
+      }
+    }
+    return achados
+  }
+
+  return {
+    disponivel: true,
+    ler,
+
+    async registrar(defeitos, agora, execucao) {
+      // Lê o que já existe para decidir entre incrementar e reiniciar. Veredito
+      // diferente é defeito diferente: a contagem volta a 1 e a âncora de tempo
+      // é reescrita, senão uma URL que passou de `sem_substancia` para `morta`
+      // herdaria uma confirmação que ninguém fez para a morte.
+      const anteriores = await ler(defeitos.map((d) => d.url))
+      const em = agora.toISOString()
+
+      const linhas = defeitos.map((defeito) => {
+        const antes = anteriores.get(defeito.url)
+        const mesmoDefeito = antes?.veredito === defeito.veredito
+        const execucaoNova = mesmoDefeito && antes.ultimaExecucao !== execucao
+        return {
+          url: defeito.url,
+          veredito: defeito.veredito,
+          primeira_vez_em: mesmoDefeito ? antes.primeiraVezEm : em,
+          ultima_vez_em: em,
+          primeira_execucao: mesmoDefeito ? antes.primeiraExecucao : execucao,
+          ultima_execucao: execucao,
+          execucoes: mesmoDefeito ? antes.execucoes + (execucaoNova ? 1 : 0) : 1,
+          detalhe: defeito.detalhe,
+        }
+      })
+
+      const lote = 200
+      for (let i = 0; i < linhas.length; i += lote) {
+        const { error: err } = await supabase.from(TABELA_ESTADO).upsert(linhas.slice(i, i + lote), { onConflict: "url" })
+        if (err) throw new Error(`${TABELA_ESTADO} (escrita): ${err.message}`)
+      }
+    },
+
+    async esquecer(urls) {
+      const lote = 200
+      for (let i = 0; i < urls.length; i += lote) {
+        const { error: err } = await supabase.from(TABELA_ESTADO).delete().in("url", urls.slice(i, i + lote))
+        if (err) throw new Error(`${TABELA_ESTADO} (limpeza): ${err.message}`)
+      }
+    },
+  }
+}
+
 /**
  * Ids dos candidatos que o leitor de fato alcança. `candidatos_publico` é a
  * mesma view que o app consulta, então o recorte aqui é o recorte do site, e
@@ -693,8 +1048,14 @@ async function main() {
   const onlyVisible = process.argv.includes("--only-visible")
   const failOnDead = process.argv.includes("--fail-on-dead")
   const failOnSemSubstancia = process.argv.includes("--fail-on-sem-substancia")
+  const failOnMorteSuspeita = process.argv.includes("--fail-on-morte-suspeita")
   const gateSomentePublicos = process.argv.includes("--gate-somente-publicos")
+  const semEstado = process.argv.includes("--sem-estado")
   const slugsRevalidacao = parseListaFlag("--revalidar=", process.argv)
+  // Padrão de 6 horas: separa execuções semanais do CI (7 dias de folga) de
+  // duas rodadas manuais na mesma tarde, que sairiam do mesmo IP e por isso
+  // não são observações independentes.
+  const intervaloConfirmacaoMs = (parseNumberFlag("--intervalo-confirmacao-horas=", 6) ?? 6) * 3600_000
   const limit = parseNumberFlag("--limit=", null)
   const timeoutMs = parseNumberFlag("--timeout=", 20000) ?? 20000
   const concurrency = parseNumberFlag("--concurrency=", 6) ?? 6
@@ -707,10 +1068,23 @@ async function main() {
 
   const opcoes: ProbeOpcoes = { timeoutMs, maxBytes, retryDelayMs: Math.max(hostDelayMs, 5000) }
 
+  // Identidade da execução. No CI o par (run id, tentativa) muda a cada
+  // disparo, e é justamente a troca de runner que troca o IP de saída. Fora do
+  // CI, o relógio basta para separar duas rodadas manuais.
+  const execucaoId =
+    process.env.GITHUB_RUN_ID !== undefined
+      ? `gha-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
+      : `local-${new Date().toISOString()}`
+
+  const estado = semEstado ? estadoDesligado() : await estadoNoBanco()
+
   const resultado = await runLinkCheck({
     apply,
     onlyVisible,
     limit,
+    execucaoId,
+    estado,
+    intervaloConfirmacaoMs,
     async fetchRows() {
       const publicos = await idsDeCandidatosPublicos()
       // Modo revalidação: trata os slugs pedidos como se já fossem públicos, para
@@ -761,6 +1135,21 @@ async function main() {
       SOURCE,
       `${mortasNoEscopo.length} claim(s) visivel(is) com fonte morta` +
         `${gateSomentePublicos ? " em ficha publica" : ""} e --fail-on-dead esta ligado.`,
+    )
+    process.exitCode = 1
+  }
+
+  // Gate de PRÉ-PUBLICAÇÃO. Aqui a assimetria se inverte em relação ao job
+  // semanal: publicar claim com fonte podre é o dano, e falso vermelho custa só
+  // um novo disparo. Por isso a revalidação barra também a morte ainda não
+  // confirmada, que o job semanal deixa passar de propósito. Sem isto, a
+  // confirmação teria aberto um buraco justamente no gate mais caro de errar.
+  const suspeitasNoEscopo = resultado.claimsComMorteSuspeita.filter(noEscopo)
+  if (failOnMorteSuspeita && suspeitasNoEscopo.length > 0) {
+    baseError(
+      SOURCE,
+      `${suspeitasNoEscopo.length} claim(s) com fonte possivelmente morta (ainda nao confirmada em segunda ` +
+        `execucao) e --fail-on-morte-suspeita esta ligado. Rode de novo para separar bloqueio de morte antes de publicar.`,
     )
     process.exitCode = 1
   }
