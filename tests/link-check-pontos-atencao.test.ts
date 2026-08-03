@@ -13,13 +13,69 @@ import { describe, it } from "node:test"
 import {
   classificarHttp,
   erroDeRedeEhMorte,
+  estadoDesligado,
   hostDaUrl,
   mapPorHost,
   runLinkCheck,
+  type EstadoDeFontes,
   type LinkCheckDeps,
+  type ObservacaoDeDefeito,
   type PontoAtencaoLinkRow,
   type UrlProbe,
 } from "../scripts/link-check-pontos-atencao"
+
+const EXECUCAO_ATUAL = "exec-atual"
+const EXECUCAO_ANTERIOR = "exec-anterior"
+const SEIS_HORAS_MS = 6 * 3600_000
+
+/**
+ * Memória fake do link-check.
+ *
+ * Por padrão finge que TODO defeito desta execução já tinha sido visto numa
+ * execução anterior, ou seja, tudo entra confirmado. É de propósito: os testes
+ * antigos exercitam a decisão por claim (todas mortas, alguma viva, domínio de
+ * verificação manual) e não a confirmação, que tem suíte própria mais abaixo.
+ * Quem quiser exercitar morte não confirmada passa `confirmar: []`.
+ */
+function estadoFake(
+  probes: Record<string, UrlProbe["status"]>,
+  opcoes: { confirmar?: true | string[]; primeiraVezEm?: string } = {},
+): { estado: EstadoDeFontes; registrados: string[]; esquecidos: string[] } {
+  const confirmar = opcoes.confirmar ?? true
+  const registrados: string[] = []
+  const esquecidos: string[] = []
+
+  const estado: EstadoDeFontes = {
+    disponivel: true,
+    ler: async (urls) => {
+      const achados = new Map<string, ObservacaoDeDefeito>()
+      for (const url of urls) {
+        if (confirmar !== true && !confirmar.includes(url)) continue
+        const status = probes[url]
+        if (status !== "morta" && status !== "sem_substancia") continue
+        const em = opcoes.primeiraVezEm ?? "2026-07-01T00:00:00.000Z"
+        achados.set(url, {
+          url,
+          veredito: status,
+          execucoes: 1,
+          primeiraVezEm: em,
+          ultimaVezEm: em,
+          primeiraExecucao: EXECUCAO_ANTERIOR,
+          ultimaExecucao: EXECUCAO_ANTERIOR,
+        })
+      }
+      return achados
+    },
+    registrar: async (defeitos) => {
+      registrados.push(...defeitos.map((d) => d.url))
+    },
+    esquecer: async (urls) => {
+      esquecidos.push(...urls)
+    },
+  }
+
+  return { estado, registrados, esquecidos }
+}
 
 function ponto(over: Partial<PontoAtencaoLinkRow> & { id: string }): PontoAtencaoLinkRow {
   return {
@@ -44,6 +100,9 @@ function deps(
     apply: false,
     onlyVisible: false,
     limit: null,
+    execucaoId: EXECUCAO_ATUAL,
+    estado: estadoFake(probes).estado,
+    intervaloConfirmacaoMs: SEIS_HORAS_MS,
     fetchRows: async () => rows,
     probeUrls: async (urls) =>
       urls.map((url) => ({
@@ -384,5 +443,179 @@ describe("runLinkCheck: recorte público e defeito real de fonte", () => {
     const r = await runLinkCheck(d)
 
     assert.equal(r.claimsComFonteMorta.length, 0, "já está fora do ar, não há o que alarmar")
+  })
+})
+
+/**
+ * Confirmação de morte em execuções distintas (2026-08-03).
+ *
+ * O que estes testes protegem, nas duas direções.
+ *
+ * Contra o falso negativo: em 03/08 o run 30837180265 marcou uma matéria VIVA
+ * da revistaforum como `morta` (404 servido a sonda de datacenter) e uma
+ * matéria viva do agorarn como `sem_substancia`. As duas voltaram no run
+ * seguinte. O 404 falso era a própria página de erro do site, sem marcador de
+ * WAF, medido em 623 caracteres: nenhuma regra que leia só a resposta separa
+ * aquilo de um 404 verdadeiro. O que separa é ver o mesmo defeito de outra
+ * execução, com outro IP de saída.
+ *
+ * Contra o afrouxamento: 404 que persiste entre execuções continua matando a
+ * claim, `sem_caminho` continua valendo na hora, e memória indisponível NUNCA
+ * pode virar despublicação.
+ */
+describe("runLinkCheck: confirmação de morte entre execuções", () => {
+  const url404 = "https://revistaforum.com.br/politica/2024/1/22/renan-santos-152663.html"
+  const outra404 = "https://agorarn.com.br/ultimas/justic-inclui-alvaro-dias-abuso-poder/"
+
+  it("morte vista pela primeira vez não derruba o gate nem despublica", async () => {
+    const probes = { [url404]: "morta" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], probes, {
+      apply: true,
+      estado: estadoFake(probes, { confirmar: [] }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsComMorteSuspeita.length, 1, "aparece no relatório")
+    assert.equal(r.claimsComFonteMorta.length, 0, "mas não derruba o gate")
+    assert.equal(r.claimsSemFonteUtilizavel.length, 0, "nem conta como defeito real")
+    assert.equal(r.despublicadas, 0)
+    assert.equal(r.bloqueadasPorFaltaDeConfirmacao, 1)
+    assert.deepEqual(d.despublicados, [])
+    assert.ok(d.avisos.some((m) => m.includes("MORTE SUSPEITA")))
+  })
+
+  it("morte confirmada em execução anterior derruba o gate e despublica", async () => {
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], { [url404]: "morta" }, { apply: true })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsComFonteMorta.length, 1)
+    assert.equal(r.claimsComMorteSuspeita.length, 0)
+    assert.equal(r.despublicadas, 1, "404 estável entre execuções continua matando a claim")
+    assert.deepEqual(d.despublicados, ["a"])
+  })
+
+  it("uma única morte não confirmada segura a claim inteira", async () => {
+    // O caso medido: das duas fontes, uma já era morte conhecida e a outra
+    // apareceu morta agora, na execução que estava com a rede comprometida.
+    const probes = { [url404]: "morta", [outra404]: "morta" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }, { url: outra404 }] })], probes, {
+      apply: true,
+      estado: estadoFake(probes, { confirmar: [url404] }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsTotalmenteMortas.length, 1)
+    assert.equal(r.despublicadas, 0, "confirmação parcial não basta para despublicar")
+    assert.equal(r.bloqueadasPorFaltaDeConfirmacao, 1)
+    assert.deepEqual(d.despublicados, [])
+  })
+
+  it("observação recente demais não confirma: duas rodadas do mesmo lugar não são independentes", async () => {
+    const probes = { [url404]: "morta" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], probes, {
+      apply: true,
+      // `agora` dos deps é 2026-07-25T12:00:00Z, ou seja, uma hora depois.
+      estado: estadoFake(probes, { primeiraVezEm: "2026-07-25T11:00:00.000Z" }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.despublicadas, 0)
+    assert.equal(r.claimsComMorteSuspeita.length, 1)
+  })
+
+  it("observação da MESMA execução não confirma a si mesma", async () => {
+    const probes = { [url404]: "morta" } as const
+    const base = estadoFake(probes)
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], probes, {
+      apply: true,
+      estado: {
+        ...base.estado,
+        ler: async (urls) => {
+          const m = await base.estado.ler(urls)
+          for (const [url, obs] of m) m.set(url, { ...obs, ultimaExecucao: EXECUCAO_ATUAL })
+          return m
+        },
+      },
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.despublicadas, 0)
+    assert.equal(r.claimsComMorteSuspeita.length, 1)
+  })
+
+  it("veredito diferente do anterior não herda a confirmação", async () => {
+    // A URL era `sem_substancia` e agora aparece `morta`. São defeitos
+    // distintos: a morte é nova e ainda não foi confirmada por ninguém.
+    const probes = { [url404]: "morta" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], probes, {
+      apply: true,
+      estado: estadoFake({ [url404]: "sem_substancia" }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.despublicadas, 0)
+    assert.equal(r.claimsComMorteSuspeita.length, 1)
+  })
+
+  it("sem memória disponível nada é confirmado, logo nada é despublicado", async () => {
+    const d = deps([ponto({ id: "a", fontes: [{ url: url404 }] })], { [url404]: "morta" }, {
+      apply: true,
+      estado: estadoDesligado(),
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.despublicadas, 0)
+    assert.equal(r.bloqueadasPorFaltaDeConfirmacao, 1)
+    assert.ok(d.avisos.some((m) => m.includes("memoria de execucoes indisponivel")))
+  })
+
+  it("sem_substancia também precisa de confirmação para virar defeito real", async () => {
+    // A outra metade do incidente de 03/08: agorarn.com.br, matéria viva de
+    // 4844 caracteres, lida como casca numa execução só.
+    const probes = { [outra404]: "sem_substancia" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: outra404 }] })], probes, {
+      estado: estadoFake(probes, { confirmar: [] }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsSemFonteComConteudo.length, 1, "segue reportada")
+    assert.equal(r.claimsSemFonteUtilizavel.length, 0, "mas não derruba o gate na primeira vez")
+  })
+
+  it("sem_caminho não precisa de confirmação: é defeito de formato, decidido sem rede", async () => {
+    const nu = "https://g1.globo.com/"
+    const probes = { [nu]: "sem_caminho" } as const
+    const d = deps([ponto({ id: "a", fontes: [{ url: nu }] })], probes, {
+      estado: estadoFake(probes, { confirmar: [] }).estado,
+    })
+    const r = await runLinkCheck(d)
+
+    assert.equal(r.claimsSemFonteUtilizavel.length, 1, "vale na hora, não tem como ser artefato de bloqueio")
+  })
+
+  it("URL que voltou a responder é esquecida, e o defeito desta execução é registrado", async () => {
+    const viva = "https://portal.stf.jus.br/processos/detalhe.asp?incidente=1"
+    const probes = { [url404]: "morta", [viva]: "viva" } as const
+    const fake = estadoFake(probes)
+    const d = deps(
+      [ponto({ id: "a", fontes: [{ url: url404 }] }), ponto({ id: "b", fontes: [{ url: viva }] })],
+      probes,
+      { estado: fake.estado },
+    )
+    await runLinkCheck(d)
+
+    assert.deepEqual(fake.esquecidos, [viva], "ressuscitada limpa o histórico")
+    assert.deepEqual(fake.registrados, [url404], "defeito desta execução fica gravado para a próxima confirmar")
+  })
+
+  it("indisponivel não é gravado nem esquecido: não é prova de vida nem de morte", async () => {
+    const bloqueada = "https://www1.folha.uol.com.br/poder/materia.shtml"
+    const probes = { [bloqueada]: "indisponivel" } as const
+    const fake = estadoFake(probes)
+    const d = deps([ponto({ id: "a", fontes: [{ url: bloqueada }] })], probes, { estado: fake.estado })
+    await runLinkCheck(d)
+
+    assert.deepEqual(fake.registrados, [])
+    assert.deepEqual(fake.esquecidos, [])
   })
 })

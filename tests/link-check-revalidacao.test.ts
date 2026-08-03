@@ -50,7 +50,7 @@ describe("parseListaFlag", () => {
 })
 
 describe("contrato do gate de revalidacao", () => {
-  it("o npm script de revalidacao liga os tres gates necessarios", async () => {
+  it("o npm script de revalidacao liga os quatro gates necessarios", async () => {
     const pkg = JSON.parse(
       await (await import("node:fs/promises")).readFile("package.json", "utf8"),
     ) as { scripts: Record<string, string> }
@@ -61,6 +61,11 @@ describe("contrato do gate de revalidacao", () => {
     assert.match(cmd, /--gate-somente-publicos/)
     assert.match(cmd, /--fail-on-dead/)
     assert.match(cmd, /--fail-on-sem-substancia/)
+    // Desde 2026-08-03, morte so vale confirmada em duas execucoes. No job
+    // semanal isso e o certo; AQUI seria buraco: publicar claim com fonte podre
+    // e o dano, e falso vermelho custa so um novo disparo. Por isso a
+    // revalidacao barra tambem a morte ainda nao confirmada.
+    assert.match(cmd, /--fail-on-morte-suspeita/)
     // Nunca --apply: revalidacao reporta, nao despublica.
     assert.doesNotMatch(cmd, /--apply/)
     assert.match(cmd, /--dry-run/)
