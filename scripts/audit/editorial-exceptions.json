@@ -1,0 +1,30 @@
+{
+  "entries": [
+    {
+      "slug": "jhc",
+      "coluna": "cota",
+      "motivo": "mandato federal aplicável, mas não houve coleta de gastos CEAP neste run local; não converter ausência em zero factual",
+      "confirmado_em": "2026-08-03",
+      "detalhe": "gastos_parlamentares=0 no snapshot de produção; exceção operacional para o run, pendente de coleta oficial específica"
+    },
+    {
+      "slug": "jhc",
+      "coluna": "posicoes_quiz",
+      "motivo": "sem declaração encontrada para teto_gastos após buscas direcionadas em fontes públicas da Câmara, Maceió e Alagoas",
+      "confirmado_em": "2026-08-03",
+      "detalhe": "reforma_trabalhista entra por migration; transferencia_renda não foi migrada porque a URL institucional encontrada respondeu HTTP 403 no gate local; não há fonte viva <400 validada para este tema; teto_gastos permanece sem posição"
+    },
+    {
+      "slug": "jhc",
+      "coluna": "destaques",
+      "motivo": "0 destaques: os 303 registros de projetos estão sem situacao registrada, portanto não há fato de aprovação, tramitação ou repercussão no próprio registro que sustente destaque",
+      "confirmado_em": "2026-08-03"
+    },
+    {
+      "slug": "renan-filho",
+      "coluna": "destaques",
+      "motivo": "0 destaques: os 100 registros de projetos estão sem situacao registrada, portanto não há fato de aprovação, tramitação ou repercussão no próprio registro que sustente destaque",
+      "confirmado_em": "2026-08-03"
+    }
+  ]
+}

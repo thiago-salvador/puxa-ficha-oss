@@ -1,0 +1,13 @@
+{
+  "$schema": "Allowlist exata do run v3 governadores AL; disposition=exception exige entrada em data/sq-exceptions.json e não autoriza SQL.",
+  "cohort": ["jhc", "renan-filho"],
+  "entries": [
+    {"table":"patrimonio","slug":"renan-filho","ano":2018,"field":"bens","disposition":"exception"},
+    {"table":"patrimonio","slug":"renan-filho","ano":2022,"field":"bens","disposition":"exception"},
+    {"table":"posicoes_declaradas","slug":"jhc","tema":"reforma_trabalhista","disposition":"migration"},
+    {"table":"posicoes_declaradas","slug":"renan-filho","tema":"reforma_trabalhista","disposition":"migration"},
+    {"table":"posicoes_declaradas","slug":"renan-filho","tema":"teto_gastos","disposition":"migration"},
+    {"table":"posicoes_declaradas","slug":"renan-filho","tema":"transferencia_renda","disposition":"migration"},
+    {"table":"candidatos","slug":"renan-filho","field":"profissao_declarada","disposition":"migration"}
+  ]
+}

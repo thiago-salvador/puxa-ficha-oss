@@ -1071,6 +1071,20 @@
       "reason": "tse-birthdate-typo",
       "detail": "SQ 2182 (TSE 2008 SE) traz 14/02/1977 contra a ancora 24/02/1977. Mesmo CPF e titulo eleitoral de 2014, 2018 e 2022. Atencao: ate 2008 o SQ e sequencial POR UF e este 2182 e compartilhado por 22 pessoas em UFs diferentes; a linha certa e a de SE, desempatada pela UF do seed.",
       "confirmed": "2026-07-30"
+    },
+    {
+      "slug": "renan-filho",
+      "ano": 2018,
+      "reason": "no-bens-at-source",
+      "detail": "SQ 230000603179 confirmado no seed para AL. Varredura read-only do pacote oficial bem_candidato_2018_AL.csv e de receitas_candidatos_2018_AL.csv não encontrou linha para o SQ; o par patrimônio 2018 termina como exceção, sem inferir patrimônio zero.",
+      "confirmed": "2026-08-03"
+    },
+    {
+      "slug": "renan-filho",
+      "ano": 2022,
+      "reason": "no-bens-at-source",
+      "detail": "SQ 230001643506 confirmado no seed para AL. Varredura read-only do pacote oficial bem_candidato_2022_AL.csv e de receitas_candidatos_2022_AL.csv não encontrou linha para o SQ; o par patrimônio 2022 termina como exceção, sem inferir patrimônio zero.",
+      "confirmed": "2026-08-03"
     }
   ]
 }
