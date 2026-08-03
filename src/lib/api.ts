@@ -105,13 +105,43 @@ export { mergeSourceMessages, mergeSourceStatuses } from "@/lib/data-resource"
 const supabaseUrl = getAppSupabaseUrl()
 const USE_MOCK = !supabaseUrl || supabaseUrl.includes("placeholder")
 const IS_DEV = process.env.NODE_ENV === "development"
-const IS_LAUNCH_PHASE = process.env.PF_CURATION_PHASE === "launched"
+/**
+ * Fase de curadoria. O DEFAULT E SEGURO: qualquer coisa que nao seja
+ * explicitamente `hardening` conta como fase de lancamento, ou seja, o selo de
+ * frescor diz a verdade sobre a idade do dado.
+ *
+ * Era o contrario ate 2026-08-03, e a variavel nunca chegou a ser definida em
+ * Production (conferido com `vercel env ls production`). Efeito: a negacao em
+ * `buildSectionFreshness` curto-circuitava e TODA ficha carimbava "Dado atual",
+ * inclusive uma parada desde 14/04. Numa plataforma civica cuja proposta e fonte
+ * visivel, o default nunca pode ser o que mente.
+ *
+ * Para voltar ao modo de curadoria (selo sempre "current", sem checagem de
+ * idade), defina PF_CURATION_PHASE=hardening de forma explicita.
+ */
+const IS_LAUNCH_PHASE = process.env.PF_CURATION_PHASE?.trim() !== "hardening"
 /** Mensagem quando não há Supabase: não servimos números ou datas sintéticos na API pública. */
 const SUPABASE_REQUIRED_MESSAGE =
   "Configure SUPABASE_URL (sem placeholder) e SUPABASE_ANON_KEY em .env.local. O site não exibe dados mock."
 const CANDIDATO_PUBLIC_RELATION = "candidatos_publico"
 const APP_DATA_REVALIDATE_SECONDS = 3600
-const PROFILE_FRESHNESS_WINDOW_DAYS = 30
+/**
+ * Janela de frescor do bloco `perfil_atual`, em dias.
+ *
+ * 75 e escolha medida, nao arbitraria (03/08/2026). Distribuicao real das 194
+ * fichas publicadas naquela data: 66 passariam de 30 dias, 61 de 45, e apenas 1
+ * de 60. Os 65 do meio sao um lote unico curado em 09/06, entao qualquer corte
+ * entre 45 e 60 marcaria um terco do site de uma vez, e um corte de 60 os
+ * marcaria todos cinco dias depois do lancamento.
+ *
+ * 75 dias marca so quem esta genuinamente velho hoje (`felicio-ramuth`, parado
+ * desde 14/04) e da folga ate ~23/08 para recurar o lote de 09/06 sem pressa.
+ * Quando a recuragem virar rotina, este valor deve BAIXAR de novo.
+ *
+ * Espelhado em scripts/lib/freshness-annotator.ts (CURATION_STALE_WINDOW_DAYS).
+ * tests/freshness-window.test.ts falha se os dois divergirem.
+ */
+const PROFILE_FRESHNESS_WINDOW_DAYS = 75
 if (USE_MOCK && process.env.VERCEL) {
   throw new Error(
     "Na Vercel é obrigatório Supabase real (SUPABASE_URL sem placeholder e SUPABASE_ANON_KEY). Previews e produção não servem dados mock."

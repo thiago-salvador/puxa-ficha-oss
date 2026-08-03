@@ -84,16 +84,27 @@ describe("validateProductionEnvironment", () => {
     assert.doesNotThrow(() => validateProductionEnvironment())
   })
 
-  it("accepts a sender copied with outer quotes and rejects malformed sender values", () => {
+  it("accepts a sender copied with outer quotes and reports malformed sender values", () => {
     setCompleteProductionEnv()
 
     process.env.PF_ALERTS_FROM_EMAIL = '"Puxa Ficha <alertas@puxaficha.com.br>"'
     assert.doesNotThrow(() => validateProductionEnvironment())
 
+    // Desde 2026-08-03, remetente mal formatado quebra SO o envio de email e por
+    // isso e reportado como degradacao em vez de derrubar o boot do site
+    // publico. A cobertura do caso continua: o que mudou e o canal, de excecao
+    // para console.error. Detalhe em tests/production-env-degradavel.test.ts.
     process.env.PF_ALERTS_FROM_EMAIL = "Puxa Ficha alertas@puxaficha.com.br"
-    assert.throws(
-      () => validateProductionEnvironment(),
-      /PF_ALERTS_FROM_EMAIL ou SMTP_FROM em formato invalido/,
-    )
+    const originalConsoleError = console.error
+    const logs: string[] = []
+    console.error = (...args: unknown[]) => {
+      logs.push(args.map(String).join(" "))
+    }
+    try {
+      assert.doesNotThrow(() => validateProductionEnvironment())
+    } finally {
+      console.error = originalConsoleError
+    }
+    assert.match(logs.join("\n"), /PF_ALERTS_FROM_EMAIL ou SMTP_FROM em formato invalido/)
   })
 })
