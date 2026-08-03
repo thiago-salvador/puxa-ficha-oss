@@ -335,6 +335,11 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     legislacao_mandato_executivo: (ficha.legislacao_mandato_executivo ?? []).map(
       publicLegislacaoMandatoExecutivo
     ),
+    legislacao_mandato_executivo_total:
+      ficha.legislacao_mandato_executivo_total ??
+      (ficha.legislacao_mandato_executivo ?? []).length,
+    legislacao_mandato_executivo_truncados:
+      ficha.legislacao_mandato_executivo_truncados ?? false,
     gastos_parlamentares: (ficha.gastos_parlamentares ?? []).map(publicGastosParlamentares),
     sancoes_administrativas: (ficha.sancoes_administrativas ?? []).map(publicSancao),
     noticias: (ficha.noticias ?? []).map(publicNoticia),
@@ -356,6 +361,10 @@ export type PublicCandidatoProfileDto = ReturnType<typeof toPublicCandidatoProfi
 
 export function toPublicProjetosLeiDto(rows: ProjetoLei[]) {
   return rows.map(publicProjetoLei)
+}
+
+export function toPublicLegislacaoExecutivoDto(rows: LegislacaoMandatoExecutivo[]) {
+  return rows.map(publicLegislacaoMandatoExecutivo)
 }
 
 export function findForbiddenPublicProfileKeys(value: unknown): string[] {

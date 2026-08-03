@@ -35,13 +35,16 @@ const RETRY_FN = "withSupabaseRetry"
  */
 const NOT_DIRECT_QUERY_ALLOWLIST: ReadonlyArray<{ label: string; motivo: string }> = [
   {
-    label: "`legislacao_mandato_executivo(${slug})`",
+    label: "`legislacao_mandato_executivo_full(${slug})`",
     motivo:
       "O callback nao monta query: chama fetchLegislacaoMandatoExecutivoRowsPaged " +
-      "(src/lib/fetch-gastos-votos-in-batch.ts), que roda um loop de paginacao e devolve " +
+      "(src/lib/fetch-gastos-votos-in-batch.ts), que dispara as faixas em paralelo e devolve " +
       "as linhas ja materializadas, e envolve o resultado num .then/.catch para virar " +
       "{ data, error }. Nao existe builder no call site para receber .abortSignal(); " +
-      "propagar o signal exigiria mudar a assinatura do helper noutro modulo.",
+      "o helper ja recebe o signal por argumento e o repassa a cada faixa. " +
+      "Desde 2026-08-03 este e o unico call site LME sem builder: o caminho de render da " +
+      "ficha passou a usar uma previa que e query direta com .abortSignal(signal), e este " +
+      "call site serve apenas /api/candidato-profile/[slug]/legislacao-executivo, fora do render.",
   },
 ]
 

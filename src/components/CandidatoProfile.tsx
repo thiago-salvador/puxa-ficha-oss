@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import dynamic from "next/dynamic"
-import type { FichaCandidato, ProjetoLei } from "@/lib/types"
+import type { FichaCandidato, LegislacaoMandatoExecutivo, ProjetoLei } from "@/lib/types"
 import { classifyAttentionPoints } from "@/lib/attention-points"
 import { formatCompact, formatDate, safeHref } from "@/lib/utils"
 import { ProfileTabs, type Tab } from "./ProfileTabs"
@@ -205,6 +205,37 @@ async function fetchAllProjetosLei(slug: string, signal: AbortSignal): Promise<P
   return rows
 }
 
+/**
+ * Inventario completo de atos do Executivo, fora do caminho de render da ficha
+ * desde 2026-08-03. Vem numa resposta so: a rota ja pagina em paralelo no
+ * servidor, entao repaginar aqui trocaria faixas paralelas por um waterfall de
+ * ate 15 requests no browser da ficha mais pesada (3.600 atos).
+ */
+async function fetchLegislacaoExecutivoCompleto(
+  slug: string,
+  signal: AbortSignal,
+): Promise<LegislacaoMandatoExecutivo[]> {
+  const response = await fetch(
+    `/api/candidato-profile/${encodeURIComponent(slug)}/legislacao-executivo`,
+    { credentials: "same-origin", signal },
+  )
+  if (!response.ok) throw new Error(`legislacao_executivo_fetch_failed:${response.status}`)
+  const body = (await response.json()) as {
+    data?: { rows?: LegislacaoMandatoExecutivo[]; total?: number } | null
+  }
+  if (!body.data || !Array.isArray(body.data.rows)) {
+    throw new Error("legislacao_executivo_fetch_empty")
+  }
+  const rows = body.data.rows
+  // O servidor declara quantos atos existem; entregar menos e substituir o
+  // inventario por um recorte silencioso, que e exatamente o que este refactor
+  // existe para evitar.
+  if (rows.length < (body.data.total ?? rows.length)) {
+    throw new Error("legislacao_executivo_fetch_incomplete")
+  }
+  return rows
+}
+
 export function CandidatoProfile({
   ficha,
   initialTab,
@@ -230,11 +261,20 @@ export function CandidatoProfile({
     ficha.projetos_lei_truncados ? "idle" : "loaded",
   )
   const projetosLeiLoadStateRef = useRef(projetosLeiLoadState)
-  const legislacaoMandatoExecutivo = ficha.legislacao_mandato_executivo ?? []
+  const legislacaoExecutivoPreview = ficha.legislacao_mandato_executivo ?? []
+  const legislacaoExecutivoTotal =
+    ficha.legislacao_mandato_executivo_total ?? legislacaoExecutivoPreview.length
+  const [legislacaoMandatoExecutivo, setLegislacaoMandatoExecutivo] =
+    useState(legislacaoExecutivoPreview)
+  const [legislacaoExecutivoLoadState, setLegislacaoExecutivoLoadState] = useState<
+    "idle" | "loading" | "loaded" | "failed"
+  >(ficha.legislacao_mandato_executivo_truncados ? "idle" : "loaded")
+  const legislacaoExecutivoLoadStateRef = useRef(legislacaoExecutivoLoadState)
   const hasLegislativeHistory = detectLegislativeHistory(historico)
   const legislacaoGroups = groupLegislacaoProfileItems({
     projetosLei,
     legislacaoMandatoExecutivo,
+    legislacaoMandatoExecutivoTotal: legislacaoExecutivoTotal,
     votos,
     cargoDisputado: ficha.cargo_disputado,
   })
@@ -293,6 +333,25 @@ export function CandidatoProfile({
         if (error instanceof DOMException && error.name === "AbortError") return
         projetosLeiLoadStateRef.current = "failed"
         setProjetosLeiLoadState("failed")
+      })
+    return () => controller.abort()
+  }, [activeTab, ficha.slug])
+
+  useEffect(() => {
+    if (activeTab !== "legislacao" || legislacaoExecutivoLoadStateRef.current !== "idle") return
+    const controller = new AbortController()
+    legislacaoExecutivoLoadStateRef.current = "loading"
+    setLegislacaoExecutivoLoadState("loading")
+    fetchLegislacaoExecutivoCompleto(ficha.slug, controller.signal)
+      .then((rows) => {
+        setLegislacaoMandatoExecutivo(rows)
+        legislacaoExecutivoLoadStateRef.current = "loaded"
+        setLegislacaoExecutivoLoadState("loaded")
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return
+        legislacaoExecutivoLoadStateRef.current = "failed"
+        setLegislacaoExecutivoLoadState("failed")
       })
     return () => controller.abort()
   }, [activeTab, ficha.slug])
@@ -715,6 +774,8 @@ export function CandidatoProfile({
                 freshness={sectionFreshness.projetos_lei}
                 projetosLeiLoadState={projetosLeiLoadState}
                 projetosLeiTotal={projetosLeiTotal}
+                legislacaoExecutivoLoadState={legislacaoExecutivoLoadState}
+                legislacaoExecutivoTotal={legislacaoExecutivoTotal}
               />
             )}
 

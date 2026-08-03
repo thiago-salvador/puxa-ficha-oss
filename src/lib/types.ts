@@ -380,6 +380,10 @@ export interface FichaCandidato extends Candidato {
   /** Indica que o cliente deve buscar o inventário completo sob demanda. */
   projetos_lei_truncados?: boolean;
   legislacao_mandato_executivo: LegislacaoMandatoExecutivo[];
+  /** Total materializado; `legislacao_mandato_executivo` pode conter apenas a prévia inicial. */
+  legislacao_mandato_executivo_total?: number;
+  /** Indica que o cliente deve buscar o inventário completo do Executivo sob demanda. */
+  legislacao_mandato_executivo_truncados?: boolean;
   gastos_parlamentares: GastoParlamentar[];
   sancoes_administrativas: SancaoAdministrativa[];
   noticias: NoticiaCandidato[];

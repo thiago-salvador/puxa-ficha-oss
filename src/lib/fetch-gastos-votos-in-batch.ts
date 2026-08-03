@@ -9,6 +9,18 @@ const PAGE_SIZE = 1000
 /** Smaller public LME pages avoid statement timeouts on 3k+ inventories during parallel SSG. */
 const LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE = 250
 
+/**
+ * Quantos atos do Executivo a ficha carrega no caminho de render.
+ *
+ * O inventario completo (3.600 atos em `ronaldo-caiado`, o maior do site e
+ * presidenciavel) saiu do render em 2026-08-03 e e buscado sob demanda quando a
+ * aba Legislacao abre, pelo mesmo caminho que `projetos_lei` ja usava. Este
+ * numero espelha o `.limit(25)` de `projetos_lei` de proposito: os dois recortes
+ * aparecem lado a lado na mesma aba, e a previa e substituida pelo inventario
+ * inteiro assim que o fetch sob demanda responde.
+ */
+export const LEGISLACAO_MANDATO_EXECUTIVO_PROFILE_PREVIEW_LIMIT = 25
+
 /** Keep `.in()` lists bounded for URL size and planner stability. */
 const CANDIDATO_ID_CHUNK = 100
 

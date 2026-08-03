@@ -9,6 +9,8 @@ export interface LegislacaoProfileGroups {
   projetosAprovados: ProjetoLei[]
   leisSancionadas: LegislacaoMandatoExecutivo[]
   executivo: LegislacaoMandatoExecutivo[]
+  /** Tamanho real do inventário do Executivo; `executivo` pode trazer só a prévia. */
+  executivoCount: number
   inventoryScope: ExecutiveLegislationInventoryScope
   totalCount: number
   featuredCount: number
@@ -422,8 +424,17 @@ function getCompleteCoverageDescription(items: LegislacaoMandatoExecutivo[]) {
   return null
 }
 
+/**
+ * `totalItems` existe porque a ficha carrega apenas uma previa do inventario do
+ * Executivo (ver LEGISLACAO_MANDATO_EXECUTIVO_PROFILE_PREVIEW_LIMIT); o inventario
+ * inteiro chega depois, sob demanda. Sem o total, a frase "inventario completo de N
+ * atos" carimbaria o tamanho da previa enquanto o fetch nao volta, ou seja diria um
+ * numero falso ao leitor. As LISTAS continuam mostrando o que ja chegou; o que o
+ * total corrige e a AFIRMACAO sobre o tamanho do acervo.
+ */
 export function resolveExecutiveLegislationInventoryScope(
-  items: LegislacaoMandatoExecutivo[]
+  items: LegislacaoMandatoExecutivo[],
+  totalItems: number = items.length
 ): ExecutiveLegislationInventoryScope {
   if (items.length === 0) {
     return {
@@ -443,7 +454,7 @@ export function resolveExecutiveLegislationInventoryScope(
       isComplete: true,
       tabLabel: "Inventário completo do mandato",
       listDescription: completeDescription,
-      featuredDescription: `Recorte inicial de até ${LEGISLATION_HIGHLIGHT_LIMIT} destaques de relevância pública dentro do inventário completo de ${items.length} atos do Executivo no mandato verificados: ${LEGISLATION_HIGHLIGHT_CRITERIA}. O inventário completo do mandato segue disponível na sub-aba própria. ${COMPLETE_EXECUTIVE_HIGHLIGHT_SCOPE}`,
+      featuredDescription: `Recorte inicial de até ${LEGISLATION_HIGHLIGHT_LIMIT} destaques de relevância pública dentro do inventário completo de ${totalItems} atos do Executivo no mandato verificados: ${LEGISLATION_HIGHLIGHT_CRITERIA}. O inventário completo do mandato segue disponível na sub-aba própria. ${COMPLETE_EXECUTIVE_HIGHLIGHT_SCOPE}`,
     }
   }
 
@@ -453,7 +464,7 @@ export function resolveExecutiveLegislationInventoryScope(
     tabLabel: "Inventário ampliado",
     listDescription:
       "Inventário ampliado parcial: inclui atos já verificados em fonte oficial no recorte disponível. Não é um inventário completo do mandato; ainda não há base oficial suficiente para afirmar completude.",
-    featuredDescription: `Recorte inicial de até ${LEGISLATION_HIGHLIGHT_LIMIT} destaques de relevância pública dentro do inventário ampliado de ${items.length} atos confirmados em fonte oficial no recorte disponível: ${LEGISLATION_HIGHLIGHT_CRITERIA}. Este inventário não é completo do mandato e segue disponível na sub-aba própria.`,
+    featuredDescription: `Recorte inicial de até ${LEGISLATION_HIGHLIGHT_LIMIT} destaques de relevância pública dentro do inventário ampliado de ${totalItems} atos confirmados em fonte oficial no recorte disponível: ${LEGISLATION_HIGHLIGHT_CRITERIA}. Este inventário não é completo do mandato e segue disponível na sub-aba própria.`,
   }
 }
 
@@ -569,13 +580,23 @@ function resolveLegislationProfileInventoryScope({
 export function groupLegislacaoProfileItems({
   projetosLei,
   legislacaoMandatoExecutivo,
+  legislacaoMandatoExecutivoTotal,
   votos,
   cargoDisputado,
 }: {
   projetosLei: ProjetoLei[]
   legislacaoMandatoExecutivo: LegislacaoMandatoExecutivo[]
+  /**
+   * Tamanho real do inventario do Executivo quando `legislacaoMandatoExecutivo`
+   * traz apenas a previa da ficha. Governa contagem e texto, nunca as listas.
+   */
+  legislacaoMandatoExecutivoTotal?: number
   votos: VotoCandidato[]
 } & LegislacaoProfileContext): LegislacaoProfileGroups {
+  const executivoCount = Math.max(
+    legislacaoMandatoExecutivoTotal ?? legislacaoMandatoExecutivo.length,
+    legislacaoMandatoExecutivo.length
+  )
   const authoredProposicaoIds = new Set(
     projetosLei
       .map((projeto) => normalizeProposicaoId(projeto.proposicao_id_api))
@@ -593,17 +614,19 @@ export function groupLegislacaoProfileItems({
     projetosLei,
     legislacaoMandatoExecutivo,
   })
-  const executiveInventoryScope = resolveExecutiveLegislationInventoryScope(legislacaoMandatoExecutivo)
+  const executiveInventoryScope = resolveExecutiveLegislationInventoryScope(
+    legislacaoMandatoExecutivo,
+    executivoCount
+  )
   const parlamentarInventoryScope = resolveParlamentarAuthorshipInventoryScope(projetosLei)
   const hasExecutiveInventoryHighlights =
-    legislacaoMandatoExecutivo.length >= LEGISLATION_HIGHLIGHT_MINIMUM &&
-    destaquesExecutivo.length > 0
+    executivoCount >= LEGISLATION_HIGHLIGHT_MINIMUM && destaquesExecutivo.length > 0
   const votosApenas = votos.filter((voto) => {
     const proposicaoId = normalizeProposicaoId(voto.votacao?.proposicao_id)
     return !proposicaoId || !authoredProposicaoIds.has(proposicaoId)
   })
   const featuredCount = destaquesParlamentares.length + destaquesExecutivo.length
-  const totalCount = projetosLei.length + legislacaoMandatoExecutivo.length + votosApenas.length
+  const totalCount = projetosLei.length + executivoCount + votosApenas.length
   const nonExecutiveCount = projetosLei.length + votosApenas.length
   const inventoryScope = resolveLegislationProfileInventoryScope({
     totalCount,
@@ -624,6 +647,7 @@ export function groupLegislacaoProfileItems({
     projetosAprovados,
     leisSancionadas,
     executivo: legislacaoMandatoExecutivo,
+    executivoCount,
     inventoryScope,
     totalCount,
     featuredCount,
