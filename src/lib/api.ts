@@ -142,6 +142,16 @@ const APP_DATA_REVALIDATE_SECONDS = 3600
  * tests/freshness-window.test.ts falha se os dois divergirem.
  */
 const PROFILE_FRESHNESS_WINDOW_DAYS = 75
+// 2026-08-03: `select("*")` em projetos_lei trazia `metadata` (jsonb), que sozinho
+// responde por 60% do peso da tabela (8,9 MB de 14 MB, media de 651 bytes por linha)
+// e nao e lido em lugar nenhum do app: a unica leitura de `.metadata` no codigo e de
+// LegislacaoMandatoExecutivo, entidade diferente. `coverage_scope` (81 bytes por
+// linha) e `created_at` tambem nao sao consumidos. Como esta query e 14,4% do tempo
+// total do banco e sua cauda encostava no teto de `statement_timeout = 3s` do role
+// `anon` (max_exec_time medido em 2994ms), cortar as colunas mortas reduz o payload
+// sem mudar nada do que a ficha renderiza.
+const PROJETOS_LEI_COLUNAS =
+  "id, candidato_id, tipo, numero, ano, ementa, tema, situacao, url_inteiro_teor, destaque, destaque_motivo, fonte, proposicao_id_api, coverage_id"
 if (USE_MOCK && process.env.VERCEL) {
   throw new Error(
     "Na Vercel é obrigatório Supabase real (SUPABASE_URL sem placeholder e SUPABASE_ANON_KEY). Previews e produção não servem dados mock."
@@ -1069,7 +1079,7 @@ async function getCandidatoBySlugFromRelationResource(
       withSupabaseRetry(`projetos_lei(${slug})`, async (signal) =>
         supabase
           .from("projetos_lei")
-          .select("*", { count: "exact" })
+          .select(PROJETOS_LEI_COLUNAS, { count: "exact" })
           .eq("candidato_id", id)
           .order("ano", { ascending: false })
           .order("numero", { ascending: false })
@@ -1318,7 +1328,7 @@ export async function getProjetosLeiBySlugResource(
   const { data, error, count } = await withSupabaseRetry(`projetos_lei_page(${slug})`, async (signal) =>
     supabase
       .from("projetos_lei")
-      .select("*", { count: "exact" })
+      .select(PROJETOS_LEI_COLUNAS, { count: "exact" })
       .eq("candidato_id", candidate.data!.id)
       .order("ano", { ascending: false })
       .order("numero", { ascending: false })
