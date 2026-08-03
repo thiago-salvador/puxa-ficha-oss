@@ -11,8 +11,8 @@ export async function GET(
   const definition = getRankingDefinitionBySlug(slug)
 
   if (!definition) {
-    // Cache curto no fallback: ranking degradado por blip no Supabase nao pode
-    // fixar o card generico na CDN por 24h. Review de 2026-08-03.
+    // Cache curto no fallback: ranking degradado por blip no Supabase não pode
+    // fixar o card genérico na CDN por 24h. Review de 2026-08-03.
     return buildEditorialOg({
       eyebrow: "Listas",
       title: "Puxa Ficha",
