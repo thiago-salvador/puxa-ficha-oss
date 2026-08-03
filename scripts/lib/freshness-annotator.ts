@@ -7,8 +7,18 @@ import type { CandidateAssertion } from "./factual-assertions"
 
 type CurationPhase = "hardening" | "launched"
 
+/**
+ * Default seguro, espelhando src/lib/api.ts (IS_LAUNCH_PHASE): so `hardening`
+ * explicito desliga a checagem de idade. Ver o raciocinio completo la.
+ */
 const CURATION_PHASE: CurationPhase =
-  process.env.PF_CURATION_PHASE === "launched" ? "launched" : "hardening"
+  process.env.PF_CURATION_PHASE?.trim() === "hardening" ? "hardening" : "launched"
+
+/**
+ * Espelha PROFILE_FRESHNESS_WINDOW_DAYS de src/lib/api.ts, onde esta a
+ * justificativa do numero. tests/freshness-window.test.ts falha se divergirem.
+ */
+export const CURATION_STALE_WINDOW_DAYS = 75
 
 function buildInfo(
   key: SnapshotFreshnessKey,
@@ -36,7 +46,7 @@ function isCurationStale(verifiedAt: string | null | undefined): boolean {
   if (CURATION_PHASE !== "launched") return false
 
   const ageMs = Date.now() - new Date(verifiedAt).getTime()
-  return ageMs > 30 * 24 * 60 * 60 * 1000
+  return ageMs > CURATION_STALE_WINDOW_DAYS * 24 * 60 * 60 * 1000
 }
 
 export function buildSnapshotFreshness(

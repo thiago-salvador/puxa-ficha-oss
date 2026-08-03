@@ -155,31 +155,66 @@ export async function fetchLegislacaoMandatoExecutivoRowsPaged(
     return []
   }
 
-  const all: LegislacaoMandatoExecutivo[] = []
-  let from = 0
+  signal?.throwIfAborted()
 
-  while (true) {
-    // Corta antes de abrir a proxima pagina: o abort so cancela o fetch em voo,
-    // nao impede que o loop inicie mais um.
-    signal?.throwIfAborted()
+  // Uma consulta so de contagem (head: true nao transfere linha) decide quantas
+  // faixas existem, para que elas possam ser buscadas EM PARALELO.
+  //
+  // Antes de 2026-08-03 isto era um `while (true)` com await por pagina. Medido
+  // em producao na ficha mais pesada (ronaldo-caiado, 3.600 atos, presidenciavel
+  // e portanto trafego alto): 15 round-trips seriais, 7,5s no caminho de cache
+  // frio. Como a funcao inteira roda dentro de UM slot do Promise.all de 13
+  // consultas da ficha, ela divide o mesmo orcamento de 15s por tentativa do
+  // withSupabaseRetry com todas as outras. Sob concorrencia, cada pagina fica
+  // mais lenta, o teto e atingido, a ficha degrada, e como resultado degradado e
+  // proibido de entrar em cache o proximo visitante repete o custo inteiro: o
+  // comportamento se auto-alimenta justamente sob pico de trafego.
+  const { count, error: countError } = await (signal
+    ? supabase
+        .from("legislacao_mandato_executivo")
+        .select("id", { count: "exact", head: true })
+        .eq("candidato_id", candidatoId)
+        .abortSignal(signal)
+    : supabase
+        .from("legislacao_mandato_executivo")
+        .select("id", { count: "exact", head: true })
+        .eq("candidato_id", candidatoId))
 
-    const query = supabase
-      .from("legislacao_mandato_executivo")
-      .select(LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT)
-      .eq("candidato_id", candidatoId)
-      .range(from, from + LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE - 1)
-
-    const { data, error } = await (signal ? query.abortSignal(signal) : query)
-
-    if (error) {
-      throw new Error(`legislacao_mandato_executivo batch: ${error.message}`)
-    }
-
-    const rows = (data ?? []) as LegislacaoMandatoExecutivo[]
-    all.push(...rows)
-    if (rows.length < LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE) break
-    from += LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE
+  if (countError) {
+    throw new Error(`legislacao_mandato_executivo count: ${countError.message}`)
   }
 
-  return all
+  const total = count ?? 0
+  if (total === 0) return []
+
+  const ranges: number[] = []
+  for (let from = 0; from < total; from += LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE) {
+    ranges.push(from)
+  }
+
+  signal?.throwIfAborted()
+
+  const pages = await Promise.all(
+    ranges.map(async (from) => {
+      const query = supabase
+        .from("legislacao_mandato_executivo")
+        .select(LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT)
+        .eq("candidato_id", candidatoId)
+        .order("id", { ascending: true })
+        .range(from, from + LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE - 1)
+
+      const { data, error } = await (signal ? query.abortSignal(signal) : query)
+
+      if (error) {
+        throw new Error(`legislacao_mandato_executivo batch: ${error.message}`)
+      }
+
+      return (data ?? []) as LegislacaoMandatoExecutivo[]
+    }),
+  )
+
+  // `order("id")` explicito acima existe porque, sem ordenacao estavel, faixas
+  // paralelas podem se sobrepor ou pular linhas: o `range` do PostgREST e um
+  // offset sobre a ordem do planner, que nao e garantida entre requests.
+  return pages.flat()
 }
