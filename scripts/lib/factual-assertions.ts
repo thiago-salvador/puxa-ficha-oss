@@ -822,8 +822,8 @@ const RAW_CANDIDATE_ASSERTIONS: CandidateAssertionInput[] = [
   },
   {
     slug: "roberto-claudio",
-    source: "CN7 2025-11-05 + O Povo 2025-04-28",
-    verifiedAt: "2026-04-02",
+    source: "TSE consulta_cand 2026, SQ 60002531352 (vice na chapa de Ciro Gomes)",
+    verifiedAt: "2026-08-03",
     confidence: "curated",
     cohorts: ["governadores"],
     expected: {
@@ -831,7 +831,7 @@ const RAW_CANDIDATE_ASSERTIONS: CandidateAssertionInput[] = [
       nome_urna: "Roberto Claudio",
       partido_atual: "Uniao Brasil",
       partido_sigla: "UNIAO",
-      cargo_disputado: "Governador",
+      cargo_disputado: "Vice-Governador",
       estado: "CE",
     },
   },

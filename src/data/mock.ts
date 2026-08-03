@@ -566,9 +566,9 @@ export const MOCK_CANDIDATOS: Candidato[] = [
   {
     id: "67", nome_completo: "Roberto Claudio Rodrigues Bezerra", nome_urna: "Roberto Claudio", slug: "roberto-claudio",
     data_nascimento: null, idade: null, naturalidade: null, formacao: null, profissao_declarada: null,
-    partido_atual: "Uniao Brasil", partido_sigla: "UNIAO", cargo_atual: null, cargo_disputado: "Governador", estado: "CE",
+    partido_atual: "Uniao Brasil", partido_sigla: "UNIAO", cargo_atual: null, cargo_disputado: "Vice-Governador", estado: "CE",
     status: "pre-candidato", biografia: null, foto_url: null, site_campanha: null, redes_sociais: {},
-    fonte_dados: ["curadoria"], ultima_atualizacao: "2026-04-02",
+    fonte_dados: ["curadoria"], ultima_atualizacao: "2026-08-03",
   },
   {
     id: "68", nome_completo: "Eduardo Girao Monteiro Filho", nome_urna: "Eduardo Girao", slug: "eduardo-girao",
