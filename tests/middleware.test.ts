@@ -185,6 +185,36 @@ describe("middleware route protection", () => {
     assert.equal(response.headers.get("x-middleware-next"), "1")
   })
 
+  /**
+   * O fetch do middleware carregava `next: { revalidate: 300, tags: [...] }`, e
+   * as duas opcoes sao IGNORADAS ali. O Next monta um work unit store do tipo
+   * `request` para middleware, e o fetch instrumentado so acumula tag e
+   * revalidate quando o store e de cache ou prerender; sem config explicita de
+   * fetchCache ele ainda liga `autoNoCache`
+   * (packages/next/src/server/lib/patch-fetch.ts, Next 16).
+   *
+   * Ou seja: nao existia Data Cache aqui para 300s governar, e
+   * `revalidateTag("public-candidatos")` nunca alcancou esta chamada. O codigo
+   * dizia o contrario de como o sistema se comporta, que e a pior forma de
+   * documentacao. A frescura real vem do `s-maxage` da resposta.
+   */
+  it("nao passa opcoes de cache inertes no fetch do middleware", async () => {
+    let recebido: RequestInit | undefined
+    globalThis.fetch = async (_input, init) => {
+      recebido = init
+      return slugListResponse(["lula"])
+    }
+
+    await middleware(request("http://localhost/candidato/lula"))
+
+    assert.ok(recebido, "o middleware precisa ter chamado o endpoint interno")
+    assert.equal(
+      (recebido as { next?: unknown }).next,
+      undefined,
+      "next.revalidate/next.tags nao fazem nada dentro do middleware; escrever isso mente sobre onde mora a frescura",
+    )
+  })
+
   it("returns 404 for unknown candidato slugs when the slug list is available", async () => {
     globalThis.fetch = async () => slugListResponse(["lula"])
 

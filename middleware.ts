@@ -102,9 +102,22 @@ async function isValidCandidatoSlug(request: NextRequest, slug: string): Promise
   }
   try {
     const url = new URL("/api/candidato-slugs", request.nextUrl.origin)
+    // Sem `next: { revalidate, tags }` de proposito. Dentro do middleware essas
+    // duas opcoes NAO fazem nada: o Next monta um work unit store do tipo
+    // `request`, e o fetch instrumentado so acumula tag e revalidate quando o
+    // store e de cache ou de prerender (packages/next/src/server/lib/patch-fetch.ts).
+    // Sem config explicita de fetchCache, o mesmo arquivo ainda liga
+    // `autoNoCache`. Ou seja: nao havia cache de Data Cache aqui para 300s
+    // governar, e `revalidateTag("public-candidatos")` nunca alcancou esta
+    // chamada. Ter as opcoes escritas dava a impressao contraria.
+    //
+    // A frescura real vem de duas coisas, as duas continuam valendo:
+    //   1. o `cache-control` da propria resposta
+    //      (`s-maxage=300, stale-while-revalidate=600`), respeitado pelo CDN,
+    //      que e quem atende esta chamada;
+    //   2. o `export const revalidate = 300` da rota, que governa o ISR dela.
     const res = await fetch(url, {
       headers: { "x-middleware-internal": "candidato-slugs" },
-      next: { revalidate: 300, tags: ["public-candidatos"] },
     })
     if (!res.ok) {
       // Fail-open: se o endpoint interno falhou, deixa o page render decidir.
