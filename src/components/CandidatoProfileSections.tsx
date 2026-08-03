@@ -558,6 +558,8 @@ interface LegislationTabSectionProps {
   freshness?: SectionFreshnessInfo
   projetosLeiLoadState?: "idle" | "loading" | "loaded" | "failed"
   projetosLeiTotal?: number
+  legislacaoExecutivoLoadState?: "idle" | "loading" | "loaded" | "failed"
+  legislacaoExecutivoTotal?: number
 }
 
 const EXECUTIVE_RELATION_LABELS: Record<LegislacaoMandatoExecutivo["tipo_relacao"], string> = {
@@ -1004,10 +1006,13 @@ export function LegislationTabSection({
   freshness,
   projetosLeiLoadState = "loaded",
   projetosLeiTotal = projetosLei.length,
+  legislacaoExecutivoLoadState = "loaded",
+  legislacaoExecutivoTotal = legislacaoMandatoExecutivo.length,
 }: LegislationTabSectionProps) {
   const groups = groupLegislacaoProfileItems({
     projetosLei,
     legislacaoMandatoExecutivo,
+    legislacaoMandatoExecutivoTotal: legislacaoExecutivoTotal,
     votos,
     cargoDisputado,
   })
@@ -1033,6 +1038,16 @@ export function LegislationTabSection({
       {projetosLeiLoadState === "failed" && (
         <NoticePanel tone="caution">
           Não foi possível carregar todos os {projetosLeiTotal} projetos agora. A prévia disponível continua abaixo.
+        </NoticePanel>
+      )}
+      {legislacaoExecutivoLoadState === "loading" && (
+        <NoticePanel tone="neutral">
+          Carregando o inventário completo do Executivo ({legislacaoExecutivoTotal} atos)…
+        </NoticePanel>
+      )}
+      {legislacaoExecutivoLoadState === "failed" && (
+        <NoticePanel tone="caution">
+          Não foi possível carregar os {legislacaoExecutivoTotal} atos do Executivo agora. A prévia disponível continua abaixo.
         </NoticePanel>
       )}
       <div className="relative max-w-full min-w-0 overflow-hidden" data-pf-legislation-subtabs-scroll>
@@ -1065,7 +1080,7 @@ export function LegislationTabSection({
             </TabsTrigger>
             <TabsTrigger value="executivo" className="max-w-[72vw] flex-none overflow-hidden sm:max-w-none">
               <span className="truncate">Executivo</span>
-              <LegislationSubtabCount count={groups.executivo.length} />
+              <LegislationSubtabCount count={groups.executivoCount} />
             </TabsTrigger>
           </TabsList>
         </div>

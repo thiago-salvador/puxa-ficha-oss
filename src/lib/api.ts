@@ -52,6 +52,8 @@ import {
   fetchLegislacaoMandatoExecutivoRowsPaged,
   fetchMudancasPartidoRowsPaged,
   fetchVotosCountsByCandidatoIds,
+  LEGISLACAO_MANDATO_EXECUTIVO_PROFILE_PREVIEW_LIMIT,
+  LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT,
 } from "@/lib/fetch-gastos-votos-in-batch"
 import { applyLegislacaoMandatoExecutivoCachePolicy } from "@/lib/legislacao-mandato-executivo-cache"
 import { sortVotosForPublicDisplay } from "@/lib/votos-candidato-aggregate"
@@ -1076,15 +1078,25 @@ async function getCandidatoBySlugFromRelationResource(
           .limit(25)
           .abortSignal(signal)
       ),
+      // Previa do inventario do Executivo. O inventario completo saiu do caminho
+      // de render em 2026-08-03 e vive em /api/candidato-profile/[slug]/legislacao-executivo,
+      // buscado pelo cliente quando a aba Legislacao abre (mesmo padrao de projetos_lei).
+      //
+      // Medido em producao em 03/08 na ficha mais pesada (ronaldo-caiado, 3.600 atos,
+      // presidenciavel e portanto trafego alto): 151 KB comprimidos no caminho quente e
+      // 1,5 MB / 7,5s no frio, com 15 faixas paralelas dividindo o orcamento de 15s do
+      // withSupabaseRetry com as outras 12 consultas da ficha. Uma unica consulta com
+      // `count: "exact"` devolve a previa E o total exato num round-trip so.
       withSupabaseRetry(`legislacao_mandato_executivo(${slug})`, async (signal) =>
-        fetchLegislacaoMandatoExecutivoRowsPaged(supabase, id, signal)
-          .then((data) => ({ data, error: null }))
-          .catch((error: unknown) => ({
-            data: null,
-            error: {
-              message: error instanceof Error ? error.message : String(error),
-            },
-          }))
+        supabase
+          .from("legislacao_mandato_executivo")
+          .select(LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT, { count: "exact" })
+          .eq("candidato_id", id)
+          .order("data_norma", { ascending: false, nullsFirst: false })
+          .order("ano", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .limit(LEGISLACAO_MANDATO_EXECUTIVO_PROFILE_PREVIEW_LIMIT)
+          .abortSignal(signal)
       ),
       withSupabaseRetry(`gastos_parlamentares(${slug})`, async (signal) =>
         supabase
@@ -1161,9 +1173,14 @@ async function getCandidatoBySlugFromRelationResource(
   // renderizados, cap em ementa e ordenacao deterministica por data_norma desc
   // -> ano desc -> tipo_norma -> numero) vive em
   // src/lib/legislacao-mandato-executivo-cache.ts.
+  // O cast espelha fetchLegislacaoMandatoExecutivoRowsPaged: a consulta usa
+  // LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT, entao as colunas DB-only nao vem,
+  // e sao justamente as que a politica de cache descarta em seguida.
+  const legislacaoExecutivoPreviewRows = (legislacaoExecutivo.data ??
+    []) as unknown as LegislacaoMandatoExecutivo[]
   const legislacaoExecutivoOrdenado: LegislacaoMandatoExecutivo[] =
     applyLegislacaoMandatoExecutivoCachePolicy(
-      (legislacaoExecutivo.data ?? []).map(toPublicLegislacaoMandatoExecutivoRow)
+      legislacaoExecutivoPreviewRows.map(toPublicLegislacaoMandatoExecutivoRow)
     )
 
   // Sanitizacao publica de partido_sigla/partido_atual no ponto onde o payload
@@ -1185,6 +1202,10 @@ async function getCandidatoBySlugFromRelationResource(
     projetos_lei_total: projetos.count ?? (projetos.data ?? []).length,
     projetos_lei_truncados: (projetos.count ?? 0) > (projetos.data ?? []).length,
     legislacao_mandato_executivo: legislacaoExecutivoOrdenado,
+    legislacao_mandato_executivo_total:
+      legislacaoExecutivo.count ?? legislacaoExecutivoOrdenado.length,
+    legislacao_mandato_executivo_truncados:
+      (legislacaoExecutivo.count ?? 0) > legislacaoExecutivoOrdenado.length,
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
     // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
@@ -1337,6 +1358,60 @@ export async function getProjetosLeiBySlugResource(
   })
 }
 
+export interface LegislacaoExecutivoInventario {
+  rows: LegislacaoMandatoExecutivo[]
+  total: number
+}
+
+/**
+ * Inventario completo de atos do Executivo, servido fora do caminho de render da
+ * ficha (a ficha carrega apenas os primeiros
+ * LEGISLACAO_MANDATO_EXECUTIVO_PROFILE_PREVIEW_LIMIT atos).
+ *
+ * Devolve o inventario inteiro numa resposta so, e nao em paginas: a paginacao
+ * paralela de fetchLegislacaoMandatoExecutivoRowsPaged (#65) ja resolve as 3.600
+ * linhas do pior caso em faixas simultaneas com `order("id")` explicito, entao
+ * fatiar de novo aqui trocaria 15 requests paralelos no servidor por 15 requests
+ * seriais no browser.
+ */
+export async function getLegislacaoExecutivoBySlugResource(
+  slug: string
+): Promise<DataResource<LegislacaoExecutivoInventario | null>> {
+  if (USE_MOCK) return degradedResource(null, SUPABASE_REQUIRED_MESSAGE)
+
+  const candidate = await getCandidatoPublicRowForRequest(slug, "no-store")
+  if (candidate.sourceStatus === "degraded") {
+    return degradedResource(null, candidate.sourceMessage)
+  }
+  if (!candidate.data) return liveResource(null)
+
+  const supabase = createServerSupabaseClient({ cacheMode: "no-store" })
+  const candidatoId = candidate.data.id
+
+  const inventario = await withSupabaseRetry(
+    `legislacao_mandato_executivo_full(${slug})`,
+    async (signal) =>
+      fetchLegislacaoMandatoExecutivoRowsPaged(supabase, candidatoId, signal)
+        .then((data) => ({ data, error: null }))
+        .catch((error: unknown) => ({
+          data: null,
+          error: { message: error instanceof Error ? error.message : String(error) },
+        }))
+  )
+
+  if (inventario.error || !inventario.data) {
+    return degradedResource(null, "Não foi possível carregar o inventário completo do Executivo.")
+  }
+
+  // Mesma politica de payload publico da ficha, para que o inventario completo e a
+  // previa sejam intercambiaveis no cliente (mesmos campos, mesma ordem, mesmo
+  // dedup de coverage_id).
+  const publicRows = applyLegislacaoMandatoExecutivoCachePolicy(
+    inventario.data.map(toPublicLegislacaoMandatoExecutivoRow)
+  )
+  return liveResource({ rows: publicRows, total: publicRows.length })
+}
+
 async function getCandidatoBySlugResourceUncached(
   slug: string
 ): Promise<DataResource<FichaCandidato | null>> {
@@ -1353,7 +1428,7 @@ const getCachedCandidatoBySlugResource = unstable_cache(
   // do Vercel Data Cache (Build warning 25202862956 em /candidato/[slug] e
   // /embed/[slug] com slugs de inventario completo). Suffix invalida cache antigo
   // com o payload pre-trim.
-  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726"],
+  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidato-ficha"],
