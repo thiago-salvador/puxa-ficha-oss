@@ -102,10 +102,14 @@ async function fetchDoadorReverseRows(
 
   if (error) {
     console.error("search_financiamento_by_doador_normalized:", error.message)
-    return {
-      rows: [],
-      error: "Não foi possível carregar os resultados agora.",
-    }
+    // LANCA em vez de retornar o estado de erro. Um valor resolvido seria gravado
+    // pelo unstable_cache abaixo e serviria a mensagem de falha por 1 HORA a todo
+    // mundo que buscasse o mesmo termo, com cache HIT e sem nenhum log novo: um
+    // blip de 45s no Supabase virava 1h de resultado errado, invisivel na
+    // observabilidade. Rejeicao nao entra no Data Cache. Mesma mecanica que o
+    // PR #40 aplicou aos 9 wrappers de src/lib/api.ts; este arquivo ficou de fora
+    // na epoca e foi reencontrado no master review de 2026-08-03.
+    throw new DoadorReverseUnavailableError(error.message)
   }
 
   return {
@@ -114,9 +118,19 @@ async function fetchDoadorReverseRows(
   }
 }
 
+/** Falha de leitura da RPC. Existe para nunca ser confundida com "0 resultados". */
+class DoadorReverseUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "DoadorReverseUnavailableError"
+  }
+}
+
 const getCachedDoadorReverseRows = unstable_cache(
   async (normalizedQuery: string) => fetchDoadorReverseRows(normalizedQuery),
-  ["doador-reverse"],
+  // Sufixo trocado para descartar o cache ja envenenado no deploy, do mesmo jeito
+  // que o PR #40 fez com `cache-poison-fix-20260802` nos wrappers de api.ts.
+  ["doador-reverse", "cache-poison-fix-20260803"],
   {
     revalidate: 3600,
     tags: ["doador-reverse"],
@@ -137,8 +151,21 @@ export async function getDoadorReverseSearchResult(
   if (!normalizedQuery) {
     return { rows: [], displayQuery, normalizedQuery: "", error: null }
   }
-  const { rows, error } = rpcCaller || FIXTURE_FILE
-    ? await fetchDoadorReverseRows(normalizedQuery, rpcCaller)
-    : await getCachedDoadorReverseRows(normalizedQuery)
-  return { rows, displayQuery, normalizedQuery, error }
+  // O estado de erro e reconstruido AQUI, fora do unstable_cache, para que a
+  // falha nunca seja persistida no Data Cache. A mensagem ao usuario e a mesma
+  // de antes; o que muda e que a proxima request tenta o banco de novo em vez de
+  // servir a falha por 1h.
+  try {
+    const { rows, error } = rpcCaller || FIXTURE_FILE
+      ? await fetchDoadorReverseRows(normalizedQuery, rpcCaller)
+      : await getCachedDoadorReverseRows(normalizedQuery)
+    return { rows, displayQuery, normalizedQuery, error }
+  } catch {
+    return {
+      rows: [],
+      displayQuery,
+      normalizedQuery,
+      error: "Não foi possível carregar os resultados agora.",
+    }
+  }
 }
