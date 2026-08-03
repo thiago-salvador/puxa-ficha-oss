@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 /**
  * Extrai o IP do cliente para rate limit / hash em rotas públicas.
  *
@@ -33,4 +35,31 @@ export function extractTrustedClientIp(headers: Pick<Headers, "get">): string {
   }
 
   return "unknown"
+}
+
+/**
+ * Identificador pseudônimo e estável do cliente, para limite durável.
+ *
+ * O IP nunca é persistido em claro: só este hash salgado entra em tabela. O
+ * `namespace` separa os baldes de rotas diferentes, de modo que o mesmo visitante
+ * não seja correlacionável entre superfícies pelo valor gravado.
+ *
+ * O salt reaproveita `PF_ALERTS_IP_SALT` (com fallback para
+ * `PF_QUIZ_SHORT_LINK_SALT`), que `production-env.ts` já exige em produção —
+ * nenhuma env nova para configurar antes do lançamento.
+ *
+ * `/api/quiz/short-link` continua com o hash próprio dele de propósito: aquele
+ * valor já está gravado em `quiz_result_short_links`, e trocar a fórmula
+ * silenciosamente zeraria o limite de quem já tem linha na tabela.
+ */
+export function hashTrustedClientIp(
+  headers: Pick<Headers, "get">,
+  namespace: string,
+): string {
+  const salt =
+    process.env.PF_ALERTS_IP_SALT?.trim() ||
+    process.env.PF_QUIZ_SHORT_LINK_SALT?.trim() ||
+    "dev-client-ip-salt"
+  const ip = extractTrustedClientIp(headers)
+  return createHash("sha256").update(`${salt}:${namespace}:${ip}`).digest("hex").slice(0, 48)
 }

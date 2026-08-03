@@ -49,7 +49,7 @@ function addOrigin(origins: Set<string>, value: string | null | undefined) {
  * Origens aceitas para escrita. `requestOrigin` entra na lista para que preview
  * deploys e dev local funcionem sem configuracao extra.
  */
-export function allowedCrossSiteWriteOrigins(requestOrigin: string): Set<string> {
+function allowedCrossSiteWriteOrigins(requestOrigin: string): Set<string> {
   const origins = new Set<string>()
   addOrigin(origins, requestOrigin)
   addOrigin(origins, process.env.NEXT_PUBLIC_SITE_URL)

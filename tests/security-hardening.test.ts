@@ -116,6 +116,8 @@ describe("fixed-window IP rate limit", () => {
       recordAnalyticsLaunchEvent: async () => {
         writes += 1
       },
+      countRecentAnalyticsEventsByIpHash: async () => ({ status: "ok", count: 0 }),
+      now: () => Date.now(),
     })
     const request = () =>
       new Request("http://localhost/api/analytics/event", {
@@ -123,6 +125,7 @@ describe("fixed-window IP rate limit", () => {
         headers: {
           "content-type": "application/json",
           "x-real-ip": "203.0.113.43",
+          origin: "http://localhost",
         },
         body: JSON.stringify({ eventName: "Candidate Click", payload: { surface: "test" } }),
       })
@@ -144,6 +147,8 @@ describe("fixed-window IP rate limit", () => {
       recordAnalyticsLaunchEvent: async () => {
         writes += 1
       },
+      countRecentAnalyticsEventsByIpHash: async () => ({ status: "ok", count: 0 }),
+      now: () => Date.now(),
     })
 
     const originalConsoleError = console.error
@@ -156,6 +161,7 @@ describe("fixed-window IP rate limit", () => {
           headers: {
             "content-type": "application/json",
             "x-real-ip": "203.0.113.143",
+            origin: "http://localhost",
           },
           body: JSON.stringify({ eventName: "Candidate Click", payload: { surface: "test" } }),
         }),
@@ -180,6 +186,8 @@ describe("fixed-window IP rate limit", () => {
       recordAnalyticsLaunchEvent: async () => {
         writes += 1
       },
+      countRecentAnalyticsEventsByIpHash: async () => ({ status: "ok", count: 0 }),
+      now: () => Date.now(),
     })
 
     const response = await handler(
@@ -209,6 +217,8 @@ describe("fixed-window IP rate limit", () => {
       recordAnalyticsLaunchEvent: async () => {
         writes += 1
       },
+      countRecentAnalyticsEventsByIpHash: async () => ({ status: "ok", count: 0 }),
+      now: () => Date.now(),
     })
 
     const response = await handler(
@@ -217,6 +227,7 @@ describe("fixed-window IP rate limit", () => {
         headers: {
           "content-type": "application/json",
           "x-real-ip": "203.0.113.145",
+          origin: "http://localhost",
         },
         body: JSON.stringify({
           eventName: "Candidate Click",
