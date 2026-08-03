@@ -17,8 +17,9 @@
  *
  * Flags:
  *   --from-snapshot=PATH  OBRIGATÓRIA. JSON de `coverage-snapshot.sql` (campo `claims`)
+ *   --uf=SP               filtra por UF (Governador daquele estado). Ignora --cargo.
  *   --cargo=NOME          filtra por `cargo_disputado` (default: Presidente)
- *   --slugs=a,b           filtra por slug, ignora --cargo
+ *   --slugs=a,b           filtra por slug, ignora --uf e --cargo
  *   --out=PATH            HTML de saída
  *   --probar              sonda as URLs de fonte e mostra o estado de cada uma
  *   --probes=PATH         reaproveita sondagem anterior em vez de ir à rede
@@ -340,18 +341,30 @@ filtrar();
 async function main(): Promise<void> {
   const snapshot = flag("from-snapshot")
   if (!snapshot) throw new Error("--from-snapshot=PATH é obrigatório")
+  const uf = (flag("uf") || "").trim().toUpperCase()
   const cargo = flag("cargo") || "Presidente"
   const slugsFlag = flag("slugs")
   const slugs = slugsFlag ? new Set(slugsFlag.split(",").map((s) => s.trim())) : null
-  const out =
-    flag("out") ||
-    join(homedir(), ".disposable-html", "revisao", `claims-${cargo.toLowerCase()}.html`)
+  // Rotulo e nome de arquivo seguem o recorte pedido, para os HTMLs de UF
+  // conviverem lado a lado sem se sobrescrever.
+  const rotulo = uf ? `Governador · ${uf}` : cargo
+  const nomeArquivo = uf ? `claims-uf-${uf.toLowerCase()}.html` : `claims-${cargo.toLowerCase()}.html`
+  const out = flag("out") || join(homedir(), ".disposable-html", "revisao", nomeArquivo)
   const postUrl = flag("review-post") || "/revisao"
 
   const todos = JSON.parse(readFileSync(snapshot, "utf8")) as CandidatoSnapshot[]
-  const coorte = todos.filter((c) =>
-    slugs ? slugs.has(c.slug) : c.cargo_disputado === cargo
-  )
+  const coorte = todos.filter((c) => {
+    if (slugs) return slugs.has(c.slug)
+    if (uf) return c.estado === uf
+    return c.cargo_disputado === cargo
+  })
+  if (coorte.length === 0) {
+    throw new Error(
+      uf
+        ? `nenhum candidato publico com estado = ${uf} no snapshot`
+        : `nenhum candidato publico com cargo_disputado = ${cargo} no snapshot`
+    )
+  }
 
   const linhas: Linha[] = []
   for (const cand of [...coorte].sort((a, b) => a.nome_urna.localeCompare(b.nome_urna, "pt-BR"))) {
@@ -376,7 +389,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const html = render(linhas, probes, postUrl, cargo)
+  const html = render(linhas, probes, postUrl, rotulo)
   mkdirSync(dirname(out), { recursive: true })
   writeFileSync(out, html, "utf8")
   console.error(
