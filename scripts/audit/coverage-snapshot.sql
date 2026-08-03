@@ -81,6 +81,20 @@ from (
       select jsonb_agg(distinct pd.tema) from posicoes_declaradas pd
       where pd.candidato_id = c.id and pd.verificado = false), '[]'::jsonb),
     'sancoes', (select count(*) from sancoes_administrativas s where s.candidato_id = c.id),
+    -- TODAS as claims (pontos de atenção) do candidato, publicadas ou não.
+    -- Alimenta `claims-report.ts`; a coluna "alertas" acima conta só as visíveis.
+    'claims', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', pa.id, 'categoria', pa.categoria, 'gravidade', pa.gravidade,
+        'titulo', pa.titulo, 'descricao', pa.descricao,
+        'visivel', pa.visivel, 'verificado', pa.verificado, 'gerado_por', pa.gerado_por,
+        'despublicacao_motivo', pa.despublicacao_motivo,
+        'data_referencia', pa.data_referencia,
+        'urls', coalesce((select jsonb_agg(f->>'url') from jsonb_array_elements(
+            case when jsonb_typeof(pa.fontes) = 'array' then pa.fontes else '[]'::jsonb end) f
+          where f->>'url' is not null), '[]'::jsonb)
+      ) order by pa.gravidade, pa.titulo)
+      from pontos_atencao pa where pa.candidato_id = c.id), '[]'::jsonb),
     -- Fila de revisão: o que depende de decisão humana para mudar o site.
     'itensRevisar', coalesce((
       select jsonb_agg(item order by item->>'classe', item->>'titulo') from (
