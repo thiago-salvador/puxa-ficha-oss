@@ -196,7 +196,7 @@ export function pareceDesafioAntiRobo(texto: string): boolean {
  * Título e primeiro `<h1>` de um HTML, já normalizados. Vazio quando o corpo
  * não tem nenhum dos dois.
  */
-export function rotulosDoDocumento(html: string): string[] {
+function rotulosDoDocumento(html: string): string[] {
   const rotulos: string[] = []
   const titulo = /<title[^>]*>([\s\S]{0,300}?)<\/title[^>]*>/i.exec(html)
   const h1 = /<h1[^>]*>([\s\S]{0,300}?)<\/h1[^>]*>/i.exec(html)
