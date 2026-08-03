@@ -25,10 +25,19 @@ export interface PendingWrite {
   arquivo: string
   linha: number
   tabela: string
+  /** Vazio quando a escrita é de tabela de referência (ver `ref`). */
   slug: string
   ano?: number
   tema?: string
   proposicao?: string
+  /**
+   * Escrita em tabela de REFERÊNCIA, que não pertence a um candidato
+   * (`votacoes_chave`, por exemplo). Anotada com `ref=<identificador>` em vez de
+   * `slug=`, e conferida contra o bloco `referencias` da allowlist. Existe para
+   * que correção de dado de referência continue sendo escrita DECLARADA, em vez
+   * de escapar do gate por não ter slug para declarar.
+   */
+  ref?: string
   campos: string[]
   /** Statement SQL bruto associado à anotação. */
   statement: string
@@ -88,8 +97,14 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
     const attrs = parseAtributos(m[1])
     const tabela = attrs.tabela ?? ""
     const slug = attrs.slug ?? ""
-    if (!tabela || !slug) {
-      throw new Error(`${arquivo}:${i + 1}: anotação @write sem tabela ou slug`)
+    const ref = attrs.ref
+    if (slug && ref !== undefined) {
+      throw new Error(
+        `${arquivo}:${i + 1}: anotação @write tem slug e ref ao mesmo tempo; use um ou outro`
+      )
+    }
+    if (!tabela || (!slug && !ref)) {
+      throw new Error(`${arquivo}:${i + 1}: anotação @write sem tabela ou sem slug/ref`)
     }
 
     const statement = statementApos(linhas, i + 1)
@@ -101,9 +116,13 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
         `${arquivo}:${i + 1}: anotação diz tabela=${tabela} mas o statement não menciona essa tabela`
       )
     }
-    if (!statement.includes(`'${slug}'`)) {
+    // A anotação nunca é acreditada sozinha: o statement tem que mencionar o
+    // mesmo identificador que ela declara, seja slug de candidato ou ref.
+    const identificador = slug || (ref as string)
+    const rotulo = slug ? "slug" : "ref"
+    if (!statement.includes(`'${identificador}'`)) {
       throw new Error(
-        `${arquivo}:${i + 1}: anotação diz slug=${slug} mas o statement não menciona esse slug`
+        `${arquivo}:${i + 1}: anotação diz ${rotulo}=${identificador} mas o statement não menciona esse ${rotulo}`
       )
     }
 
@@ -115,6 +134,7 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
       ano: attrs.ano ? Number(attrs.ano) : undefined,
       tema: attrs.tema,
       proposicao: attrs.proposicao,
+      ref,
       campos: attrs.campos ? attrs.campos.split(",").filter(Boolean) : [],
       statement,
     })
