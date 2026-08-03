@@ -13,16 +13,26 @@
  * Não toca banco nem rede. Sai != 0 na primeira violação.
  *
  * Uso:
- *   tsx scripts/audit/check-migrations-allowlist.ts --desde=20260802200000 \
+ *   tsx scripts/audit/check-migrations-allowlist.ts \
+ *     --desde=20260802200000 --ate=20260802200100 \
  *     --allowlist=scripts/audit/allowlist-governadores-ac.json
  *
- * ATENÇÃO AO `--desde`: ele é comparação de PREFIXO do nome do arquivo, não data.
- * Cada recorte precisa da própria janela, começando no timestamp da primeira
- * migration DELE, porque a allowlist de um recorte reprova legitimamente as
- * migrations de outro. Dois recortes nasceram em 2026-08-02: os presidenciáveis
- * em ...120000/130000/140000 e os governadores do AC em ...200000 em diante.
- * Rodar `--desde=20260802` com a allowlist do AC varre os dois e devolve 18
- * violações que não são defeito das migrations, e sim janela errada.
+ * ATENÇÃO À JANELA: `--desde` e `--ate` são comparação de PREFIXO do nome do
+ * arquivo, não data, e `--ate` é inclusivo. Cada recorte precisa da própria
+ * janela, porque a allowlist de um recorte reprova legitimamente as migrations
+ * de outro. Rodar `--desde=20260802` com a allowlist do AC varre também os
+ * presidenciáveis e devolve 18 violações que não são defeito das migrations.
+ *
+ * `--ate` existe porque `--desde` sozinho não tem teto, então TODO recorte
+ * criado depois entra na janela dos anteriores. Isso mordeu quatro vezes entre
+ * 02 e 03/08/2026: AC contra presidenciáveis, e depois a migration das 33
+ * claims caindo na janela do recorte de AL. Sem teto, uma janela correta hoje
+ * quebra sozinha amanhã, quando alguém criar a próxima migration.
+ *
+ * Janelas dos recortes existentes:
+ *   presidenciáveis  --desde=20260803100000 --ate=20260803110000
+ *   governadores AC  --desde=20260802200000 --ate=20260802200100
+ *   governadores AL  --desde=20260803080000 --ate=20260803080000
  */
 
 import { readFileSync, readdirSync } from "node:fs"
@@ -163,6 +173,8 @@ function main(): void {
   const argv = process.argv.slice(2)
   const desdeFlag = argv.find((a) => a.startsWith("--desde="))
   const desde = desdeFlag ? desdeFlag.slice("--desde=".length) : undefined
+  const ateFlag = argv.find((a) => a.startsWith("--ate="))
+  const ate = ateFlag ? ateFlag.slice("--ate=".length) : undefined
   const allowlistFlag = argv.find((a) => a.startsWith("--allowlist="))
   const allowlistPath = allowlistFlag
     ? allowlistFlag.slice("--allowlist=".length)
@@ -175,6 +187,7 @@ function main(): void {
   const arquivos = readdirSync(MIGRATIONS)
     .filter((f) => f.endsWith(".sql"))
     .filter((f) => (desde ? f >= desde : true))
+    .filter((f) => (ate ? f <= `${ate}￿` : true))
     .sort()
 
   const erros: string[] = []
@@ -198,7 +211,7 @@ function main(): void {
     }
   }
 
-  const writes = lerPendingWrites(MIGRATIONS, desde)
+  const writes = lerPendingWrites(MIGRATIONS, desde, ate)
   erros.push(...violacoesDeAllowlist(writes, allow))
 
   console.error(

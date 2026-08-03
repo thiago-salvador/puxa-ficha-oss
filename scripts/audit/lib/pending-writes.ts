@@ -118,9 +118,20 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
     }
     // A anotação nunca é acreditada sozinha: o statement tem que mencionar o
     // mesmo identificador que ela declara, seja slug de candidato ou ref.
+    //
+    // Duas formas contam como menção, e só elas. O literal exato `'<id>'`, que é
+    // o caso de slug de candidato e de ref simples; e `'<id>:`, que é o caso da
+    // escrita em lote cujo rótulo abre um literal maior, como o UPDATE que grava
+    // `despublicacao_motivo = 'familia-sem-mandato-eletivo: <explicação>'`. Sem a
+    // segunda forma, uma escrita em lote perfeitamente declarada é rejeitada e a
+    // saída empurra quem lê para afrouxar a anotação, que é o oposto do que este
+    // gate existe para fazer. O identificador continua tendo que aparecer literal
+    // no SQL: nenhuma das duas formas acredita na anotação sozinha.
     const identificador = slug || (ref as string)
     const rotulo = slug ? "slug" : "ref"
-    if (!statement.includes(`'${identificador}'`)) {
+    const mencionado =
+      statement.includes(`'${identificador}'`) || statement.includes(`'${identificador}:`)
+    if (!mencionado) {
       throw new Error(
         `${arquivo}:${i + 1}: anotação diz ${rotulo}=${identificador} mas o statement não menciona esse ${rotulo}`
       )
@@ -145,13 +156,20 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
 
 /**
  * Lê todas as migrations do diretório e devolve as anotadas.
- * `desde` filtra por prefixo de timestamp (nome do arquivo), para restringir às
- * migrations criadas nesta branch.
+ * `desde` e `ate` filtram por prefixo de timestamp (nome do arquivo), para
+ * restringir às migrations de UM recorte.
+ *
+ * `ate` é inclusivo no prefixo e existe porque `desde` sozinho não tem teto: a
+ * migration de qualquer recorte criado DEPOIS entra na janela e é reprovada
+ * pela allowlist do recorte anterior, que legitimamente não a conhece. Isso já
+ * mordeu quatro vezes entre 2026-08-02 e 2026-08-03, sempre com o mesmo
+ * diagnóstico errado de "violação" onde havia só janela aberta demais.
  */
-export function lerPendingWrites(dir: string, desde?: string): PendingWrite[] {
+export function lerPendingWrites(dir: string, desde?: string, ate?: string): PendingWrite[] {
   const arquivos = readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .filter((f) => (desde ? f >= desde : true))
+    .filter((f) => (ate ? f <= `${ate}￿` : true))
     .sort()
 
   const writes: PendingWrite[] = []
