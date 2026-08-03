@@ -1325,13 +1325,14 @@
     "slug": "roberto-claudio",
     "nome_completo": "Roberto Claudio Rodrigues Bezerra",
     "nome_urna": "Roberto Claudio",
-    "cargo_disputado": "Governador",
+    "cargo_disputado": "Vice-Governador",
     "estado": "CE",
     "ids": {
       "camara": null,
       "senado": null,
       "tse_sq_candidato": {
-        "2022": "60001612926"
+        "2022": "60001612926",
+        "2026": "60002531352"
       }
     },
     "wikipedia_title": "Roberto_Cláudio"
@@ -3866,6 +3867,368 @@
         "2018": "170000607399",
         "2020": "170000735134",
         "2024": "170002143292"
+      }
+    }
+  },
+  {
+    "slug": "lenilda-luna",
+    "nome_completo": "Lenilda Luna de Almeida",
+    "nome_urna": "Lenilda Luna",
+    "cargo_disputado": "Governador",
+    "estado": "AL",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2022": "20001653097"
+      }
+    }
+  },
+  {
+    "slug": "aroldo-felix",
+    "nome_completo": "Aroldo Felix de Azevedo Junior",
+    "nome_urna": "Aroldo Félix",
+    "cargo_disputado": "Governador",
+    "estado": "BA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2022": "260001617899"
+      }
+    }
+  },
+  {
+    "slug": "jose-estevao",
+    "nome_completo": "José Estêvão dos Santos Barbosa",
+    "nome_urna": "José Estêvão",
+    "cargo_disputado": "Governador",
+    "estado": "BA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "robson-raymundo",
+    "nome_completo": "Robson Raymundo da Silva",
+    "nome_urna": "Professor Robson Raymundo",
+    "cargo_disputado": "Governador",
+    "estado": "DF",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2022": "70001611377"
+      }
+    }
+  },
+  {
+    "slug": "luis-cesar-bueno",
+    "nome_completo": "Luis Cesar Bueno e Freitas",
+    "nome_urna": "Luis Cesar Bueno",
+    "cargo_disputado": "Governador",
+    "estado": "GO",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2022": "90001649536"
+      }
+    }
+  },
+  {
+    "slug": "saulo-arcangeli",
+    "nome_completo": "Saulo Costa Arcangeli",
+    "nome_urna": "Saulo Arcangeli",
+    "cargo_disputado": "Governador",
+    "estado": "MA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "dr-luisinho",
+    "nome_completo": "Francisco das Chagas Conceição da Silva",
+    "nome_urna": "Dr. Luisinho",
+    "cargo_disputado": "Governador",
+    "estado": "AC",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "gilberto-vasconcelos",
+    "nome_completo": "Gilberto Vasconcelos",
+    "nome_urna": "Gilberto Vasconcelos",
+    "cargo_disputado": "Governador",
+    "estado": "AM",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "elisson-ferreira",
+    "nome_completo": "Elisson Ferreira",
+    "nome_urna": "Elisson Ferreira",
+    "cargo_disputado": "Governador",
+    "estado": "DF",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "yuri-ezequiel",
+    "nome_completo": "Yuri Ezequiel",
+    "nome_urna": "Yuri Ezequiel",
+    "cargo_disputado": "Governador",
+    "estado": "PB",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "carlos-machado",
+    "nome_completo": "Carlos Machado",
+    "nome_urna": "Carlos Machado",
+    "cargo_disputado": "Governador",
+    "estado": "SP",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "guilherme-fonseca",
+    "nome_completo": "Guilherme Fonseca",
+    "nome_urna": "Guilherme Fonseca",
+    "cargo_disputado": "Governador",
+    "estado": "PE",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {}
+    }
+  },
+  {
+    "slug": "ricardo-leite",
+    "nome_completo": "Fabio Ricardo Leite",
+    "nome_urna": "Ricardo Leite",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "AC",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "10002532493"
+      }
+    }
+  },
+  {
+    "slug": "daniela-paiva",
+    "nome_completo": "Daniela Paiva de Oliveira",
+    "nome_urna": "Daniela Paiva",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "AC",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "10002533538"
+      }
+    }
+  },
+  {
+    "slug": "alessandra-campelo",
+    "nome_completo": "Alessandra Campelo da Silva",
+    "nome_urna": "Alessandra Campelo",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "AM",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "40002532271"
+      }
+    }
+  },
+  {
+    "slug": "luciana-gurgel",
+    "nome_completo": "Luciana Araujo Goes Gurgel",
+    "nome_urna": "Luciana Gurgel",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "AP",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "30002530015"
+      }
+    }
+  },
+  {
+    "slug": "prof-meire-reis",
+    "nome_completo": "Meire Lucia Alves dos Reis",
+    "nome_urna": "Prof. Meire Reis",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "BA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "50002532270"
+      }
+    }
+  },
+  {
+    "slug": "ze-coca",
+    "nome_completo": "Zenildo Brandão Santana",
+    "nome_urna": "Zé Cocá",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "BA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "50002533189"
+      }
+    }
+  },
+  {
+    "slug": "washington-bandeira",
+    "nome_completo": "Francisco Washington Bandeira Santos Filho",
+    "nome_urna": "Washington Bandeira",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "PI",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "180002532986"
+      }
+    }
+  },
+  {
+    "slug": "ismar-marques",
+    "nome_completo": "Ismar Aguiar Marques",
+    "nome_urna": "Ismar Marques",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "PI",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "180002533957"
+      }
+    }
+  },
+  {
+    "slug": "priscila-felizola",
+    "nome_completo": "Priscila Dias Silva Felizola",
+    "nome_urna": "Priscila Felizola",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "SE",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "260002532011"
+      }
+    }
+  },
+  {
+    "slug": "catherine-teles",
+    "nome_completo": "Catherine Morais Teles",
+    "nome_urna": "Catherine Teles",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "CE",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "60002533730"
+      }
+    }
+  },
+  {
+    "slug": "naf-nascimento",
+    "nome_completo": "Naftaly Pereira do Nascimento",
+    "nome_urna": "Naf Nascimento",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "RS",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "210002533354"
+      }
+    }
+  },
+  {
+    "slug": "prof-enfermeira-kaelly",
+    "nome_completo": "Kaelly Virginia de Oliveira Saraiva",
+    "nome_urna": "Prof. Enfermeira Kaelly",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "MS",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "120002532256"
+      }
+    }
+  },
+  {
+    "slug": "preta-lu",
+    "nome_completo": "Luciana Costa Correa",
+    "nome_urna": "Preta Lu",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "MA",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "100002534191"
+      }
+    }
+  },
+  {
+    "slug": "larissa-rosado",
+    "nome_completo": "Larissa Daniela Escossia Rosado",
+    "nome_urna": "Larissa",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "RN",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "200002534002"
+      }
+    }
+  },
+  {
+    "slug": "baba",
+    "nome_completo": "Anteomar Pereira da Silva",
+    "nome_urna": "Babá",
+    "cargo_disputado": "Vice-Governador",
+    "estado": "RN",
+    "ids": {
+      "camara": null,
+      "senado": null,
+      "tse_sq_candidato": {
+        "2026": "200002534441"
       }
     }
   }
