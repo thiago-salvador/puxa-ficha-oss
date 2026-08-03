@@ -365,6 +365,7 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
   <li>Alertas contam pontos de atenção visíveis que não sejam "feito positivo". Dados pessoais = idade (da view pública <code>candidatos_publico</code>, derivada da data de nascimento), naturalidade, formação e profissão. Posições (quiz) é x/3, um por tema do quiz presidencial.</li>
 </ul>
 ${blocoPendentes}
+<p class="notes" style="font-size:13.5px"><b>Revisão em lote:</b> <a href="revisao/lote.html">abrir a fila inteira numa tabela só</a>, uma linha por fato, com filtro por tipo e cargo e um envio no fim.</p>
 <nav class="toc">${toc}</nav>
 ${secoes.join("")}
 </main>
@@ -481,6 +482,253 @@ document.getElementById('f').addEventListener('submit', async (e) => {
 
 let NOME_INDEX = "index.html"
 
+// ── Revisão em lote ─────────────────────────────────────────────────
+//
+// Uma linha por FATO, não por candidato: quem tem 5 itens ocupa 5 linhas
+// seguidas. É a superfície para varrer a fila inteira de uma vez, com um envio
+// só no fim. As páginas por candidato continuam existindo para o caso oposto,
+// quando se quer olhar um perfil a fundo.
+
+const CSS_LOTE = `
+:root{color-scheme:light;--bg:#fafaf8;--fg:#1a1a1a;--muted:#6b6b6b;--line:#e4e2dc;--card:#fff;
+--ok:#1c6b2d;--okbg:#e3f2e6;--bad:#a12622;--badbg:#fbe4e4;--warn:#8a6100;--warnbg:#fdf3d7;--accent:#1f4fd8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:26px 20px 140px}
+main{max-width:1500px;margin:0 auto}
+h1{font-size:24px;margin:8px 0 4px}
+.sub{color:var(--muted);margin:0 0 16px;font-size:13.5px}
+a.voltar{color:var(--muted);text-decoration:none;font-size:13px}
+a.voltar:hover{text-decoration:underline}
+.barra{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:14px;font-size:13px}
+.barra select,.barra input[type=search]{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:13px;background:#fff}
+.barra button{background:#fff;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.barra button:hover{border-color:var(--accent)}
+.contador{margin-left:auto;font-weight:700}
+.twrap{border:1px solid var(--line);border-radius:11px;background:var(--card);overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+thead th{position:sticky;top:0;background:#f4f3ef;z-index:2;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr.primeira-do-candidato td{border-top:2px solid #dcdad3}
+tr.decidida{background:#fbfbf9}
+.cand{font-weight:700;white-space:nowrap}
+.cand a{color:var(--fg);text-decoration:none}
+.cand a:hover{text-decoration:underline}
+.meta{color:var(--muted);font-size:12px;white-space:nowrap}
+.classe{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:var(--warnbg);color:var(--warn);white-space:nowrap}
+.classe.no-ar{background:var(--badbg);color:var(--bad)}
+.fato{max-width:620px}
+.fato b{display:block;margin-bottom:3px}
+.fonte{max-width:230px;word-break:break-all;font-size:12px}
+.fonte a{color:var(--accent)}
+.dec{white-space:nowrap}
+.dec label{display:inline-block;margin-right:7px;cursor:pointer;font-weight:600;font-size:12.5px}
+.dec label.ap{color:var(--ok)} .dec label.rj{color:var(--bad)} .dec label.ad{color:var(--muted)}
+.rodape{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:12px 20px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.rodape button{background:#1a1a1a;color:#fff;border:0;border-radius:10px;padding:11px 26px;font-size:15px;font-weight:600;cursor:pointer}
+.rodape button:hover{background:#000}
+.rodape input[type=text]{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;min-width:330px}
+#msg{font-weight:600}
+`
+
+interface LinhaLote {
+  cand: CandidatoCoverage
+  item: ItemRevisar
+  primeira: boolean
+}
+
+function linhasDoLote(coorte: CandidatoCoverage[]): LinhaLote[] {
+  const ordemCargo = (c: string | null): number =>
+    c === "Presidente" ? 0 : c === "Governador" ? 1 : 2
+
+  const comFila = coorte
+    .filter((c) => c.itensRevisar.length > 0)
+    .sort(
+      (a, b) =>
+        ordemCargo(a.cargo_disputado) - ordemCargo(b.cargo_disputado) ||
+        (a.estado ?? "").localeCompare(b.estado ?? "", "pt-BR") ||
+        a.nome_urna.localeCompare(b.nome_urna, "pt-BR")
+    )
+
+  const linhas: LinhaLote[] = []
+  for (const cand of comFila) {
+    cand.itensRevisar.forEach((item, i) => {
+      linhas.push({ cand, item, primeira: i === 0 })
+    })
+  }
+  return linhas
+}
+
+export function renderPaginaLote(coorte: CandidatoCoverage[], postUrl: string): string {
+  const linhas = linhasDoLote(coorte)
+  const classes = [...new Set(linhas.map((l) => l.item.classe))]
+
+  const trs = linhas
+    .map(({ cand, item, primeira }, i) => {
+      const fonte = item.url
+        ? `<a href="${esc(item.url)}" target="_blank" rel="noopener">abrir fonte</a>`
+        : `<span class="meta">sem link</span>`
+      const origem = item.fonte ? `<div class="meta">${esc(item.fonte)}</div>` : ""
+      const noAr = item.classe === "ponto_atencao_ia_no_ar_sem_revisao"
+      return `<tr class="${primeira ? "primeira-do-candidato" : ""}" data-i="${i}"
+  data-slug="${esc(cand.slug)}" data-classe="${esc(item.classe)}"
+  data-cargo="${esc(cand.cargo_disputado ?? "")}"
+  data-busca="${esc((cand.nome_urna + " " + (cand.partido_sigla ?? "") + " " + item.titulo + " " + (item.detalhe ?? "")).toLowerCase())}">
+  <td class="cand"><a href="https://puxaficha.com.br/candidato/${esc(cand.slug)}" target="_blank" rel="noopener">${esc(cand.nome_urna)}</a></td>
+  <td class="meta">${esc(cand.partido_sigla ?? "—")}</td>
+  <td class="meta">${esc(cand.estado ?? "BR")}</td>
+  <td class="meta">${esc(cand.cargo_disputado ?? "—")}</td>
+  <td><span class="classe${noAr ? " no-ar" : ""}">${esc(ROTULO_CLASSE[item.classe] ?? item.classe)}</span></td>
+  <td class="fato"><b>${esc(item.titulo)}</b>${item.detalhe ? esc(item.detalhe) : '<span class="meta">sem texto registrado</span>'}</td>
+  <td class="fonte">${fonte}${origem}</td>
+  <td class="dec">
+    <label class="ap"><input type="radio" name="d${i}" value="aprovar">Aprovar</label>
+    <label class="rj"><input type="radio" name="d${i}" value="rejeitar">Rejeitar</label>
+    <label class="ad"><input type="radio" name="d${i}" value="adiar" checked>Depois</label>
+  </td>
+</tr>`
+    })
+    .join("")
+
+  const opcoesClasse = classes
+    .map((c) => `<option value="${esc(c)}">${esc(ROTULO_CLASSE[c] ?? c)}</option>`)
+    .join("")
+
+  const dados = linhas.map(({ cand, item }) => ({
+    slug: cand.slug,
+    id: item.id,
+    classe: item.classe,
+    titulo: item.titulo,
+  }))
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Revisão em lote · Puxa Ficha</title>
+<style>${CSS_LOTE}</style>
+</head>
+<body>
+<main>
+<a class="voltar" href="../${esc(NOME_INDEX)}">Voltar para a tabela de cobertura</a>
+<h1>Revisão em lote</h1>
+<p class="sub">Uma linha por fato. Quem tem mais de um item aparece em linhas seguidas.
+Nada aqui muda o site: o envio grava suas decisões e a aplicação é um passo separado, com migration e readback.</p>
+
+<div class="barra">
+  <label>Classe
+    <select id="fClasse"><option value="">todas</option>${opcoesClasse}</select>
+  </label>
+  <label>Cargo
+    <select id="fCargo"><option value="">todos</option><option>Presidente</option><option>Governador</option><option>Vice-Governador</option></select>
+  </label>
+  <input type="search" id="fBusca" placeholder="filtrar por nome, partido ou texto">
+  <button type="button" id="bAprovar">Aprovar visíveis</button>
+  <button type="button" id="bRejeitar">Rejeitar visíveis</button>
+  <button type="button" id="bLimpar">Limpar visíveis</button>
+  <span class="contador" id="contador"></span>
+</div>
+
+<div class="twrap"><table>
+<thead><tr>
+  <th>Candidato</th><th>Partido</th><th>UF</th><th>Cargo</th>
+  <th>Tipo</th><th>Fato a checar</th><th>Referência</th><th>Decisão</th>
+</tr></thead>
+<tbody id="corpo">${trs}</tbody>
+</table></div>
+</main>
+
+<div class="rodape">
+  <input type="text" id="livre" placeholder="Observação livre para este envio (opcional)">
+  <button type="button" id="enviar">Enviar decisões</button>
+  <span id="msg"></span>
+</div>
+
+<script>
+const DADOS = ${JSON.stringify(dados)};
+const corpo = document.getElementById('corpo');
+const linhas = Array.from(corpo.querySelectorAll('tr'));
+
+function visiveis() { return linhas.filter(tr => tr.style.display !== 'none'); }
+function decisaoDe(tr) {
+  const sel = tr.querySelector('input[type=radio]:checked');
+  return sel ? sel.value : 'adiar';
+}
+function atualizar() {
+  let decididas = 0;
+  for (const tr of linhas) {
+    const d = decisaoDe(tr);
+    tr.classList.toggle('decidida', d !== 'adiar');
+    if (d !== 'adiar') decididas++;
+  }
+  document.getElementById('contador').textContent =
+    decididas + ' de ' + linhas.length + ' decidido(s) · ' + visiveis().length + ' visível(is)';
+}
+function filtrar() {
+  const cl = document.getElementById('fClasse').value;
+  const cg = document.getElementById('fCargo').value;
+  const q = document.getElementById('fBusca').value.trim().toLowerCase();
+  for (const tr of linhas) {
+    const ok = (!cl || tr.dataset.classe === cl)
+      && (!cg || tr.dataset.cargo === cg)
+      && (!q || tr.dataset.busca.includes(q));
+    tr.style.display = ok ? '' : 'none';
+  }
+  atualizar();
+}
+function marcarVisiveis(valor) {
+  for (const tr of visiveis()) {
+    const r = tr.querySelector('input[type=radio][value="' + valor + '"]');
+    if (r) r.checked = true;
+  }
+  atualizar();
+}
+
+document.getElementById('fClasse').addEventListener('change', filtrar);
+document.getElementById('fCargo').addEventListener('change', filtrar);
+document.getElementById('fBusca').addEventListener('input', filtrar);
+document.getElementById('bAprovar').addEventListener('click', () => marcarVisiveis('aprovar'));
+document.getElementById('bRejeitar').addEventListener('click', () => marcarVisiveis('rejeitar'));
+document.getElementById('bLimpar').addEventListener('click', () => marcarVisiveis('adiar'));
+corpo.addEventListener('change', atualizar);
+
+document.getElementById('enviar').addEventListener('click', async () => {
+  const msg = document.getElementById('msg');
+  const porSlug = new Map();
+  linhas.forEach((tr, i) => {
+    const d = decisaoDe(tr);
+    if (d === 'adiar') return;
+    const meta = DADOS[i];
+    if (!porSlug.has(meta.slug)) porSlug.set(meta.slug, []);
+    porSlug.get(meta.slug).push({ id: meta.id, classe: meta.classe, titulo: meta.titulo, decisao: d });
+  });
+  if (porSlug.size === 0) { msg.textContent = 'Nenhuma decisão marcada.'; msg.style.color = '#8a6100'; return; }
+
+  const livre = document.getElementById('livre').value;
+  let enviados = 0, falhas = 0;
+  for (const [slug, decisoes] of porSlug) {
+    try {
+      const r = await fetch(${JSON.stringify(postUrl)}, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, decisoes, livre, origem: 'lote' })
+      });
+      if (r.ok) enviados += decisoes.length; else falhas += decisoes.length;
+    } catch (e) { falhas += decisoes.length; }
+  }
+  msg.textContent = falhas === 0
+    ? enviados + ' decisão(ões) enviada(s) em ' + porSlug.size + ' candidato(s).'
+    : enviados + ' enviada(s), ' + falhas + ' falharam.';
+  msg.style.color = falhas === 0 ? '#1c6b2d' : '#a12622';
+});
+
+filtrar();
+</script>
+</body>
+</html>`
+}
+
 // ── main ────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -524,7 +772,10 @@ async function main(): Promise<void> {
     paginas += 1
     itens += cand.itensRevisar.length
   }
-  console.error(`[cobertura] revisão: ${paginas} página(s), ${itens} item(ns) em ${dirRevisao}`)
+  writeFileSync(join(dirRevisao, "lote.html"), renderPaginaLote(coorte, opcoes.reviewPost), "utf8")
+  console.error(
+    `[cobertura] revisão: ${paginas} página(s) + lote.html, ${itens} item(ns) em ${dirRevisao}`
+  )
 
   if (opcoes.json) {
     const dump = coorte.map((c) => ({
