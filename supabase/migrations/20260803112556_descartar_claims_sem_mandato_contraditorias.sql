@@ -1,7 +1,66 @@
+-- =====================================================================
+-- Descarta 33 claims "Sem historico de mandato eletivo registrado" que o
+-- proprio banco contradiz, e troca a fonte morta da claim do Alvaro Dias.
+-- Branch data/presidenciaveis-lacunas (2026-08-03).
+--
+-- Aprovado por Thiago em 2026-08-03 (payload factcheck-governadores-v1,
+-- acoes limpar-33 e trocar-fonte-alvaro).
+--
+-- POR QUE ESTAS 33 EXISTEM, E POR QUE NAO SAO ALUCINACAO
+-- As duas familias de claim geradas em lote ("Sem historico de mandato
+-- eletivo registrado" e "Carreira politica: N mandato(s)") tem 121 registros
+-- criados TODOS em 2026-03-31, num unico carregamento. Nao ha gerador rodando.
+-- O historico politico dos mesmos candidatos chegou DEPOIS: 85 linhas de
+-- mandato em 06/04, 32 em 11/04, mais lotes ate julho. Em 31/03 havia 1 linha.
+-- Ou seja, a afirmacao era verdadeira quando foi escrita, porque o banco de
+-- fato nao tinha o historico, e virou falsa quando o historico foi preenchido.
+-- E dado que envelheceu sem revalidacao.
+--
+-- CRITERIO DA SELECAO (mecanico, nao editorial)
+-- Entram as claims desta familia cujo candidato tem, no NOSSO proprio
+-- historico_politico, ao menos um evento com tipo_evento = 'mandato' e
+-- cargo_canonico ELETIVO (Presidente, Governador, Prefeito, Senador, Deputado
+-- Federal, Deputado Estadual, Deputado Distrital, Vereador e os tres vices).
+-- Cargo por nomeacao (Ministro, Secretario, Interventor, presidencia de
+-- autarquia) NAO conta, porque a claim fala de mandato ELETIVO.
+--
+-- A REGRA FOI TESTADA CONTRA A REALIDADE, NOS DOIS SENTIDOS
+-- O fact-check externo de 2026-08-03, feito por quatro grupos que nao
+-- conheciam este criterio, bateu com ele:
+--   - Exclui certo: Ricardo Cappelli e Cadu Xavier ficam de fora, porque o
+--     historico deles so tem cargo de nomeacao. O grupo do DF confirmou por
+--     fonte externa que a claim do Cappelli esta CORRETA e deve ficar.
+--   - Inclui certo: Alan Rick (senador desde 2023), Mailza Assis (senadora em
+--     2019, governadora do AC desde abril de 2026), Dr. Furlan (deputado
+--     estadual 2015-2020), Eduardo Girao (senador desde 2019), Leandro Grass
+--     (deputado distrital), Paula Belmonte (deputada federal 2019-2022) e
+--     Arthur Henrique (prefeito de Boa Vista reeleito em 2024) foram todos
+--     confirmados com mandato eletivo real, por fonte externa.
+--   - Nao alcanca quem nao tem historico: Ronaldo Mansur e Marcelo Brigadeiro
+--     seguem de pe, e os dois foram confirmados como VERDADEIROS.
+--
+-- EFEITO NO SITE: NENHUM. Todas as 33 ja estao com visivel = false. Elas
+-- estavam na fila de publicacao. O que esta migration faz e marcar o motivo,
+-- para que nunca sejam publicadas por engano. A coluna visivel nao e tocada.
+--
+-- ALEM DISSO: a claim do Alvaro Dias (RN) sobre a AIJE esta NO AR e e a unica
+-- acusacao publicada cuja fonte nao respondia. O conteudo foi confirmado em
+-- fonte viva, entao a claim fica, e so a URL e trocada.
+-- =====================================================================
+--
+-- ---------------------------------------------------------------------
+-- REGISTRO DE APLICACAO (cabecalho que veio junto com a versao as-applied):
 -- Descarta claims "Sem historico de mandato eletivo registrado" que o proprio
 -- banco contradiz, e troca a fonte morta da claim do Alvaro Dias.
 -- Aprovado por Thiago em 2026-08-03 (payload consolidacao-executada, acao A=aplicar).
 -- Nenhuma das 33 esta no ar: todas com visivel = false, coluna nao tocada.
+--
+-- PROVENIENCIA (03/08/2026). Este arquivo e a versao as-applied, recuperada
+-- por `supabase migration fetch`, e e o nome que o ledger de producao conhece.
+-- O raciocinio acima foi portado de 20260803110000_descartar_claims_sem_mandato_contraditorias.sql,
+-- escrita a mao e deixada em branch nao mergeada. O SQL das duas e identico,
+-- conferido por comparacao normalizada. So comentario mudou aqui.
+-- ---------------------------------------------------------------------
 
 UPDATE public.pontos_atencao
 SET despublicacao_motivo = 'familia-sem-mandato-eletivo: claim gerada no lote de 2026-03-31, quando o historico politico do candidato ainda nao tinha sido carregado. O historico chegou entre 06/04 e julho de 2026 e registra mandato eletivo para este candidato, contradizendo o texto. Descartada em 2026-08-03 apos fact-check com fonte externa. Nunca esteve publicada.',
