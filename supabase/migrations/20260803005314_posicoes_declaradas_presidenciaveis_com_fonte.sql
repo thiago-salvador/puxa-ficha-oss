@@ -1,8 +1,64 @@
+-- =====================================================================
+-- Posicoes declaradas dos pre-candidatos a Presidencia, com fonte primaria.
+-- Branch data/presidenciaveis-lacunas (2026-08-02).
+--
+-- POR QUE ESTA MIGRATION EXISTE
+-- O quiz presidencial tem 3 temas (reforma_trabalhista, teto_gastos,
+-- transferencia_renda). Ate aqui, so 4 dos 11 pre-candidatos tinham posicao
+-- registrada, e as linhas existentes foram gravadas com fonte generica
+-- ("Curadoria Puxa Ficha") e url_fonte NULA. Esta migration adiciona somente
+-- linhas NOVAS, todas com fonte nomeada e URL viva, e nao toca nas antigas.
+--
+-- REGRA APLICADA (a mesma do projeto): so entra posicao sustentada por
+-- declaracao publica explicita do PROPRIO candidato, ou por voto nominal
+-- documentado. Alinhamento ideologico presumido NAO e fonte. Onde nao houve
+-- declaracao localizavel, NENHUMA linha foi gravada: o par (candidato, tema)
+-- fica vazio de proposito e esta listado no bloco "SEM DECLARACAO" abaixo.
+--
+-- VERIFICACAO DE SUBSTANCIA (2026-08-02)
+-- Cada URL foi baixada e lida nesta sessao, e o trecho que sustenta a
+-- classificacao foi localizado no texto da propria pagina. Duas observacoes de
+-- acesso, registradas para quem for revalidar:
+--   - causaoperaria.org.br devolve HTTP 403 para cliente de linha de comando;
+--     a pagina abre normalmente em navegador, e foi assim que o conteudo foi
+--     lido e conferido. Nao e link morto, e bloqueio de user-agent.
+--   - diariodocentrodomundo.com.br e gazetadopovo.com.br entregam o corpo por
+--     JavaScript; a leitura automatica so recuperou titulo e subtitulo. Nos dois
+--     casos o titulo e o subtitulo ja trazem a declaracao atribuida ao
+--     candidato, e a classificacao se apoia so nisso, nao no corpo nao lido.
+--
+-- verificado = false em todas as linhas: fonte checada, mas ainda sem revisao
+-- editorial humana. O quiz so pontua posicao com verificado = true, entao estas
+-- linhas aparecem na ficha sem entrar no score ate a revisao.
+--
+-- SEM DECLARACAO LOCALIZADA (9 pares, nenhuma linha gravada)
+--   augusto-cury      : reforma_trabalhista, teto_gastos
+--   hertz-dias        : transferencia_renda
+--   renan-santos      : reforma_trabalhista, teto_gastos
+--   rui-costa-pimenta : reforma_trabalhista, teto_gastos
+--   samara-martins    : teto_gastos, transferencia_renda
+-- Em todos, o candidato fala de temas vizinhos (ajuste fiscal, austeridade,
+-- CLT em geral) sem se pronunciar sobre a Lei 13.467/2017, sobre a EC 95/2016
+-- ou sobre transferencia de renda nominalmente. Inferir a posicao a partir do
+-- partido seria fabricar dado.
+--
+-- ESCOPO: so INSERT em public.posicoes_declaradas. Nenhuma outra tabela.
+-- =====================================================================
+--
+-- ---------------------------------------------------------------------
+-- REGISTRO DE APLICACAO (cabecalho que veio junto com a versao as-applied):
 -- Posicoes declaradas dos pre-candidatos a Presidencia, com fonte primaria.
 -- Detalhe completo, incluindo os 9 pares deixados vazios de proposito por falta
 -- de declaracao localizavel, em
 -- supabase/migrations/20260802130000_posicoes_declaradas_presidenciaveis_com_fonte.sql
 -- verificado = false: fonte checada, sem revisao editorial humana ainda.
+--
+-- PROVENIENCIA (03/08/2026). Este arquivo e a versao as-applied, recuperada
+-- por `supabase migration fetch`, e e o nome que o ledger de producao conhece.
+-- O raciocinio acima foi portado de 20260802130000_posicoes_declaradas_presidenciaveis_com_fonte.sql,
+-- escrita a mao e deixada em branch nao mergeada. O SQL das duas e identico,
+-- conferido por comparacao normalizada. So comentario mudou aqui.
+-- ---------------------------------------------------------------------
 
 INSERT INTO public.posicoes_declaradas (candidato_id, tema, posicao, descricao, fonte, url_fonte, verificado, gerado_por)
 SELECT c.id, 'transferencia_renda', 'a_favor',

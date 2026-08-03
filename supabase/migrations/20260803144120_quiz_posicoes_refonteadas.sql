@@ -1,7 +1,76 @@
+-- =====================================================================
+-- As 11 posicoes do quiz que estavam sem fonte, agora com fonte ou fora.
+-- Continuacao declarada do passo anterior (20260803140000), que ligou as 13
+-- com fonte e deixou estas 11 ligadas enquanto a fonte era buscada.
+--
+-- Quatro buscas independentes, uma por candidato, com instrucao explicita de
+-- devolver "sem posicao documentada" em vez de forcar. Resultado: 10 das 11
+-- tem fonte real, 1 nao tem, e TRES estavam com a polaridade errada.
+--
+-- O ERRO MAIS GRAVE: flavio-bolsonaro / teto_gastos
+--   O texto publicado dizia "Voto favoravel ao arcabouco fiscal de 2016" e a
+--   posicao estava como A FAVOR. Dois defeitos somados:
+--   (a) em 2016 ele era deputado estadual na ALERJ e nao podia votar em emenda
+--       constitucional federal, entao nao existe voto dele na EC 95/2016;
+--   (b) "arcabouco fiscal" e a LC 200/2023, instrumento diferente do teto de
+--       2016, e nela ele votou NAO, conforme a lista de votacao nominal do
+--       Senado no PLP 93/2023 ("PL RJ Flavio Bolsonaro NAO", sessao de
+--       21/06/2023, 57 a 17).
+--   Ou seja, o site afirmava um voto que nao existe, e isso pontuava o quiz.
+--
+--   POR QUE A POSICAO NAO VIRA `contra` AQUI, embora o voto tenha sido NAO
+--   Seria eu trocando um erro por uma interpretacao. Votar NAO no arcabouco de
+--   2023 foi a posicao do bloco de oposicao, e boa parte votou contra por
+--   considerar o arcabouco FROUXO demais, nao por rejeitar limite de gasto.
+--   Do voto sozinho nao se deduz "contra teto de gastos". Entao a descricao
+--   passa a dizer o fato verificado, a fonte primaria entra, e a posicao sai
+--   do quiz por `verificado = false` ate alguem decidir o rotulo com base em
+--   declaracao dele sobre o tema. Preferir a lacuna declarada ao palpite.
+--
+-- flavio-bolsonaro / reforma_trabalhista: unica das 11 sem fonte. A busca nao
+--   encontrou nenhuma declaracao dele sobre a Lei 13.467/2017, nem voto (ele
+--   era deputado estadual quando foi votada). O que existe e fala do
+--   coordenador da pre-campanha dele, que nao serve como posicao do candidato.
+--   Sai do quiz por `verificado = false`, em vez de ser apagada: o registro
+--   fica para quem for procurar fonte depois.
+--
+-- MUDANCAS DE POLARIDADE por falta de lastro no rotulo:
+--   romeu-zema / transferencia_renda, de `contra` para `ambiguo`. Ele diz
+--     textualmente "Programas sociais sao importantissimos. Nos vamos manter
+--     para quem precisa", e defende endurecer contrapartida e combater fraude.
+--     Isso e condicionar, nao se opor.
+--   ronaldo-caiado / transferencia_renda, de `contra` para `ambiguo`. Nenhuma
+--     fonte sustenta oposicao. Tres momentos datados apontam o contrario:
+--     criticou o corte de R$ 10 bi no Bolsa Familia em 2015, elogiou o auxilio
+--     emergencial em 2020, e disse em 21/01/2026 que manteria o Bolsa Familia
+--     com foco em transitoriedade e qualificacao.
+--
+-- O RESTO: mesma posicao, agora com fato datado no lugar de caracterizacao.
+--   Os textos antigos eram juizo ("Aliado da agenda liberal na legislatura",
+--   "Historico parlamentar de centro-direita") ou atribuiam a pessoa o que era
+--   do partido ou do governo ("Bancada do PT votou contra a EC 95",
+--   "Programas de renda sao marca dos governos petistas"). E o mesmo padrao
+--   que o fact-check ja tinha removido das claims.
+--
+-- Correcao de terminologia em ronaldo-caiado / teto_gastos: o que ele votou em
+--   2016 foi a PEC 55, que virou a EC 95 (Teto de Gastos), e nao "arcabouco
+--   fiscal", que e de 2023.
+-- =====================================================================
+--
+-- ---------------------------------------------------------------------
+-- REGISTRO DE APLICACAO (cabecalho que veio junto com a versao as-applied):
 -- As 11 posicoes do quiz que estavam sem fonte, agora com fonte ou fora do quiz.
 -- Aprovado por Thiago em 2026-08-03 (payload quiz-e-execucao, C1: correr atras da fonte).
 
 -- @write tabela=posicoes_declaradas slug=flavio-bolsonaro tema=teto_gastos campos=descricao,fonte,url_fonte,verificado
+--
+-- PROVENIENCIA (03/08/2026). Este arquivo e a versao as-applied, recuperada
+-- por `supabase migration fetch`, e e o nome que o ledger de producao conhece.
+-- O raciocinio acima foi portado de 20260803150000_quiz_posicoes_refonteadas.sql,
+-- escrita a mao e deixada em branch nao mergeada. O SQL das duas e identico,
+-- conferido por comparacao normalizada. So comentario mudou aqui.
+-- ---------------------------------------------------------------------
+
 UPDATE public.posicoes_declaradas p
 SET descricao = 'Votou contra o Novo Arcabouço Fiscal (PLP 93/2023, que resultou na Lei Complementar 200/2023) na votação nominal do Plenário do Senado em 21 de junho de 2023. Não votou na Emenda Constitucional 95/2016, o Teto de Gastos: era deputado estadual à época.',
     fonte = 'Senado Federal, lista de votação nominal do PLP 93/2023',
