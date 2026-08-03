@@ -176,6 +176,8 @@ export function aplicarPendentes(
       }
     } else if (w.tabela === "projetos_lei" && w.campos.includes("destaque")) {
       c.destaquesTotais += 1
+    } else if (w.tabela === "votos_candidato") {
+      c.votos += 1
     } else if (w.tabela === "candidatos" && w.campos.includes("profissao_declarada")) {
       c.profissao = c.profissao ?? "(preenchido por migration pendente)"
     }

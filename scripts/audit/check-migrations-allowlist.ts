@@ -5,14 +5,14 @@
  *   1. TODO statement de escrita (INSERT / UPDATE / DELETE) das migrations
  *      selecionadas tem uma anotação `-- @write` imediatamente acima. Statement
  *      de escrita sem anotação é erro: seria escrita invisível para o gate.
- *   2. TODA anotação `-- @write` está contida em
- *      `scripts/audit/allowlist-presidenciaveis.json`, casando tabela, slug e,
+ *   2. TODA anotação `-- @write` está contida na allowlist informada, casando tabela, slug e,
  *      quando a allowlist especifica, ano, tema ou teto de registros.
  *
  * Não toca banco nem rede. Sai != 0 na primeira violação.
  *
  * Uso:
- *   tsx scripts/audit/check-migrations-allowlist.ts --desde=20260802
+ *   tsx scripts/audit/check-migrations-allowlist.ts --desde=20260802 \
+ *     --allowlist=scripts/audit/allowlist-governadores-ac.json
  */
 
 import { readFileSync, readdirSync } from "node:fs"
@@ -121,9 +121,13 @@ function main(): void {
   const argv = process.argv.slice(2)
   const desdeFlag = argv.find((a) => a.startsWith("--desde="))
   const desde = desdeFlag ? desdeFlag.slice("--desde=".length) : undefined
+  const allowlistFlag = argv.find((a) => a.startsWith("--allowlist="))
+  const allowlistPath = allowlistFlag
+    ? allowlistFlag.slice("--allowlist=".length)
+    : "scripts/audit/allowlist-presidenciaveis.json"
 
   const allow = JSON.parse(
-    readFileSync(join(RAIZ, "scripts", "audit", "allowlist-presidenciaveis.json"), "utf8")
+    readFileSync(resolve(RAIZ, allowlistPath), "utf8")
   ) as Allowlist
 
   const arquivos = readdirSync(MIGRATIONS)

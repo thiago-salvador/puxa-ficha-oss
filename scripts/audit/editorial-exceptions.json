@@ -2,6 +2,20 @@
   "$schema": "Lacunas editoriais com desfecho registrado, para o gate `check-report.ts --fail-on-correctable-missing`. Uma entrada aqui significa: a lacuna foi investigada, a fonte necessaria nao existe (ou nao qualifica), e a celula vazia e um resultado, nao um esquecimento. Lacuna de fonte TSE nao entra aqui, vai em data/sq-exceptions.json.",
   "entries": [
     {
+      "slug": "eudo-raffael",
+      "coluna": "redes",
+      "motivo": "nenhuma rede social atribuível por fonte primária encontrada nesta rodada",
+      "confirmado_em": "2026-08-02",
+      "detalhe": "As fontes públicas consultadas confirmam a atuação sindical e partidária de Eudo Raffael, mas não identificam uma URL de perfil social oficial do candidato. O campo permanece vazio para não atribuir conta de terceiro."
+    },
+    {
+      "slug": "thor-dantas",
+      "coluna": "redes",
+      "motivo": "nenhuma rede social atribuível por fonte primária encontrada nesta rodada",
+      "confirmado_em": "2026-08-02",
+      "detalhe": "Há menções jornalísticas a presença no Instagram, mas nenhuma URL de perfil oficial foi validada como pertencente ao candidato neste run. O campo permanece vazio."
+    },
+    {
       "slug": "renan-santos",
       "coluna": "dados",
       "motivo": "profissao declarada sem fonte oficial",
