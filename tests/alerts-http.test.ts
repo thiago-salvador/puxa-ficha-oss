@@ -954,6 +954,7 @@ describe("alerts HTTP routes", () => {
       assert.equal(response.status, 200)
       assert.deepEqual(await readJson(response), {
         ok: true,
+        degradado: null,
         processed: 0,
         sent: 0,
         failed: 0,
@@ -1046,8 +1047,11 @@ describe("alerts HTTP routes", () => {
       }>(response)
       const logRow = fixture.getTable("notification_log")[0]
 
-      assert.equal(response.status, 200)
-      assert.equal(body.ok, true)
+      // 500 e proposital: nenhum envio do lote concluiu. E o unico sinal que faz a
+      // Vercel notificar falha de cron, e sem ele "RESEND_API_KEY revogada" era um
+      // 200 ok:true silencioso. Review de 2026-08-03.
+      assert.equal(response.status, 500)
+      assert.equal(body.ok, false)
       assert.equal(body.sent, 0)
       assert.equal(body.failed, 1)
       assert.equal(logRow?.status, "failed")
@@ -1076,8 +1080,9 @@ describe("alerts HTTP routes", () => {
       }>(response)
       const logRow = fixture.getTable("notification_log")[0]
 
-      assert.equal(response.status, 200)
-      assert.equal(body.ok, true)
+      // 500: o lote nao concluiu nenhum envio contabilizado. Ver comentario acima.
+      assert.equal(response.status, 500)
+      assert.equal(body.ok, false)
       assert.equal(body.sent, 0)
       assert.equal(body.failed, 1)
       assert.equal(fixture.emails.length, 1)
@@ -1108,8 +1113,9 @@ describe("alerts HTTP routes", () => {
       const logRow = fixture.getTable("notification_log")[0]
       const subscriber = fixture.getTable("alert_subscribers")[0]
 
-      assert.equal(response.status, 200)
-      assert.equal(body.ok, true)
+      // 500: o lote nao concluiu nenhum envio contabilizado. Ver comentario acima.
+      assert.equal(response.status, 500)
+      assert.equal(body.ok, false)
       assert.equal(body.sent, 0)
       assert.equal(body.failed, 1)
       assert.equal(fixture.emails.length, 1)
@@ -1277,16 +1283,80 @@ describe("alerts HTTP routes", () => {
 
       const response = await handler(buildDigestRequest(fixture, "?limit=1&depth=20"))
       const body = await readJson<{
+        ok: boolean
+        degradado: { filaTruncada: boolean } | null
         nextCursor: number | null
         chainScheduled: boolean
         chainDepth: number
       }>(response)
 
-      assert.equal(response.status, 200)
+      // O teto continua cortando a cadeia (chainScheduled false, nenhum callback
+      // agendado), mas agora isso NAO passa em silencio: fila pendente com o teto
+      // atingido significa que parte da base nao foi processada hoje e nao sera
+      // sem intervencao, entao vira 500 para a Vercel notificar.
+      assert.equal(response.status, 500)
+      assert.equal(body.ok, false)
+      assert.equal(body.degradado?.filaTruncada, true)
       assert.equal(body.nextCursor, 1)
       assert.equal(body.chainScheduled, false)
       assert.equal(body.chainDepth, 20)
       assert.equal(afterCallbacks.length, 0)
+    })
+
+    it("mantem 200 quando parte do lote falha mas algum envio conclui", async () => {
+      // Guarda a assimetria proposital do gate: 500 e reservado para "nenhum envio
+      // concluiu no lote". Falha isolada de um assinante entre varios NAO pode
+      // acordar o dono de madrugada, senao o alerta vira ruido e para de ser lido.
+      const subscriberOne = seedSubscriber({
+        id: "sub_parcial_1",
+        email: "parcial-um@example.com",
+        manageToken: "ManageTokenParcial01",
+        verified: true,
+        verified_at: "2026-04-09T10:00:00.000Z",
+        verify_token_hash: null,
+      })
+      const subscriberTwo = seedSubscriber({
+        id: "sub_parcial_2",
+        email: "parcial-dois@example.com",
+        manageToken: "ManageTokenParcial02",
+        verified: true,
+        verified_at: "2026-04-09T10:00:00.000Z",
+        verify_token_hash: null,
+      })
+      const fixture = new AlertsRouteFixture({
+        candidatos_publico: [seedCandidate()],
+        alert_subscribers: [subscriberOne, subscriberTwo],
+        alert_subscriptions: [
+          { id: "asub_parcial_1", subscriber_id: subscriberOne.id, candidato_id: "cand_lula" },
+          { id: "asub_parcial_2", subscriber_id: subscriberTwo.id, candidato_id: "cand_lula" },
+        ],
+        candidate_changes: [
+          {
+            id: "chg_parcial_1",
+            candidato_id: "cand_lula",
+            titulo: "Nova atualização editorial",
+            descricao: "Texto curto da mudança.",
+            created_at: "2026-04-10T12:00:00.000Z",
+          },
+        ],
+      })
+      // So o primeiro envio falha; o segundo conclui.
+      fixture.failNextEmail("resend flap")
+
+      const handler = createSendDigestHandler(createDeps(fixture))
+      const response = await handler(buildDigestRequest(fixture))
+      const body = await readJson<{
+        ok: boolean
+        degradado: unknown
+        sent: number
+        failed: number
+      }>(response)
+
+      assert.equal(response.status, 200)
+      assert.equal(body.ok, true)
+      assert.equal(body.degradado, null)
+      assert.equal(body.sent, 1)
+      assert.equal(body.failed, 1)
     })
   })
 

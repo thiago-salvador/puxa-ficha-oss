@@ -8,9 +8,21 @@ import {
   isRequestBodyTooLargeError,
   readJsonBodyWithLimit,
 } from "@/lib/request-body"
+import {
+  createFixedWindowIpRateLimiter,
+  rateLimitExceededResponse,
+} from "@/lib/request-rate-limit"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+// Ver o comentario em src/app/api/alerts/session/route.ts: as quatro rotas de
+// mutacao de alertas faziam SELECT com service role sem nenhum teto.
+const unsubscribeAllRateLimiter = createFixedWindowIpRateLimiter({
+  namespace: "alerts-unsubscribe-all",
+  max: 120,
+  windowMs: 60_000,
+})
 
 interface UnsubscribeAllDeps {
   createAlertsServiceRoleClient: typeof createAlertsServiceRoleClient
@@ -28,6 +40,12 @@ export function createUnsubscribeAllHandler(deps: UnsubscribeAllDeps = defaultUn
   return async function POST(req: NextRequest) {
     const csrfResponse = rejectCrossSiteAlertsMutation(req, "unsubscribe-all", deps.logAlertsApiExit)
     if (csrfResponse) return csrfResponse
+
+    const decision = unsubscribeAllRateLimiter.check(req.headers)
+    if (!decision.allowed) {
+      deps.logAlertsApiExit("unsubscribe-all", 429, "rate_limited")
+      return rateLimitExceededResponse(decision)
+    }
 
     let body: unknown
     try {

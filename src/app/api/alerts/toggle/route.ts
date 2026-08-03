@@ -14,9 +14,21 @@ import {
   isRequestBodyTooLargeError,
   readJsonBodyWithLimit,
 } from "@/lib/request-body"
+import {
+  createFixedWindowIpRateLimiter,
+  rateLimitExceededResponse,
+} from "@/lib/request-rate-limit"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+// Ver o comentario em src/app/api/alerts/session/route.ts: as quatro rotas de
+// mutacao de alertas faziam SELECT com service role sem nenhum teto.
+const toggleRateLimiter = createFixedWindowIpRateLimiter({
+  namespace: "alerts-toggle",
+  max: 120,
+  windowMs: 60_000,
+})
 
 interface ToggleDeps {
   createAlertsServiceRoleClient: typeof createAlertsServiceRoleClient
@@ -36,6 +48,12 @@ export function createToggleHandler(deps: ToggleDeps = defaultToggleDeps) {
   return async function POST(req: NextRequest) {
     const csrfResponse = rejectCrossSiteAlertsMutation(req, "toggle", deps.logAlertsApiExit)
     if (csrfResponse) return csrfResponse
+
+    const decision = toggleRateLimiter.check(req.headers)
+    if (!decision.allowed) {
+      deps.logAlertsApiExit("toggle", 429, "rate_limited")
+      return rateLimitExceededResponse(decision)
+    }
 
     let body: unknown
     try {

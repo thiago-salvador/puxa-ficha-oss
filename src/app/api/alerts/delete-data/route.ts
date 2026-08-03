@@ -8,9 +8,21 @@ import {
   isRequestBodyTooLargeError,
   readJsonBodyWithLimit,
 } from "@/lib/request-body"
+import {
+  createFixedWindowIpRateLimiter,
+  rateLimitExceededResponse,
+} from "@/lib/request-rate-limit"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+// Ver o comentario em src/app/api/alerts/session/route.ts: as quatro rotas de
+// mutacao de alertas faziam SELECT com service role sem nenhum teto.
+const deleteDataRateLimiter = createFixedWindowIpRateLimiter({
+  namespace: "alerts-delete-data",
+  max: 120,
+  windowMs: 60_000,
+})
 
 interface DeleteDataDeps {
   createAlertsServiceRoleClient: typeof createAlertsServiceRoleClient
@@ -28,6 +40,12 @@ export function createDeleteDataHandler(deps: DeleteDataDeps = defaultDeleteData
   return async function POST(req: NextRequest) {
     const csrfResponse = rejectCrossSiteAlertsMutation(req, "delete-data", deps.logAlertsApiExit)
     if (csrfResponse) return csrfResponse
+
+    const decision = deleteDataRateLimiter.check(req.headers)
+    if (!decision.allowed) {
+      deps.logAlertsApiExit("delete-data", 429, "rate_limited")
+      return rateLimitExceededResponse(decision)
+    }
 
     let body: unknown
     try {

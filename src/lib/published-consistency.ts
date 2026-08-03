@@ -98,8 +98,24 @@ export function analyzePublishedConsistency(
   return { total: rows.length, byCargo, hard, soft }
 }
 
-/** Tabelas-base que NUNCA podem ser legiveis por anon (so via views gateadas). */
-const ANON_DENIED_TABLES = ["candidatos", "financiamento"]
+/**
+ * Tabelas-base que NUNCA podem ser legiveis por anon (so via views gateadas).
+ *
+ * O segundo bloco e de dado pessoal e operacional: ele nao tem NENHUMA view
+ * publica, entao a resposta correta do PostgREST e sempre vazia ou negada. Ate
+ * 2026-08-03 o probe cobria so candidatos/financiamento, e uma migration que
+ * concedesse SELECT a anon em alert_subscribers (a classe exata do vazamento de
+ * 2026-06-02) passaria sem ser detectada.
+ */
+const ANON_DENIED_TABLES = [
+  "candidatos",
+  "financiamento",
+  "alert_subscribers",
+  "alert_subscriptions",
+  "notification_log",
+  "quiz_result_short_links",
+  "analytics_launch_events",
+]
 
 /**
  * Views de auditoria/SECURITY DEFINER que NUNCA podem ser legiveis por anon.
@@ -121,19 +137,36 @@ export async function probeAnonLeak(baseUrl: string, anonKey: string): Promise<s
     ...ANON_DENIED_TABLES.map((name) => ({ name, kind: "tabela base" as const })),
     ...ANON_DENIED_VIEWS.map((name) => ({ name, kind: "view" as const })),
   ]
+  let alcancadas = 0
   for (const { name, kind } of surfaces) {
     try {
       const res = await fetch(`${baseUrl}/rest/v1/${name}?select=*&limit=1`, {
         headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        // Sem timeout, o REST pendurado trava a rota inteira ate o teto da
+        // plataforma. Mesmo padrao de runtime-smoke e do envio de email.
+        signal: AbortSignal.timeout(5_000),
       })
+      alcancadas++
       if (res.ok) {
         const body = (await res.json()) as unknown
         const n = Array.isArray(body) ? body.length : "?"
         hard.push(`VAZAMENTO ANON: ${kind} "${name}" legivel por anon (HTTP ${res.status}, ${n} linha[s]) — deve ser negada (so views gateadas)`)
       }
     } catch {
-      /* erro de rede/DNS nao e vazamento; o analyzer estrutural cobre o resto */
+      /* erro de rede/DNS nao e vazamento; contabilizado abaixo como indeterminado */
     }
   }
+
+  // Falhar ABERTO era o defeito: com o REST indisponivel, nenhuma superficie era
+  // testada, o catch engolia tudo e o cron respondia ok:true, ou seja o
+  // watchdog de vazamento anon reportava sucesso sem ter olhado nada.
+  // So acusa quando NENHUMA superficie respondeu: se alguma respondeu, a rede
+  // esta de pe e falha isolada nao vira alarme. Review de 2026-08-03.
+  if (alcancadas === 0 && surfaces.length > 0) {
+    hard.push(
+      `PROBE ANON INDETERMINADO: nenhuma das ${surfaces.length} superficies respondeu (rede/DNS/timeout) — o watchdog de vazamento anon nao rodou, trate como nao verificado`,
+    )
+  }
+
   return hard
 }

@@ -134,9 +134,16 @@ jobs:
       # ainda não foi confirmada em segunda execução, ao contrário do gate
       # semanal acima. A assimetria é de propósito: aqui o dano é publicar claim
       # com fonte podre, e vermelho falso custa só disparar de novo.
+      # O input NAO e interpolado dentro do `run:`. O GitHub substitui `${{ }}` no
+      # texto do script antes do bash rodar, entao um valor com aspas fecharia a
+      # string e executaria comando arbitrario num step que carrega a service
+      # role. Passando por `env:`, o valor chega como variavel de ambiente e o
+      # bash nunca o trata como codigo. Mesmo padrao que o ingest.yml ja usa.
+      # Review de 2026-08-03.
       - name: Revalidação pré-publicação dos slugs informados
         if: ${{ inputs.revalidar }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: npm run data:link-check-fontes:revalidar -- "--revalidar=${{ inputs.revalidar }}"
+          REVALIDAR: ${{ inputs.revalidar }}
+        run: npm run data:link-check-fontes:revalidar -- "--revalidar=$REVALIDAR"

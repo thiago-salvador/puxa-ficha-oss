@@ -161,6 +161,28 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     }
     const revalidatedTag = !hasMore && shouldRevalidateGlobalFichaCache ? FICHA_CACHE_TAG : null
 
+    // Mesmo contrato de alerta do send-digest: 500 e o que faz a Vercel notificar.
+    // Antes de 2026-08-03 esta rota respondia 200 mesmo com o lote inteiro em erro
+    // ou com o teto de encadeamento cortando candidatos, entao a coorte alem da
+    // posicao 205 (ordenada por slug) simplesmente nunca era atualizada e ninguem
+    // era avisado.
+    const loteInteiroFalhou =
+      page.candidatos.length > 0 && summary.errors.length === page.candidatos.length
+    const filaTruncada = hasMore && !shouldChain
+    const degradado = loteInteiroFalhou || filaTruncada
+    const status = degradado ? 500 : 200
+
+    if (degradado) {
+      deps.log(loteInteiroFalhou ? "lote_inteiro_falhou" : "chain_depth_exhausted", {
+        cursor,
+        nextCursor,
+        total: page.total,
+        chainDepth,
+        errorCount: summary.errors.length,
+        loteSize: page.candidatos.length,
+      })
+    }
+
     deps.log("batch_complete", {
       cursor,
       limit,
@@ -175,24 +197,31 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       revalidated: revalidatedTag,
       revalidateRequested: shouldRevalidateGlobalFichaCache,
       total: page.total,
+      degradado,
     })
 
-    return NextResponse.json({
-      ok: true,
-      cursor,
-      limit,
-      chainDepth,
-      processed: summary.processed,
-      withNews: summary.withNews,
-      rowsUpserted: summary.rowsUpserted,
-      discardedByName: summary.discardedByName,
-      errors: summary.errors,
-      nextCursor: hasMore ? nextCursor : null,
-      chainScheduled: hasMore && shouldChain,
-      revalidated: revalidatedTag,
-      revalidateRequested: shouldRevalidateGlobalFichaCache,
-      total: page.total,
-    })
+    return NextResponse.json(
+      {
+        ok: !degradado,
+        degradado: degradado
+          ? { loteInteiroFalhou, filaTruncada, motivo: loteInteiroFalhou ? "todos os candidatos do lote falharam" : "teto de encadeamento atingido com fila pendente" }
+          : null,
+        cursor,
+        limit,
+        chainDepth,
+        processed: summary.processed,
+        withNews: summary.withNews,
+        rowsUpserted: summary.rowsUpserted,
+        discardedByName: summary.discardedByName,
+        errors: summary.errors,
+        nextCursor: hasMore ? nextCursor : null,
+        chainScheduled: hasMore && shouldChain,
+        revalidated: revalidatedTag,
+        revalidateRequested: shouldRevalidateGlobalFichaCache,
+        total: page.total,
+      },
+      { status },
+    )
   }
 }
 

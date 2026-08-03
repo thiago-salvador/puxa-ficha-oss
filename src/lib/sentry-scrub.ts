@@ -1,9 +1,21 @@
+/**
+ * O match e exato por Set (nao substring), entao cada nome de parametro que
+ * carrega segredo precisa estar listado aqui literalmente.
+ *
+ * `manage`, `verify` e `unsubscribe` sao os nomes que os links de email usam de
+ * verdade (buildAlertManageUrl e irmas em src/lib/alerts-shared.ts). Sem eles, o
+ * token de gerenciamento de alertas ia integro para o Sentry dentro do
+ * breadcrumb de navegacao. Review de 2026-08-03.
+ */
 const SENSITIVE_KEYS_SOURCE = [
   "token",
+  "manage",
   "manageToken",
   "manage_token",
+  "verify",
   "verifyToken",
   "verify_token",
+  "unsubscribe",
   "previewToken",
   "preview_token",
   "bypass",
