@@ -1046,8 +1046,8 @@ async function getCandidatoBySlugFromRelationResource(
           .limit(25)
           .abortSignal(signal)
       ),
-      withSupabaseRetry(`legislacao_mandato_executivo(${slug})`, async () =>
-        fetchLegislacaoMandatoExecutivoRowsPaged(supabase, id)
+      withSupabaseRetry(`legislacao_mandato_executivo(${slug})`, async (signal) =>
+        fetchLegislacaoMandatoExecutivoRowsPaged(supabase, id, signal)
           .then((data) => ({ data, error: null }))
           .catch((error: unknown) => ({
             data: null,

@@ -141,10 +141,15 @@ export async function fetchMudancasPartidoRowsPaged(
 /**
  * Linhas publicas de `legislacao_mandato_executivo` para uma ficha, sem truncar no limite default de 1000.
  * Ingest/readback de curadoria deve consultar a tabela diretamente quando precisar de campos DB-only.
+ *
+ * `signal` vem do `withSupabaseRetry` do caller e e repassado a CADA pagina: sem
+ * isso, o timeout da tentativa abortaria o wrapper mas a paginacao seguiria
+ * disparando requests ao Supabase depois que a ficha ja degradou.
  */
 export async function fetchLegislacaoMandatoExecutivoRowsPaged(
   supabase: SupabaseClient,
-  candidatoId: string
+  candidatoId: string,
+  signal?: AbortSignal
 ): Promise<LegislacaoMandatoExecutivo[]> {
   if (!candidatoId) {
     return []
@@ -154,11 +159,17 @@ export async function fetchLegislacaoMandatoExecutivoRowsPaged(
   let from = 0
 
   while (true) {
-    const { data, error } = await supabase
+    // Corta antes de abrir a proxima pagina: o abort so cancela o fetch em voo,
+    // nao impede que o loop inicie mais um.
+    signal?.throwIfAborted()
+
+    const query = supabase
       .from("legislacao_mandato_executivo")
       .select(LEGISLACAO_MANDATO_EXECUTIVO_PUBLIC_SELECT)
       .eq("candidato_id", candidatoId)
       .range(from, from + LEGISLACAO_MANDATO_EXECUTIVO_PAGE_SIZE - 1)
+
+    const { data, error } = await (signal ? query.abortSignal(signal) : query)
 
     if (error) {
       throw new Error(`legislacao_mandato_executivo batch: ${error.message}`)
