@@ -61,7 +61,7 @@
       "slug": "rui-costa-pimenta",
       "ano": 2014,
       "reason": "no-bens-at-source",
-      "detail": "SQ 280000000081 válido (PRESIDENTE PCO BR), mas TSE não publicou bens_candidato para este SQ em 2014. Candidatura micro-partido.",
+      "detail": "SQ 280000000081 válido (PRESIDENTE PCO BR), mas TSE não publicou bens_candidato para este SQ em 2014. Candidatura micro-partido. Revalidado em 2026-08-02: varredura read-only de bem_candidato_2014_BR.csv e bem_candidato_2014_BRASIL.csv, 0 linhas para o SQ; identidade reconferida no consulta_cand 2014 BR (RUI COSTA PIMENTA, PRESIDENTE, PCO, APTO). A hipotese 'candidatura micro-partido' do detalhe anterior era especulacao e nao e usada como prova.",
       "confirmed": "2026-04-13"
     },
     {
@@ -180,7 +180,7 @@
       "slug": "cabo-daciolo",
       "ano": 2018,
       "reason": "no-bens-at-source",
-      "detail": "SQ 280000602500 pertence a BENEVENUTO DACIOLO FONSECA DOS SANTOS / CABO DACIOLO (PRESIDENTE, PATRIOTA, BR) segundo consulta_cand_2018_BRASIL.csv e consulta_cand_2018_BR.csv (CD_CARGO=1). Varredura em Latin-1 de 29 arquivos CSV/TXT dentro de bem_candidato_2018.zip (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2018.zip), 2026-05-19: 0 linhas com SQ_CANDIDATO=280000602500. Ausencia oficial de bens declarados na fonte TSE.",
+      "detail": "SQ 280000602500 pertence a BENEVENUTO DACIOLO FONSECA DOS SANTOS / CABO DACIOLO (PRESIDENTE, PATRIOTA, BR) segundo consulta_cand_2018_BRASIL.csv e consulta_cand_2018_BR.csv (CD_CARGO=1). Varredura em Latin-1 de 29 arquivos CSV/TXT dentro de bem_candidato_2018.zip (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2018.zip), 2026-05-19: 0 linhas com SQ_CANDIDATO=280000602500. Ausencia oficial de bens declarados na fonte TSE. Revalidado em 2026-08-02: varredura read-only de bem_candidato_2018_BR.csv e bem_candidato_2018_BRASIL.csv, 0 linhas para o SQ. Controle: SQs vizinhos da mesma eleicao presidencial estao presentes no mesmo arquivo (280000602477, Geraldo Alckmin, e 280000602501), entao a ausencia e da declaracao, nao do arquivo.",
       "confirmed": "2026-05-19"
     },
     {
@@ -215,21 +215,21 @@
       "slug": "samara-martins",
       "ano": 2020,
       "reason": "no-bens-at-source",
-      "detail": "SQ 200000724019 válido (Presidente BR 2020). Varredura do agregado oficial TSE `bem_candidato_2020_BRASIL.csv` dentro de `bem_candidato_2020.zip` (cdn.tse.jus.br) sem nenhuma linha com esse SQ_CANDIDATO. O canário `npm run audit:patrimonio-supported-canary` marcou lacuna em `patrimonio` para 2020 antes desta exceção; 2022 permanece materializado (P1) com bens no mesmo arquivo zip para SQ 280001602703.",
+      "detail": "SQ 200000724019 válido (Presidente BR 2020). Varredura do agregado oficial TSE `bem_candidato_2020_BRASIL.csv` dentro de `bem_candidato_2020.zip` (cdn.tse.jus.br) sem nenhuma linha com esse SQ_CANDIDATO. O canário `npm run audit:patrimonio-supported-canary` marcou lacuna em `patrimonio` para 2020 antes desta exceção; 2022 permanece materializado (P1) com bens no mesmo arquivo zip para SQ 280001602703. Correcao factual em 2026-08-02: o detalhe anterior dizia 'Presidente BR 2020', o que esta errado. O SQ 200000724019 e de candidatura a VEREADOR em NATAL/RN pela UP, conforme consulta_cand_2020_RN.csv (SAMARA MARTINS DA SILVA, APTO). A conclusao nao muda: varredura read-only de bem_candidato_2020_RN.csv e bem_candidato_2020_BRASIL.csv em 2026-08-02 encontrou 0 linhas para o SQ.",
       "confirmed": "2026-04-15"
     },
     {
       "slug": "hertz-dias",
       "ano": 2020,
       "reason": "no-bens-at-source",
-      "detail": "SQ 100000718146 válido na coorte (`data/candidatos.json`, `ids.tse_sq_candidato`). Leitura integral de `bem_candidato_2020_BRASIL.csv` em Latin-1 dentro de `bem_candidato_2020.zip` (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2020.zip), 2026-04-15: nenhuma linha contém este SQ_CANDIDATO. O audit `audit:dinheiro-cohort-coverage` apontava `patrimonio_state=gap_no_row` antes desta exceção.",
+      "detail": "SQ 100000718146 válido na coorte (`data/candidatos.json`, `ids.tse_sq_candidato`). Leitura integral de `bem_candidato_2020_BRASIL.csv` em Latin-1 dentro de `bem_candidato_2020.zip` (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2020.zip), 2026-04-15: nenhuma linha contém este SQ_CANDIDATO. O audit `audit:dinheiro-cohort-coverage` apontava `patrimonio_state=gap_no_row` antes desta exceção. Revalidado em 2026-08-02 (branch data/presidenciaveis-lacunas): varredura read-only de bem_candidato_2020_MA.csv e bem_candidato_2020_BRASIL.csv, 0 linhas para o SQ; identidade reconferida no consulta_cand 2020 MA (HERTZ DA CONCEICAO DIAS, PREFEITO, SAO LUIS, PSTU, APTO).",
       "confirmed": "2026-04-15"
     },
     {
       "slug": "hertz-dias",
       "ano": 2022,
       "reason": "no-bens-at-source",
-      "detail": "SQ 100001600008 válido na coorte (`data/candidatos.json`). Leitura integral de `bem_candidato_2022_BRASIL.csv` em Latin-1 dentro de `bem_candidato_2022.zip` (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2022.zip), 2026-04-15: nenhuma linha contém este SQ_CANDIDATO. O audit de coorte apontava `patrimonio_state=gap_no_row` antes desta exceção.",
+      "detail": "SQ 100001600008 válido na coorte (`data/candidatos.json`). Leitura integral de `bem_candidato_2022_BRASIL.csv` em Latin-1 dentro de `bem_candidato_2022.zip` (https://cdn.tse.jus.br/estatistica/sead/odsele/bem_candidato/bem_candidato_2022.zip), 2026-04-15: nenhuma linha contém este SQ_CANDIDATO. O audit de coorte apontava `patrimonio_state=gap_no_row` antes desta exceção. Revalidado em 2026-08-02: varredura read-only de bem_candidato_2022_MA.csv, bem_candidato_2022_BR.csv e bem_candidato_2022_BRASIL.csv, 0 linhas para o SQ; identidade reconferida no consulta_cand 2022 MA (HERTZ DA CONCEICAO DIAS, GOVERNADOR, MARANHAO, PSTU, APTO).",
       "confirmed": "2026-04-15"
     },
     {
@@ -369,14 +369,14 @@
       "slug": "hertz-dias",
       "ano": 2018,
       "reason": "no-receita-at-source",
-      "detail": "SQ 280000601174 pertence a VICE-PRESIDENTE (cargo nacional) segundo consulta_cand_2018 (CD_CARGO=2, DS_CARGO=VICE-PRESIDENTE). Em TSE 2018 as receitas da chapa Presidente+Vice sao arquivadas sob o SQ do Presidente; varredura estrita do campo SQ_CANDIDATO em todos os ficheiros receitas_candidatos_2018*.csv/.txt dentro de prestacao_de_contas_eleitorais_candidatos_2018.zip, 2026-04-16: 0 linhas com SQ_CANDIDATO=280000601174. Ausencia estrutural na fonte, nao falha de parser. Prova: output/dinheiro-audit/vice-no-receita-strict.json (total_matches=0, files_scanned>0).",
+      "detail": "SQ 280000601174 pertence a VICE-PRESIDENTE (cargo nacional) segundo consulta_cand_2018 (CD_CARGO=2, DS_CARGO=VICE-PRESIDENTE). Em TSE 2018 as receitas da chapa Presidente+Vice sao arquivadas sob o SQ do Presidente; varredura estrita do campo SQ_CANDIDATO em todos os ficheiros receitas_candidatos_2018*.csv/.txt dentro de prestacao_de_contas_eleitorais_candidatos_2018.zip, 2026-04-16: 0 linhas com SQ_CANDIDATO=280000601174. Ausencia estrutural na fonte, nao falha de parser. Prova: output/dinheiro-audit/vice-no-receita-strict.json (total_matches=0, files_scanned>0). Revalidado em 2026-08-02: varredura read-only de receitas_candidatos_2018_BRASIL.csv, 0 receitas para o SQ. Controle na mesma varredura: o SQ 280000602500 (Cabo Daciolo, titular de outra chapa presidencial) aparece com 5 linhas, entao o arquivo cobre a disputa de ambito BR e a ausencia e do vice, nao do arquivo.",
       "confirmed": "2026-04-16"
     },
     {
       "slug": "edmilson-costa",
       "ano": 2010,
       "reason": "no-receita-at-source",
-      "detail": "SQ 280000000018 pertence a EDMILSON SILVA COSTA / EDMILSON COSTA (VICE-PRESIDENTE, PCB, BR) segundo consulta_cand_2010_BR.csv e consulta_cand_2010_BRASIL.csv. Em TSE 2010 as receitas da chapa Presidente+Vice podem estar arquivadas sob o SQ do titular; varredura estrita do campo SQ_CANDIDATO em 28 ficheiros de receita dentro de prestacao_contas_2010.zip, 2026-07-02: 0 linhas com SQ_CANDIDATO=280000000018. Ausencia estrutural na fonte, nao falha de parser.",
+      "detail": "SQ 280000000018 pertence a EDMILSON SILVA COSTA / EDMILSON COSTA (VICE-PRESIDENTE, PCB, BR) segundo consulta_cand_2010_BR.csv e consulta_cand_2010_BRASIL.csv. Em TSE 2010 as receitas da chapa Presidente+Vice podem estar arquivadas sob o SQ do titular; varredura estrita do campo SQ_CANDIDATO em 28 ficheiros de receita dentro de prestacao_contas_2010.zip, 2026-07-02: 0 linhas com SQ_CANDIDATO=280000000018. Ausencia estrutural na fonte, nao falha de parser. Revalidado em 2026-08-02: varredura read-only de candidato/BR/ReceitasCandidatos.txt (prestacao_contas_2010.zip), 0 receitas para o SQ. O arquivo tem 13 SQs distintos de ambito BR, entre eles o titular da mesma chapa (280000000017, Ivan Martins Pinheiro) e outros dois vices (280000000004 e 280000000012), o que confirma cobertura e mostra que a ausencia e especifica deste candidato.",
       "confirmed": "2026-07-02"
     },
     {
@@ -418,7 +418,7 @@
       "slug": "samara-martins",
       "ano": 2022,
       "reason": "no-receita-at-source",
-      "detail": "SQ 280001602703 pertence a VICE-PRESIDENTE (cargo nacional) segundo consulta_cand_2022 (CD_CARGO=2, DS_CARGO=VICE-PRESIDENTE). Em TSE 2022 as receitas da chapa Presidente+Vice sao arquivadas sob o SQ do Presidente; varredura estrita do campo SQ_CANDIDATO em todos os ficheiros receitas_candidatos_2022*.csv/.txt dentro de prestacao_de_contas_eleitorais_candidatos_2022.zip, 2026-04-16: 0 linhas com SQ_CANDIDATO=280001602703. Ausencia estrutural na fonte, nao falha de parser. Prova: output/dinheiro-audit/vice-no-receita-strict.json (total_matches=0, files_scanned>0).",
+      "detail": "SQ 280001602703 pertence a VICE-PRESIDENTE (cargo nacional) segundo consulta_cand_2022 (CD_CARGO=2, DS_CARGO=VICE-PRESIDENTE). Em TSE 2022 as receitas da chapa Presidente+Vice sao arquivadas sob o SQ do Presidente; varredura estrita do campo SQ_CANDIDATO em todos os ficheiros receitas_candidatos_2022*.csv/.txt dentro de prestacao_de_contas_eleitorais_candidatos_2022.zip, 2026-04-16: 0 linhas com SQ_CANDIDATO=280001602703. Ausencia estrutural na fonte, nao falha de parser. Prova: output/dinheiro-audit/vice-no-receita-strict.json (total_matches=0, files_scanned>0). Revalidado em 2026-08-02: varredura read-only de receitas_candidatos_2022_BRASIL.csv, 0 receitas para o SQ. Controle: o SQ 280001602702, titular da mesma chapa, aparece no arquivo, confirmando que a prestacao e do titular.",
       "confirmed": "2026-04-16"
     },
     {
