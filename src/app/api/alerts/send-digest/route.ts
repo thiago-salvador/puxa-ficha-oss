@@ -501,7 +501,27 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
       })
     }
 
-    deps.logAlertsApiExit("send-digest", 200, "batch_complete", {
+    // O UNICO mecanismo de alerta de cron do projeto e a notificacao nativa da
+    // Vercel, disparada por HTTP 500 (contrato documentado em
+    // src/app/api/internal/published-consistency/route.ts). Ate 2026-08-03 esta
+    // rota respondia 200 mesmo com sent=0 e failed=N, entao RESEND_API_KEY
+    // revogada, dominio suspenso ou chave de cifra rotacionada paravam o digest
+    // em silencio e a Vercel registrava sucesso.
+    //
+    // Dois casos degradados duros:
+    //   1. o lote inteiro falhou (nenhum envio saiu, mas havia gente pra enviar)
+    //   2. o teto de encadeamento cortou com fila pendente, ou seja parte da base
+    //      nao foi processada hoje e nao sera sem intervencao
+    const loteInteiroFalhou = failed > 0 && sent === 0
+    const filaTruncada = hasMore && !shouldChain
+    const degradado = loteInteiroFalhou || filaTruncada
+    const status = degradado ? 500 : 200
+
+    const corpo = {
+      ok: !degradado,
+      degradado: degradado
+        ? { loteInteiroFalhou, filaTruncada, motivo: loteInteiroFalhou ? "nenhum envio concluido no lote" : "teto de encadeamento atingido com fila pendente" }
+        : null,
       processed,
       sent,
       failed,
@@ -511,20 +531,31 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
       chainScheduled: hasMore && shouldChain,
       chainDepth,
       total,
+    }
+
+    if (degradado) {
+      deps.logAlertsEvent({
+        route: "send-digest",
+        event: loteInteiroFalhou ? "digest_lote_inteiro_falhou" : "digest_chain_depth_exhausted",
+        level: "error",
+        detail: { processed, sent, failed, skipped, cursor, nextCursor, total, chainDepth },
+      })
+    }
+
+    deps.logAlertsApiExit("send-digest", status, "batch_complete", {
+      processed,
+      sent,
+      failed,
+      skipped,
+      cursor,
+      nextCursor: hasMore ? nextCursor : null,
+      chainScheduled: hasMore && shouldChain,
+      chainDepth,
+      total,
+      degradado,
     })
 
-    return NextResponse.json({
-      ok: true,
-      processed,
-      sent,
-      failed,
-      skipped,
-      cursor,
-      nextCursor: hasMore ? nextCursor : null,
-      chainScheduled: hasMore && shouldChain,
-      chainDepth,
-      total,
-    })
+    return NextResponse.json(corpo, { status })
   }
 }
 

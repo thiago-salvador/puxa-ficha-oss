@@ -1,6 +1,6 @@
 import { getRankingDefinitionBySlug } from "@/data/ranking-definitions"
 import { getRankingDataResource } from "@/lib/api"
-import { buildEditorialOg } from "@/lib/og"
+import { buildEditorialOg, dynamicOgImageCacheHeaders } from "@/lib/og"
 import { formatRankingMetricValue } from "@/lib/rankings"
 
 export async function GET(
@@ -11,10 +11,13 @@ export async function GET(
   const definition = getRankingDefinitionBySlug(slug)
 
   if (!definition) {
+    // Cache curto no fallback: ranking degradado por blip no Supabase nao pode
+    // fixar o card generico na CDN por 24h. Review de 2026-08-03.
     return buildEditorialOg({
       eyebrow: "Listas",
       title: "Puxa Ficha",
       subtitle: "Recortes públicos por métricas estruturadas de pré-candidatos mapeados em 2026.",
+      headers: dynamicOgImageCacheHeaders,
     })
   }
 

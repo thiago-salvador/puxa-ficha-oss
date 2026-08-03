@@ -1,5 +1,5 @@
-import { getCandidatoBySlugResource } from "@/lib/api"
-import { buildEditorialOg } from "@/lib/og"
+import { getCandidatoMetadataResource } from "@/lib/api"
+import { buildEditorialOg, dynamicOgImageCacheHeaders } from "@/lib/og"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import { formatCargoDisputadoPublicLabel } from "@/lib/ui-labels"
 
@@ -8,14 +8,24 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params
-  const ficha = (await getCandidatoBySlugResource(slug)).data
+  // Esta rota le 4 campos escalares, todos em CANDIDATO_COLUMNS. Usava a ficha
+  // completa (1 consulta + 13 relacionais + paginacao serial do inventario do
+  // Executivo, ate ~2 MB materializados) para isso. O caminho de metadata resolve
+  // com uma consulta so, e e o mesmo que o generateMetadata da pagina ja usa.
+  // Review de 2026-08-03.
+  const ficha = (await getCandidatoMetadataResource(slug)).data
 
   if (!ficha) {
+    // Cache curto no fallback: a ficha pode ter voltado degradada por um blip de
+    // segundos no Supabase, e o header longo fixava o card generico na CDN por 24h
+    // sem forma de purgar (POST /api/revalidate age em tag de dado, nao no path da
+    // imagem). Mesmo tratamento que /quiz/resultado/og e /comparar/og ja usam.
     return buildEditorialOg({
       eyebrow: "Ficha de candidato",
       title: "Puxa Ficha",
       subtitle:
         "Ficha pública de pré-candidato mapeado, com dados disponíveis e contexto editorial quando houver fonte estruturada.",
+      headers: dynamicOgImageCacheHeaders,
     })
   }
 

@@ -1,5 +1,5 @@
 import { getCandidatoBySlugResource } from "@/lib/api"
-import { buildEditorialOg } from "@/lib/og"
+import { buildEditorialOg, dynamicOgImageCacheHeaders } from "@/lib/og"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import { buildTimelineEvents } from "@/lib/timeline-utils"
 import {
@@ -16,10 +16,13 @@ export async function GET(
   const ficha = (await getCandidatoBySlugResource(slug)).data
 
   if (!ficha) {
+    // Cache curto no fallback: ficha degradada por blip no Supabase nao pode
+    // fixar o card generico na CDN por 24h. Review de 2026-08-03.
     return buildEditorialOg({
       eyebrow: "Timeline",
       title: "Puxa Ficha",
       subtitle: buildTimelineOgFallbackSubtitle(),
+      headers: dynamicOgImageCacheHeaders,
     })
   }
 
