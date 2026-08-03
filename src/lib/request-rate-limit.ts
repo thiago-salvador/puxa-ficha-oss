@@ -70,8 +70,11 @@ export function createFixedWindowIpRateLimiter({
   }
 }
 
-export function rateLimitExceededResponse(decision: RateLimitDecision): NextResponse {
-  const retryAfterSeconds = Math.max(1, Math.ceil((decision.resetAt - Date.now()) / 1000))
+export function rateLimitExceededResponse(
+  decision: RateLimitDecision,
+  now = Date.now(),
+): NextResponse {
+  const retryAfterSeconds = Math.max(1, Math.ceil((decision.resetAt - now) / 1000))
   return NextResponse.json(
     { error: "Too many requests" },
     {

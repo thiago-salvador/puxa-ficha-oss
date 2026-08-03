@@ -4,6 +4,8 @@ import * as Sentry from "@sentry/nextjs"
 import { Footer } from "@/components/Footer"
 import {
   DOADOR_REVERSE_DISCLAIMER,
+  DOADOR_REVERSE_MIN_QUERY_LENGTH,
+  DOADOR_REVERSE_PAGE_SIZE,
   getDoadorReverseSearchResult,
 } from "@/lib/doador-reverse"
 import { buildTwitterMetadata } from "@/lib/metadata"
@@ -61,7 +63,7 @@ export default async function DoadoresPage({
     },
     () => getDoadorReverseSearchResult(rawQ),
   )
-  const hasQuery = result.normalizedQuery.length > 0
+  const hasQuery = result.normalizedQuery.length > 0 && !result.termoCurtoDemais
 
   return (
     <div className="min-h-screen bg-background">
@@ -119,11 +121,23 @@ export default async function DoadoresPage({
           </p>
         )}
 
+        {result.termoCurtoDemais && (
+          <p className="mb-6 text-[15px] text-muted-foreground" role="status">
+            Digite pelo menos {DOADOR_REVERSE_MIN_QUERY_LENGTH} caracteres para buscar.
+          </p>
+        )}
+
         {hasQuery && !result.error && (
           <>
             <h2 className="mb-4 font-heading text-xl uppercase tracking-tight text-foreground">
               Resultados para busca semelhante a &quot;{result.displayQuery}&quot;
             </h2>
+            {result.truncado && (
+              <p className="mb-4 text-[13px] text-muted-foreground">
+                Mostrando as {DOADOR_REVERSE_PAGE_SIZE} primeiras campanhas. Refine o termo para
+                ver o resto.
+              </p>
+            )}
             {result.rows.length === 0 ? (
               <p className="text-[15px] text-muted-foreground">
                 Nenhuma campanha encontrada com esse termo no recorte dos maiores doadores publicados.

@@ -3,7 +3,11 @@ import {
   isAnalyticsEventName,
   sanitizeAnalyticsPayload,
 } from "@/lib/analytics-events"
-import { recordAnalyticsLaunchEvent } from "@/lib/analytics-launch-store"
+import {
+  countRecentAnalyticsEventsByIpHash,
+  recordAnalyticsLaunchEvent,
+} from "@/lib/analytics-launch-store"
+import { hashTrustedClientIp } from "@/lib/client-ip"
 import {
   createFixedWindowIpRateLimiter,
   rateLimitExceededResponse,
@@ -18,20 +22,38 @@ import {
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+const RATE_LIMIT_MAX = 120
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_NAMESPACE = "analytics-event"
+
 const analyticsEventRateLimiter = createFixedWindowIpRateLimiter({
-  namespace: "analytics-event",
-  max: 120,
-  windowMs: 60_000,
+  namespace: RATE_LIMIT_NAMESPACE,
+  max: RATE_LIMIT_MAX,
+  windowMs: RATE_LIMIT_WINDOW_MS,
 })
 
 interface AnalyticsEventDeps {
   recordAnalyticsLaunchEvent: typeof recordAnalyticsLaunchEvent
+  countRecentAnalyticsEventsByIpHash: typeof countRecentAnalyticsEventsByIpHash
   rateLimiter: RequestRateLimiter
+  now: () => number
 }
 
 const defaultAnalyticsEventDeps: AnalyticsEventDeps = {
   recordAnalyticsLaunchEvent,
+  countRecentAnalyticsEventsByIpHash,
   rateLimiter: analyticsEventRateLimiter,
+  now: () => Date.now(),
+}
+
+let avisouColunaAusente = false
+
+function avisarColunaAusenteUmaVez() {
+  if (avisouColunaAusente) return
+  avisouColunaAusente = true
+  console.error(
+    "analytics event rate limit: coluna ip_hash ausente, limite durável desligado até a migration ser aplicada",
+  )
 }
 
 async function readJson(req: Request): Promise<unknown> {
@@ -44,9 +66,17 @@ async function readJson(req: Request): Promise<unknown> {
 }
 export function createAnalyticsEventPostHandler(deps: AnalyticsEventDeps = defaultAnalyticsEventDeps) {
   return async function POST(req: Request) {
-    const blocked = rejectCrossSitePublicWrite(req)
+    // `requireOrigin` porque esta rota só é chamada por `fetch` e por
+    // `navigator.sendBeacon` do próprio site (src/lib/analytics-client.ts), e o
+    // navegador anexa `Origin` em todo POST. Antes de 2026-08-03 o guard liberava
+    // quando o header não vinha, então qualquer cliente de linha de comando
+    // entrava direto. Isso não impede quem forja o header de propósito: contra
+    // abuso deliberado, quem responde é o limite durável abaixo.
+    const blocked = rejectCrossSitePublicWrite(req, { requireOrigin: true })
     if (blocked) return blocked
 
+    // Primeiro portão, em memória: é de graça e corta enxurrada de uma instância
+    // só antes de gastar round-trip de banco. Não é o teto, é o pré-filtro.
     try {
       const decision = deps.rateLimiter.check(req.headers)
       if (!decision.allowed) return rateLimitExceededResponse(decision)
@@ -78,8 +108,37 @@ export function createAnalyticsEventPostHandler(deps: AnalyticsEventDeps = defau
 
     const payload = sanitizeAnalyticsPayload((body as { payload?: unknown }).payload)
 
+    // Segundo portão, durável. O contador em memória é por instância: em
+    // serverless, cada nova instância nasce com o balde zerado, então o teto real
+    // era `120 × número de instâncias` e não sobrevivia a nenhum reciclo. A
+    // contagem por ip_hash na tabela é compartilhada por todas as instâncias.
+    // Mesma forma do limite de /api/quiz/short-link.
+    const now = deps.now()
+    const ipHash = hashTrustedClientIp(req.headers, RATE_LIMIT_NAMESPACE)
+    const sinceIso = new Date(now - RATE_LIMIT_WINDOW_MS).toISOString()
+    let ipHashParaGravar: string | null = ipHash
+
     try {
-      await deps.recordAnalyticsLaunchEvent({ eventName, payload })
+      const durable = await deps.countRecentAnalyticsEventsByIpHash(ipHash, sinceIso)
+      if (durable.status === "coluna_ausente") {
+        avisarColunaAusenteUmaVez()
+        ipHashParaGravar = null
+      } else if (durable.count >= RATE_LIMIT_MAX) {
+        return rateLimitExceededResponse(
+          { allowed: false, remaining: 0, resetAt: now + RATE_LIMIT_WINDOW_MS },
+          now,
+        )
+      }
+    } catch (error) {
+      console.error("analytics event durable rate limit failed closed", error)
+      return NextResponse.json(
+        { ok: false, reason: "rate_limit_failed" },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      )
+    }
+
+    try {
+      await deps.recordAnalyticsLaunchEvent({ eventName, payload, ipHash: ipHashParaGravar })
       return NextResponse.json(
         { ok: true },
         { headers: { "cache-control": "no-store" } },

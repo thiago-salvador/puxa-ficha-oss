@@ -1,5 +1,9 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import {
+  getCrossSiteWriteBlockReason,
+  type CrossSiteWriteBlockReason,
+} from "@/lib/cross-site-write-guard"
 
 type AlertsApiExitLogger = (
   route: string,
@@ -8,51 +12,17 @@ type AlertsApiExitLogger = (
   detail?: Record<string, unknown>,
 ) => void
 
-export type AlertsCsrfBlockReason = "csrf_sec_fetch_cross_site" | "csrf_origin_not_allowed"
-
-function addOrigin(origins: Set<string>, value: string | null | undefined) {
-  if (!value) return
-  try {
-    const parsed = new URL(value.startsWith("http") ? value : `https://${value}`)
-    origins.add(parsed.origin)
-  } catch {
-    // Ignore malformed config; request-origin still protects the route.
-  }
-}
-
-function allowedAlertsMutationOrigins(req: NextRequest): Set<string> {
-  const origins = new Set<string>()
-  addOrigin(origins, req.nextUrl.origin)
-  addOrigin(origins, process.env.NEXT_PUBLIC_SITE_URL)
-  addOrigin(origins, process.env.VERCEL_URL)
-  addOrigin(origins, "https://puxaficha.com.br")
-  addOrigin(origins, "https://www.puxaficha.com.br")
-  return origins
-}
-
-function getAlertsCsrfBlockReason(req: NextRequest): AlertsCsrfBlockReason | null {
-  const secFetchSite = req.headers.get("sec-fetch-site")?.trim().toLowerCase()
-  if (secFetchSite === "cross-site") return "csrf_sec_fetch_cross_site"
-
-  const originHeader = req.headers.get("origin")?.trim()
-  if (!originHeader) return null
-
-  let origin: string
-  try {
-    origin = new URL(originHeader).origin
-  } catch {
-    return "csrf_origin_not_allowed"
-  }
-
-  return allowedAlertsMutationOrigins(req).has(origin) ? null : "csrf_origin_not_allowed"
-}
+export type AlertsCsrfBlockReason = CrossSiteWriteBlockReason
 
 export function rejectCrossSiteAlertsMutation(
   req: NextRequest,
   route: string,
   logAlertsApiExit: AlertsApiExitLogger,
 ): NextResponse | null {
-  const reason = getAlertsCsrfBlockReason(req)
+  // Alertas continuam liberando request sem `Origin`: a superficie inclui link
+  // de email e cliente que nao e navegador, e apertar isso aqui nao foi pedido
+  // nem medido. A allowlist e a mesma de qualquer escrita publica.
+  const reason = getCrossSiteWriteBlockReason(req.headers, req.nextUrl.origin)
   if (!reason) return null
 
   logAlertsApiExit(route, 403, reason, {

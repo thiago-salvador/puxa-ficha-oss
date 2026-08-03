@@ -3,6 +3,9 @@ import "server-only"
 import * as Sentry from "@sentry/nextjs"
 import { unstable_cache } from "next/cache"
 import {
+  DOADOR_REVERSE_MAX_QUERY_LENGTH,
+  DOADOR_REVERSE_MIN_QUERY_LENGTH,
+  DOADOR_REVERSE_PAGE_SIZE,
   parseDoadorReverseRpcRows,
   type DoadorReverseFinanciamentoRow,
   type DoadorReverseSearchResult,
@@ -12,6 +15,8 @@ import { createServerSupabaseClient, getAppSupabaseUrl } from "@/lib/supabase"
 
 export {
   DOADOR_REVERSE_DISCLAIMER,
+  DOADOR_REVERSE_MIN_QUERY_LENGTH,
+  DOADOR_REVERSE_PAGE_SIZE,
   type DoadorReverseFinanciamentoRow,
   type DoadorReverseSearchResult,
 } from "@/lib/doador-reverse-shared"
@@ -41,12 +46,53 @@ export interface DoadorReverseRpcCaller {
   rpc: (fn: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
 }
 
+interface DoadorReversePage {
+  rows: DoadorReverseFinanciamentoRow[]
+  error: string | null
+  truncado: boolean
+}
+
+/**
+ * Pede uma linha a mais do que a página para saber se havia mais sem precisar
+ * de um COUNT separado.
+ */
+const FETCH_LIMIT = DOADOR_REVERSE_PAGE_SIZE + 1
+
+function paginar(rows: DoadorReverseFinanciamentoRow[]): DoadorReversePage {
+  return {
+    rows: rows.slice(0, DOADOR_REVERSE_PAGE_SIZE),
+    error: null,
+    truncado: rows.length > DOADOR_REVERSE_PAGE_SIZE,
+  }
+}
+
+/**
+ * A assinatura paginada da RPC chega pela migration
+ * `..._doador_reverse_rpc_paginada`. Enquanto ela não estiver aplicada, o
+ * PostgREST responde que não achou a função com aqueles parâmetros
+ * (`PGRST202`, ou `42883` vindo do Postgres). Reconhecer isso é o que permite
+ * aplicar a migration antes ou depois do deploy sem derrubar /doadores.
+ */
+function assinaturaPaginadaAusente(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  if (error.code === "PGRST202" || error.code === "42883") return true
+  const message = error.message?.toLowerCase() ?? ""
+  return (
+    (message.includes("could not find the function") ||
+      message.includes("does not exist") ||
+      message.includes("schema cache")) &&
+    message.includes("search_financiamento_by_doador_normalized")
+  )
+}
+
+let avisouRpcNaoPaginada = false
+
 async function fetchDoadorReverseRows(
   normalizedQuery: string,
   rpcCaller?: DoadorReverseRpcCaller
-): Promise<{ rows: DoadorReverseFinanciamentoRow[]; error: string | null }> {
+): Promise<DoadorReversePage> {
   if (!normalizedQuery) {
-    return { rows: [], error: null }
+    return { rows: [], error: null, truncado: false }
   }
 
   // Prioritize fixture when PF_DOADOR_REVERSE_FIXTURE_FILE is set (even in mock mode for tests)
@@ -66,9 +112,9 @@ async function fetchDoadorReverseRows(
           const matching = allRows.filter(
             (r) => normalizeForSearch(r.doador_nome_exibicao).includes(normalizedQuery)
           )
-          return { rows: matching, error: null }
+          return paginar(matching.slice(0, FETCH_LIMIT))
         } catch {
-          return { rows: [], error: null }
+          return { rows: [], error: null, truncado: false }
         }
       },
     )
@@ -78,9 +124,11 @@ async function fetchDoadorReverseRows(
     return {
       rows: [],
       error: "Dados indisponíveis sem Supabase configurado.",
+      truncado: false,
     }
   }
 
+  const caller = rpcCaller ?? createServerSupabaseClient()
   const { data, error } = await Sentry.startSpan(
     {
       name: "doador_reverse.rpc",
@@ -90,15 +138,36 @@ async function fetchDoadorReverseRows(
         "db.operation": "search_financiamento_by_doador_normalized",
         "http.route": "/doadores",
         "puxaficha.query_length": normalizedQuery.length,
+        "puxaficha.page_size": DOADOR_REVERSE_PAGE_SIZE,
       },
     },
-    async () => {
-      const caller = rpcCaller ?? createServerSupabaseClient()
-      return caller.rpc("search_financiamento_by_doador_normalized", {
+    async () =>
+      caller.rpc("search_financiamento_by_doador_normalized", {
         p_query: normalizedQuery,
-      })
-    },
+        p_limit: FETCH_LIMIT,
+        p_offset: 0,
+      }),
   )
+
+  // Migration ainda não aplicada: cai na assinatura antiga, sem LIMIT no banco,
+  // e corta no aplicativo. Pior do que paginar de verdade, melhor do que a
+  // página inteira responder erro.
+  if (error && assinaturaPaginadaAusente(error)) {
+    if (!avisouRpcNaoPaginada) {
+      avisouRpcNaoPaginada = true
+      console.error(
+        "doador-reverse: RPC sem assinatura paginada, migration nao aplicada; cortando no aplicativo",
+      )
+    }
+    const legado = await caller.rpc("search_financiamento_by_doador_normalized", {
+      p_query: normalizedQuery,
+    })
+    if (legado.error) {
+      console.error("search_financiamento_by_doador_normalized:", legado.error.message)
+      throw new DoadorReverseUnavailableError(legado.error.message)
+    }
+    return paginar(parseDoadorReverseRpcRows(legado.data).slice(0, FETCH_LIMIT))
+  }
 
   if (error) {
     console.error("search_financiamento_by_doador_normalized:", error.message)
@@ -112,10 +181,7 @@ async function fetchDoadorReverseRows(
     throw new DoadorReverseUnavailableError(error.message)
   }
 
-  return {
-    rows: parseDoadorReverseRpcRows(data),
-    error: null,
-  }
+  return paginar(parseDoadorReverseRpcRows(data))
 }
 
 /** Falha de leitura da RPC. Existe para nunca ser confundida com "0 resultados". */
@@ -130,7 +196,9 @@ const getCachedDoadorReverseRows = unstable_cache(
   async (normalizedQuery: string) => fetchDoadorReverseRows(normalizedQuery),
   // Sufixo trocado para descartar o cache ja envenenado no deploy, do mesmo jeito
   // que o PR #40 fez com `cache-poison-fix-20260802` nos wrappers de api.ts.
-  ["doador-reverse", "cache-poison-fix-20260803"],
+  // Bumpado de novo em 2026-08-03 pela paginacao: entrada gravada antes disso
+  // guarda o resultado inteiro, sem teto de 100 linhas e sem o campo `truncado`.
+  ["doador-reverse", "paginacao-20260803"],
   {
     revalidate: 3600,
     tags: ["doador-reverse"],
@@ -146,26 +214,56 @@ export async function getDoadorReverseSearchResult(
   rawQuery: string,
   rpcCaller?: DoadorReverseRpcCaller
 ): Promise<DoadorReverseSearchResult> {
-  const displayQuery = rawQuery.trim()
-  const normalizedQuery = normalizeForSearch(displayQuery)
+  // O corte de comprimento acontece ANTES de o termo virar chave de cache e
+  // antes de chegar ao banco, e vale para os dois: chave truncada com termo
+  // inteiro faria dois termos longos de mesmo prefixo dividirem a mesma entrada.
+  const displayQuery = rawQuery.trim().slice(0, DOADOR_REVERSE_MAX_QUERY_LENGTH)
+  const normalizedQuery = normalizeForSearch(displayQuery).slice(
+    0,
+    DOADOR_REVERSE_MAX_QUERY_LENGTH,
+  )
+
   if (!normalizedQuery) {
-    return { rows: [], displayQuery, normalizedQuery: "", error: null }
+    return {
+      rows: [],
+      displayQuery,
+      normalizedQuery: "",
+      error: null,
+      termoCurtoDemais: false,
+      truncado: false,
+    }
   }
+
+  // Piso de comprimento: termo curto casa com quase tudo, varre a base inteira e
+  // ainda deixa o resultado gravado por 1h sob aquela chave.
+  if (normalizedQuery.length < DOADOR_REVERSE_MIN_QUERY_LENGTH) {
+    return {
+      rows: [],
+      displayQuery,
+      normalizedQuery,
+      error: null,
+      termoCurtoDemais: true,
+      truncado: false,
+    }
+  }
+
   // O estado de erro e reconstruido AQUI, fora do unstable_cache, para que a
   // falha nunca seja persistida no Data Cache. A mensagem ao usuario e a mesma
   // de antes; o que muda e que a proxima request tenta o banco de novo em vez de
   // servir a falha por 1h.
   try {
-    const { rows, error } = rpcCaller || FIXTURE_FILE
+    const { rows, error, truncado } = rpcCaller || FIXTURE_FILE
       ? await fetchDoadorReverseRows(normalizedQuery, rpcCaller)
       : await getCachedDoadorReverseRows(normalizedQuery)
-    return { rows, displayQuery, normalizedQuery, error }
+    return { rows, displayQuery, normalizedQuery, error, termoCurtoDemais: false, truncado }
   } catch {
     return {
       rows: [],
       displayQuery,
       normalizedQuery,
       error: "Não foi possível carregar os resultados agora.",
+      termoCurtoDemais: false,
+      truncado: false,
     }
   }
 }

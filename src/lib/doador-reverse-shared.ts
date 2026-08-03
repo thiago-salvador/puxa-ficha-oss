@@ -22,12 +22,43 @@ export interface DoadorReverseFinanciamentoRow {
   doador_nome_exibicao: string
 }
 
+/**
+ * Piso de comprimento do termo de busca.
+ *
+ * A query livre do visitante vira chave de Data Cache (`unstable_cache`) e vira
+ * varredura na RPC. Com 1 caractere, "a" casa com quase todo doador da base e o
+ * resultado ainda fica gravado por 1 hora sob aquela chave. Três é o menor valor
+ * que ainda deixa buscar sobrenome curto e sigla de empresa.
+ *
+ * Também é conferido dentro da própria função SQL, para o piso não depender de
+ * quem chama.
+ */
+export const DOADOR_REVERSE_MIN_QUERY_LENGTH = 3
+
+/**
+ * Teto de comprimento do termo, aplicado ANTES de virar chave de cache.
+ *
+ * Sem teto, cada string longa diferente cria uma entrada de Data Cache nova, e
+ * quem escolhe quantas entradas existem é quem digita. O corte vale para o termo
+ * de busca inteiro, não só para a chave: truncar só a chave faria dois termos
+ * longos com o mesmo prefixo compartilharem entrada e receberem o resultado um
+ * do outro. Nome de doador do TSE não chega perto disso.
+ */
+export const DOADOR_REVERSE_MAX_QUERY_LENGTH = 80
+
+/** Tamanho da página devolvida pela RPC. */
+export const DOADOR_REVERSE_PAGE_SIZE = 100
+
 export interface DoadorReverseSearchResult {
   rows: DoadorReverseFinanciamentoRow[]
   /** Termo exibido na cópia “semelhante a …” (entrada bruta após trim). */
   displayQuery: string
   normalizedQuery: string
   error: string | null
+  /** Termo abaixo do piso: a busca nem chegou ao banco. */
+  termoCurtoDemais: boolean
+  /** Havia mais linhas do que a página devolvida. */
+  truncado: boolean
 }
 
 /** Valida o formato devolvido pelo RPC (testes + camada de dados). */
