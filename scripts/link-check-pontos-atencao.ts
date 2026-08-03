@@ -89,7 +89,7 @@
  * sobrevive à troca de runner. `morta` e `sem_substancia` só valem quando a
  * MESMA URL apresenta o MESMO defeito em duas execuções distintas, separadas
  * por pelo menos `--intervalo-confirmacao-horas` (padrão 6). A memória entre
- * execuções fica em `link_check_url_observacao` (migration 20260803150000), e é
+ * execuções fica em `link_check_url_observacao` (migration 20260803190000), e é
  * a única escrita que uma execução automática faz.
  *
  * Consequências:
@@ -899,7 +899,7 @@ function ehTabelaAusente(mensagem: string): boolean {
 
 /**
  * Memória do link-check em `link_check_url_observacao` (migration
- * 20260803150000).
+ * 20260803190000).
  *
  * Degrada sozinha quando a migration ainda não foi aplicada, do mesmo jeito
  * que `despublicarNoBanco` degrada quando faltam as colunas de despublicação:
@@ -913,7 +913,7 @@ async function estadoNoBanco(): Promise<EstadoDeFontes> {
     if (!ehTabelaAusente(sonda.error.message)) throw new Error(`${TABELA_ESTADO}: ${sonda.error.message}`)
     baseWarn(
       SOURCE,
-      `tabela ${TABELA_ESTADO} ausente (migration 20260803150000 nao aplicada). ` +
+      `tabela ${TABELA_ESTADO} ausente (migration 20260803190000 nao aplicada). ` +
         `Nenhuma morte sera confirmada, e portanto nada sera despublicado nesta execucao.`,
     )
     return estadoDesligado()

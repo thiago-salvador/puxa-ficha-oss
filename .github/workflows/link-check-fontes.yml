@@ -51,7 +51,7 @@ name: Link-check das fontes
 # já feita nos dois níveis de alarme acima.
 #
 # Consequência operacional: a execução agendada passou a escrever numa tabela,
-# `link_check_url_observacao` (migration 20260803150000). É a única escrita, ela
+# `link_check_url_observacao` (migration 20260803190000). É a única escrita, ela
 # guarda observação sobre URL de terceiro e NUNCA toca `pontos_atencao`. Sem a
 # migration aplicada, o script avisa em log, não confirma nada e portanto não
 # despublica nada.
