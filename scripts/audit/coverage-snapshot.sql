@@ -59,15 +59,64 @@ from (
       select count(*) from pontos_atencao pa
       where pa.candidato_id = c.id and pa.visivel and pa.categoria <> 'feito_positivo'),
     'projetos', (select count(*) from projetos_lei pl where pl.candidato_id = c.id),
-    'destaques', (select count(*) from projetos_lei pl where pl.candidato_id = c.id and pl.destaque),
+    'destaquesTotais', (select count(*) from projetos_lei pl where pl.candidato_id = c.id and pl.destaque),
+    -- A ficha carrega só os 25 mais recentes (ano desc, numero desc) e ordena
+    -- destaque primeiro DENTRO dessa fatia. Destaque antigo não aparece.
+    'destaquesVisiveis', (
+      select count(*) from (
+        select pl.destaque,
+               row_number() over (order by pl.ano desc nulls last, pl.numero desc nulls last) as rk
+        from projetos_lei pl where pl.candidato_id = c.id
+      ) t where t.destaque and t.rk <= 25),
     'gastosAnos', coalesce((
       select jsonb_agg(g.ano) from gastos_parlamentares g where g.candidato_id = c.id), '[]'::jsonb),
     'legislacaoExecutivo', (
       select count(*) from legislacao_mandato_executivo l where l.candidato_id = c.id),
     'noticias', (select count(*) from noticias_candidato n where n.candidato_id = c.id),
-    'posicoesTemas', coalesce((
-      select jsonb_agg(distinct pd.tema) from posicoes_declaradas pd where pd.candidato_id = c.id), '[]'::jsonb),
-    'sancoes', (select count(*) from sancoes_administrativas s where s.candidato_id = c.id)
+    -- Só o que o quiz consome (`.eq("verificado", true)` em src/lib/api.ts).
+    'posicoesTemasVerificados', coalesce((
+      select jsonb_agg(distinct pd.tema) from posicoes_declaradas pd
+      where pd.candidato_id = c.id and pd.verificado), '[]'::jsonb),
+    'posicoesTemasPendentes', coalesce((
+      select jsonb_agg(distinct pd.tema) from posicoes_declaradas pd
+      where pd.candidato_id = c.id and pd.verificado = false), '[]'::jsonb),
+    'sancoes', (select count(*) from sancoes_administrativas s where s.candidato_id = c.id),
+    -- Fila de revisão: o que depende de decisão humana para mudar o site.
+    'itensRevisar', coalesce((
+      select jsonb_agg(item order by item->>'classe', item->>'titulo') from (
+        select jsonb_build_object(
+          'id', pd.id, 'classe', 'posicao_nao_verificada',
+          'titulo', pd.tema, 'detalhe', pd.descricao,
+          'fonte', pd.fonte, 'url', pd.url_fonte,
+          'efeito', 'Aprovar coloca esta posicao no calculo do quiz presidencial.'
+        ) as item
+        from posicoes_declaradas pd
+        where pd.candidato_id = c.id and pd.verificado = false
+        union all
+        select jsonb_build_object(
+          'id', pa.id, 'classe', 'ponto_atencao_pendente',
+          'titulo', pa.titulo, 'detalhe', pa.descricao,
+          'fonte', pa.gerado_por, 'url', (
+            select f->>'url' from jsonb_array_elements(
+              case when jsonb_typeof(pa.fontes) = 'array' then pa.fontes else '[]'::jsonb end) f
+            where f->>'url' is not null limit 1),
+          'efeito', 'Aprovar publica este ponto de atencao na ficha.'
+        )
+        from pontos_atencao pa
+        where pa.candidato_id = c.id and pa.visivel = false and pa.despublicacao_motivo is null
+        union all
+        select jsonb_build_object(
+          'id', pa.id, 'classe', 'ponto_atencao_ia_no_ar_sem_revisao',
+          'titulo', pa.titulo, 'detalhe', pa.descricao,
+          'fonte', pa.gerado_por, 'url', (
+            select f->>'url' from jsonb_array_elements(
+              case when jsonb_typeof(pa.fontes) = 'array' then pa.fontes else '[]'::jsonb end) f
+            where f->>'url' is not null limit 1),
+          'efeito', 'Ja esta no ar sem revisao humana. Rejeitar tira do ar.'
+        )
+        from pontos_atencao pa
+        where pa.candidato_id = c.id and pa.visivel and pa.gerado_por = 'ia' and pa.verificado = false
+      ) itens), '[]'::jsonb)
   ) as linha
   from candidatos_publico c
 ) t;

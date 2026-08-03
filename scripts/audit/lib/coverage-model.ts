@@ -102,13 +102,51 @@ export interface CandidatoCoverage {
   processos: number
   alertas: number
   projetos: number
-  destaques: number
+  /**
+   * Destaques que o leitor alcança hoje. A ficha carrega os 25 projetos mais
+   * recentes (`ano` desc, `numero` desc) e ordena destaque primeiro DENTRO dessa
+   * fatia, então destaque de proposição antiga não aparece. Só contam os que
+   * caem na fatia.
+   */
+  destaquesVisiveis: number
+  /** Destaques marcados no banco, incluindo os que não aparecem na ficha. */
+  destaquesTotais: number
   gastosAnos: number[]
   legislacaoExecutivo: number
   noticias: number
-  /** Temas distintos com posição declarada (o quiz tem 3). */
-  posicoesTemas: string[]
+  /**
+   * Temas com posição declarada E `verificado = true`. É o que o quiz usa
+   * (`src/lib/api.ts`, `.eq("verificado", true)`), portanto é o que o leitor vê.
+   */
+  posicoesTemasVerificados: string[]
+  /** Temas com posição gravada mas ainda sem revisão humana. Não vão ao ar. */
+  posicoesTemasPendentes: string[]
   sancoes: number
+  /** Itens que dependem de decisão humana para mudar o que está publicado. */
+  itensRevisar: ItemRevisar[]
+}
+
+/** Classes de item que entram na fila de revisão. */
+export type ClasseRevisar =
+  | "posicao_nao_verificada"
+  | "ponto_atencao_pendente"
+  | "ponto_atencao_ia_no_ar_sem_revisao"
+
+export interface ItemRevisar {
+  id: string
+  classe: ClasseRevisar
+  titulo: string
+  detalhe: string | null
+  fonte: string | null
+  url: string | null
+  /** O que muda no site se for aprovado. */
+  efeito: string
+}
+
+export const ROTULO_CLASSE: Record<ClasseRevisar, string> = {
+  posicao_nao_verificada: "Posição declarada aguardando revisão",
+  ponto_atencao_pendente: "Ponto de atenção fora do ar, aguardando revisão",
+  ponto_atencao_ia_no_ar_sem_revisao: "Ponto de atenção de IA no ar sem revisão humana",
 }
 
 export interface Aplicabilidade {
@@ -185,6 +223,7 @@ export const COLUNAS: ColunaDef[] = [
   { key: "noticias", label: "Notícias" },
   { key: "posicoes", label: "Posições (quiz)" },
   { key: "sancoes", label: "Sanções" },
+  { key: "revisar", label: "Itens a revisar" },
 ]
 
 /** As 15 colunas que entram no índice de preenchimento. */
@@ -297,10 +336,23 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
 
   if (c.projetos > 0) {
     out.projetos = cell("ok", String(c.projetos))
+    const ocultos = c.destaquesTotais - c.destaquesVisiveis
     out.destaques =
-      c.destaques > 0
-        ? cell("ok", String(c.destaques))
-        : cell("partial", "0", "tem projetos, sem curadoria de destaque")
+      c.destaquesVisiveis > 0
+        ? cell(
+            "ok",
+            String(c.destaquesVisiveis),
+            ocultos > 0
+              ? `${ocultos} destaque(s) marcado(s) no banco não aparecem: a ficha carrega só os 25 projetos mais recentes`
+              : undefined
+          )
+        : cell(
+            "partial",
+            "0",
+            ocultos > 0
+              ? `${ocultos} destaque(s) marcado(s) no banco, nenhum dentro dos 25 projetos mais recentes que a ficha carrega`
+              : "tem projetos, sem curadoria de destaque"
+          )
   } else if (ap.projetosLei) {
     out.projetos = cell("missing", "—", "teve mandato parlamentar, sem projeto registrado")
     out.destaques = cell("missing", "—")
@@ -340,12 +392,22 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   out.noticias = c.noticias > 0 ? cell("ok", String(c.noticias)) : cell("missing", "—")
 
   if (c.cargo_disputado === "Presidente") {
-    const n = c.posicoesTemas.length
+    // Conta só o que o quiz usa: posição com verificado = true.
+    const n = c.posicoesTemasVerificados.length
     const total = TEMAS_QUIZ.length
+    const pendentes = c.posicoesTemasPendentes.filter(
+      (t) => !c.posicoesTemasVerificados.includes(t)
+    ).length
+    const dica = [
+      n >= total ? null : "tema do quiz sem posição no ar",
+      pendentes > 0 ? `${pendentes} posição(ões) curada(s) aguardando sua revisão` : null,
+    ]
+      .filter(Boolean)
+      .join("; ")
     out.posicoes = cell(
       n >= total ? "ok" : n > 0 ? "partial" : "missing",
       `${n}/${total}`,
-      n >= total ? undefined : "quiz presidencial com tema sem posição declarada"
+      dica || undefined
     )
   } else {
     out.posicoes = cell("na", "n/a", "quiz cobre só a disputa presidencial")
@@ -353,6 +415,12 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
 
   out.sancoes =
     c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cell("zero", "0", "nenhuma sanção registrada")
+
+  const nRevisar = c.itensRevisar.length
+  out.revisar =
+    nRevisar > 0
+      ? cell("partial", String(nRevisar), "itens esperando sua aprovação para mudar o que está no ar")
+      : cell("zero", "0", "nada esperando revisão")
 
   return out
 }

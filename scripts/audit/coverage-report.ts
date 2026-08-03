@@ -1,25 +1,34 @@
 /**
  * Relatório de cobertura de dados por candidato (2026-08-02).
  *
- * Lê o banco em modo **somente leitura** e gera um HTML com uma tabela dos
- * pré-candidatos a Presidente e uma tabela por UF de Governador. A régua (cinco
- * estados de célula, aplicabilidade e índice de 15 colunas) vive em
- * `lib/coverage-model.ts`; este arquivo só busca, monta e desenha.
+ * Mede **o que o leitor vê em puxaficha.com.br**, não o que existe no banco.
+ * Onde os dois divergem, vale a superfície pública:
+ *   - posição só conta quando `verificado = true`, que é o filtro do quiz;
+ *   - destaque só conta quando cai nos 25 projetos que a ficha carrega;
+ *   - ponto de atenção só conta quando `visivel = true`.
+ * O que está no banco esperando decisão humana não vira verde: vira item na
+ * coluna "Itens a revisar", com página própria para aprovar ou rejeitar.
  *
- * Não escreve em banco. O único efeito colateral é o arquivo HTML de saída
- * (e o JSON irmão, quando pedido).
+ * A régua (cinco estados de célula, aplicabilidade, índice de 15 colunas) vive
+ * em `lib/coverage-model.ts`; este arquivo só monta e desenha.
+ *
+ * Não escreve em banco. Os efeitos colaterais são o HTML de saída, o JSON irmão
+ * (com `--json`) e as páginas de revisão em `<dir do HTML>/revisao/`.
+ *
+ * A entrada é sempre o snapshot JSON de `coverage-snapshot.sql`, rodado contra o
+ * banco em modo somente leitura (psql, SQL editor do Supabase ou MCP) e salvo em
+ * arquivo. Ver `--from-snapshot`.
  *
  * Uso:
- *   tsx scripts/audit/coverage-report.ts
- *   tsx scripts/audit/coverage-report.ts --com-migrations-pendentes
- *   tsx scripts/audit/coverage-report.ts --out=/caminho/relatorio.html --json
+ *   tsx scripts/audit/coverage-report.ts --from-snapshot=snapshot.json --json
+ *   tsx scripts/audit/coverage-report.ts --from-snapshot=snapshot.json --com-migrations-pendentes
  *
  * Flags:
+ *   --from-snapshot=PATH        OBRIGATÓRIA. JSON produzido por `coverage-snapshot.sql`
  *   --out=PATH                  caminho do HTML (default: ~/.disposable-html/AAAA-MM-DD-puxa-ficha-cobertura-dados.descartavel.html)
- *   --from-snapshot=PATH        lê o snapshot JSON produzido por `coverage-snapshot.sql`
- *                               em vez de consultar o banco (útil quando a máquina
- *                               não tem SUPABASE_SERVICE_ROLE_KEY). Mesmo resultado.
  *   --json[=PATH]               grava também o JSON de estados por célula
+ *   --review-post=URL           endpoint para onde as páginas de revisão enviam
+ *                               as decisões (default: /revisao)
  *   --com-migrations-pendentes  sobrepõe o efeito das migrations anotadas com
  *                               `-- @write` que ainda não foram aplicadas
  *   --migrations-desde=PREFIXO  restringe a varredura de migrations pendentes
@@ -27,19 +36,19 @@
  */
 
 import { mkdirSync, writeFileSync } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { homedir } from "node:os"
 
-import { supabase } from "../lib/supabase"
 import type { CandidatoConfig } from "../lib/types"
 import { readFileSync } from "node:fs"
 import {
   COLUNAS,
+  ROTULO_CLASSE,
   calcularCelulas,
   calcularIndice,
   type CandidatoCoverage,
   type Cell,
-  type HistoricoEvento,
+  type ItemRevisar,
 } from "./lib/coverage-model"
 import { lerPendingWrites, type PendingWrite } from "./lib/pending-writes"
 
@@ -64,6 +73,7 @@ interface Opcoes {
   migrationsDesde?: string
   slugs?: Set<string>
   fromSnapshot?: string
+  reviewPost: string
 }
 
 function hoje(): string {
@@ -91,74 +101,18 @@ export function parseArgs(argv: string[]): Opcoes {
     migrationsDesde: get("migrations-desde") || undefined,
     slugs: slugs ? new Set(slugs.split(",").map((s) => s.trim()).filter(Boolean)) : undefined,
     fromSnapshot: get("from-snapshot") || undefined,
+    reviewPost: get("review-post") || "/revisao",
   }
 }
 
-// ── Leitura do banco (paginada, somente SELECT) ─────────────────────
-
-async function selectAll<T>(tabela: string, colunas: string): Promise<T[]> {
-  const pagina = 1000
-  const linhas: T[] = []
-  for (let from = 0; ; from += pagina) {
-    const { data, error } = await supabase
-      .from(tabela)
-      .select(colunas)
-      .range(from, from + pagina - 1)
-    if (error) throw new Error(`falha lendo ${tabela}: ${error.message}`)
-    const lote = (data ?? []) as T[]
-    linhas.push(...lote)
-    if (lote.length < pagina) break
-  }
-  return linhas
-}
-
-function contarPorCandidato<T extends { candidato_id: string | null }>(
-  linhas: T[],
-  aceita: (linha: T) => boolean = () => true
-): Map<string, number> {
-  const mapa = new Map<string, number>()
-  for (const linha of linhas) {
-    if (!linha.candidato_id || !aceita(linha)) continue
-    mapa.set(linha.candidato_id, (mapa.get(linha.candidato_id) ?? 0) + 1)
-  }
-  return mapa
-}
-
-function agruparPorCandidato<T extends { candidato_id: string | null }>(
-  linhas: T[]
-): Map<string, T[]> {
-  const mapa = new Map<string, T[]>()
-  for (const linha of linhas) {
-    if (!linha.candidato_id) continue
-    const atual = mapa.get(linha.candidato_id)
-    if (atual) atual.push(linha)
-    else mapa.set(linha.candidato_id, [linha])
-  }
-  return mapa
-}
-
-interface CandidatoPublico {
-  id: string
-  slug: string
-  nome_urna: string | null
-  partido_sigla: string | null
-  cargo_disputado: string | null
-  estado: string | null
-  foto_url: string | null
-  biografia: string | null
-  redes_sociais: unknown
-  idade: number | null
-  naturalidade: string | null
-  formacao: string | null
-  profissao_declarada: string | null
-}
-
-function temRedes(raw: unknown): boolean {
-  if (!raw) return false
-  if (Array.isArray(raw)) return raw.length > 0
-  if (typeof raw === "object") return Object.keys(raw as object).length > 0
-  return false
-}
+// ── Leitura do snapshot ─────────────────────────────────────────────
+//
+// Fonte única: o JSON produzido por `coverage-snapshot.sql`. O caminho que lia
+// o banco direto pelo supabase-js foi removido em 2026-08-02, quando a régua
+// passou a medir "o que o leitor vê": as regras novas (destaque dentro da fatia
+// de 25 projetos que a ficha carrega, posição só com verificado = true, fila de
+// revisão) são janelas e uniões que ficavam ilegíveis reimplementadas em JS, e
+// manter as duas versões em sincronia era convite a duas verdades.
 
 /** Slugs com SQ_CANDIDATO conhecido no seed `data/candidatos.json`. */
 function slugsComSqNoSeed(): Set<string> {
@@ -188,103 +142,6 @@ export function lerSnapshot(path: string, slugs?: Set<string>): CandidatoCoverag
     .map((c) => ({ ...c, temSqNoSeed: comSq.has(c.slug) }))
 }
 
-export async function coletar(opcoes: Opcoes): Promise<CandidatoCoverage[]> {
-  if (opcoes.fromSnapshot) return lerSnapshot(opcoes.fromSnapshot, opcoes.slugs)
-
-  const candidatos = await selectAll<CandidatoPublico>(
-    "candidatos_publico",
-    "id,slug,nome_urna,partido_sigla,cargo_disputado,estado,foto_url,biografia,redes_sociais,idade,naturalidade,formacao,profissao_declarada"
-  )
-
-  const [
-    historico, mudancas, patrimonio, financiamento, votos, pontos,
-    processos, projetos, gastos, legislacao, noticias, posicoes, sancoes,
-  ] = await Promise.all([
-    selectAll<{ candidato_id: string; cargo_canonico: string | null; tipo_evento: string | null; periodo_inicio: number | null; periodo_fim: number | null }>(
-      "historico_politico", "candidato_id,cargo_canonico,tipo_evento,periodo_inicio,periodo_fim"),
-    selectAll<{ candidato_id: string }>("mudancas_partido", "candidato_id"),
-    selectAll<{ candidato_id: string; ano_eleicao: number; bens: unknown }>("patrimonio", "candidato_id,ano_eleicao,bens"),
-    selectAll<{ candidato_id: string; ano_eleicao: number; maiores_doadores: unknown }>("financiamento", "candidato_id,ano_eleicao,maiores_doadores"),
-    selectAll<{ candidato_id: string }>("votos_candidato", "candidato_id"),
-    selectAll<{ candidato_id: string; categoria: string | null; visivel: boolean | null }>("pontos_atencao", "candidato_id,categoria,visivel"),
-    selectAll<{ candidato_id: string }>("processos", "candidato_id"),
-    selectAll<{ candidato_id: string; destaque: boolean | null }>("projetos_lei", "candidato_id,destaque"),
-    selectAll<{ candidato_id: string; ano: number }>("gastos_parlamentares", "candidato_id,ano"),
-    selectAll<{ candidato_id: string }>("legislacao_mandato_executivo", "candidato_id"),
-    selectAll<{ candidato_id: string }>("noticias_candidato", "candidato_id"),
-    selectAll<{ candidato_id: string; tema: string }>("posicoes_declaradas", "candidato_id,tema"),
-    selectAll<{ candidato_id: string }>("sancoes_administrativas", "candidato_id"),
-  ])
-
-  const comSq = slugsComSqNoSeed()
-
-  const porHistorico = agruparPorCandidato(historico)
-  const porPatrimonio = agruparPorCandidato(patrimonio)
-  const porFinanciamento = agruparPorCandidato(financiamento)
-  const porGastos = agruparPorCandidato(gastos)
-  const porPosicoes = agruparPorCandidato(posicoes)
-
-  const nMudancas = contarPorCandidato(mudancas)
-  const nVotos = contarPorCandidato(votos)
-  const nProcessos = contarPorCandidato(processos)
-  const nProjetos = contarPorCandidato(projetos)
-  const nDestaques = contarPorCandidato(projetos, (p) => p.destaque === true)
-  const nLegislacao = contarPorCandidato(legislacao)
-  const nNoticias = contarPorCandidato(noticias)
-  const nSancoes = contarPorCandidato(sancoes)
-  // Alertas = pontos de atenção públicos que não são "feito positivo".
-  const nAlertas = contarPorCandidato(
-    pontos,
-    (p) => p.visivel === true && p.categoria !== "feito_positivo"
-  )
-  const nContradicoes = contarPorCandidato(pontos, (p) => {
-    const cat = (p.categoria ?? "").normalize("NFD").replace(/\p{M}/gu, "")
-    return p.visivel === true && (cat === "contradicao" || cat === "mudanca_posicao")
-  })
-
-  const naoVazio = (v: unknown): boolean => Array.isArray(v) && v.length > 0
-
-  return candidatos
-    .filter((c) => (opcoes.slugs ? opcoes.slugs.has(c.slug) : true))
-    .map((c) => {
-      const pats = porPatrimonio.get(c.id) ?? []
-      const fins = porFinanciamento.get(c.id) ?? []
-      return {
-        slug: c.slug,
-        nome_urna: c.nome_urna ?? c.slug,
-        partido_sigla: c.partido_sigla,
-        cargo_disputado: c.cargo_disputado,
-        estado: c.estado,
-        foto: Boolean(c.foto_url),
-        bio: Boolean(c.biografia),
-        redes: temRedes(c.redes_sociais),
-        idade: c.idade ?? null,
-        naturalidade: c.naturalidade,
-        formacao: c.formacao,
-        profissao: c.profissao_declarada,
-        historico: (porHistorico.get(c.id) ?? []) as HistoricoEvento[],
-        temSqNoSeed: comSq.has(c.slug),
-        mudancas: nMudancas.get(c.id) ?? 0,
-        patrimonioAnos: pats.map((p) => p.ano_eleicao),
-        patrimonioAnosComBens: pats.filter((p) => naoVazio(p.bens)).map((p) => p.ano_eleicao),
-        financiamentoAnos: fins.map((f) => f.ano_eleicao),
-        financiamentoAnosComDoadores: fins
-          .filter((f) => naoVazio(f.maiores_doadores))
-          .map((f) => f.ano_eleicao),
-        votos: nVotos.get(c.id) ?? 0,
-        contradicoes: nContradicoes.get(c.id) ?? 0,
-        processos: nProcessos.get(c.id) ?? 0,
-        alertas: nAlertas.get(c.id) ?? 0,
-        projetos: nProjetos.get(c.id) ?? 0,
-        destaques: nDestaques.get(c.id) ?? 0,
-        gastosAnos: (porGastos.get(c.id) ?? []).map((g) => g.ano),
-        legislacaoExecutivo: nLegislacao.get(c.id) ?? 0,
-        noticias: nNoticias.get(c.id) ?? 0,
-        posicoesTemas: [...new Set((porPosicoes.get(c.id) ?? []).map((p) => p.tema))],
-        sancoes: nSancoes.get(c.id) ?? 0,
-      }
-    })
-}
 
 // ── Overlay das migrations pendentes ────────────────────────────────
 
@@ -312,9 +169,13 @@ export function aplicarPendentes(
         c.financiamentoAnosComDoadores = push(c.financiamentoAnosComDoadores, w.ano)
       }
     } else if (w.tabela === "posicoes_declaradas" && w.tema) {
-      if (!c.posicoesTemas.includes(w.tema)) c.posicoesTemas = [...c.posicoesTemas, w.tema]
+      // Migration de posição grava `verificado = false`, então o efeito no site
+      // é nenhum até a revisão humana: entra na fila de pendentes, não no quiz.
+      if (!c.posicoesTemasPendentes.includes(w.tema)) {
+        c.posicoesTemasPendentes = [...c.posicoesTemasPendentes, w.tema]
+      }
     } else if (w.tabela === "projetos_lei" && w.campos.includes("destaque")) {
-      c.destaques += 1
+      c.destaquesTotais += 1
     } else if (w.tabela === "candidatos" && w.campos.includes("profissao_declarada")) {
       c.profissao = c.profissao ?? "(preenchido por migration pendente)"
     }
@@ -350,7 +211,12 @@ function renderTabela(coorte: CandidatoCoverage[], id: string): string {
         if (cel.state === "ok") acc.got += 1
         else if (cel.state === "partial") acc.got += 0.5
       }
-      return `<td class="c-${cel.state}" data-slug="${esc(cand.slug)}" data-col="${esc(key)}"${tip}>${esc(cel.text)}</td>`
+      // A célula de revisão vira link para a página de decisão do candidato.
+      const conteudo =
+        key === "revisar" && cand.itensRevisar.length > 0
+          ? `<a class="rev" href="revisao/${esc(cand.slug)}.html">${esc(cel.text)}</a>`
+          : esc(cel.text)
+      return `<td class="c-${cel.state}" data-slug="${esc(cand.slug)}" data-col="${esc(key)}"${tip}>${conteudo}</td>`
     }).join("")
 
     const classeIndice = indice >= 80 ? "s-hi" : indice >= 50 ? "s-mid" : "s-lo"
@@ -421,6 +287,8 @@ td.c-missing { background:var(--miss-bg); color:var(--miss-fg); font-weight:700;
 td.c-zero { background:var(--zero-bg); color:var(--zero-fg); }
 td.c-na { background:var(--na-bg); color:var(--na-fg); font-size:11px; }
 td.scr { font-weight:700; border-right:1px solid var(--line); }
+a.rev { color:var(--warn-link, #1f4fd8); font-weight:700; text-decoration:none; }
+a.rev:hover { text-decoration:underline; }
 .s-hi { color:var(--ok-fg); } .s-mid { color:var(--partial-fg); } .s-lo { color:var(--miss-fg); }
 tfoot td, tfoot th { border-top:1px solid var(--line); font-size:11px; color:var(--muted); padding:6px; }
 tfoot th.cand { text-align:left; }
@@ -432,10 +300,16 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
   const presidentes = coorte.filter((c) => c.cargo_disputado === "Presidente")
   const governadores = coorte.filter((c) => c.cargo_disputado === "Governador")
   const ufs = [...new Set(governadores.map((c) => c.estado).filter(Boolean) as string[])].sort()
+  // Nenhum perfil público pode escapar do guia: quem não é Presidente nem
+  // Governador (hoje, vice-governadores) entra numa seção própria.
+  const outros = coorte.filter(
+    (c) => c.cargo_disputado !== "Presidente" && c.cargo_disputado !== "Governador"
+  )
 
   const toc =
     `<a href="#presidentes" class="chip">Presidente</a>` +
-    ufs.map((uf) => `<a href="#uf-${uf.toLowerCase()}" class="chip">${uf}</a>`).join("")
+    ufs.map((uf) => `<a href="#uf-${uf.toLowerCase()}" class="chip">${uf}</a>`).join("") +
+    (outros.length ? `<a href="#outros" class="chip">Outros cargos</a>` : "")
 
   const secoes = [
     `<h2 id="presidentes">Pré-candidatos a Presidente <span class="count">${presidentes.length}</span></h2>` +
@@ -447,6 +321,12 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
         renderTabela(cs, `t-${uf.toLowerCase()}`)
       )
     }),
+    ...(outros.length
+      ? [
+          `<h2 id="outros">Outros cargos <span class="count">${outros.length}</span></h2>` +
+            renderTabela(outros, "t-outros"),
+        ]
+      : []),
   ]
 
   const blocoPendentes = pendentes.length
@@ -467,8 +347,8 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
 <body>
 <main>
 <h1>Puxa Ficha · Cobertura de dados por candidato</h1>
-<p class="sub">Snapshot do banco de produção em ${data}. Somente perfis públicos no site:
-${presidentes.length} pré-candidatos a Presidente e ${governadores.length} a Governador em ${ufs.length} UFs.
+<p class="sub">O que o leitor vê em <a href="https://puxaficha.com.br" target="_blank" rel="noopener">puxaficha.com.br</a>, medido em ${data}.
+${presidentes.length} pré-candidatos a Presidente, ${governadores.length} a Governador em ${ufs.length} UFs${outros.length ? ` e ${outros.length} em outros cargos` : ""}.
 Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
 
 <div class="legend">
@@ -492,16 +372,132 @@ ${secoes.join("")}
 </html>`
 }
 
+// ── Páginas de revisão ──────────────────────────────────────────────
+
+const CSS_REVISAO = `
+:root{color-scheme:light;--bg:#fafaf8;--fg:#1a1a1a;--muted:#6b6b6b;--line:#e4e2dc;--card:#fff;
+--ok:#1c6b2d;--okbg:#e3f2e6;--bad:#a12622;--badbg:#fbe4e4;--warnbg:#fdf3d7;--warn:#8a6100;--accent:#1f4fd8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:34px 22px 90px}
+main{max-width:900px;margin:0 auto}
+a.voltar{color:var(--muted);text-decoration:none;font-size:13px}
+a.voltar:hover{text-decoration:underline}
+h1{font-size:25px;margin:10px 0 4px}
+.sub{color:var(--muted);margin:0 0 22px;font-size:14px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:16px 18px;margin:14px 0}
+.classe{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--warn);background:var(--warnbg);display:inline-block;padding:2px 9px;border-radius:999px}
+.item h2{font-size:16.5px;margin:10px 0 6px}
+.item p{margin:6px 0;font-size:14px}
+.meta{font-size:12.5px;color:var(--muted)}
+.efeito{font-size:13px;color:var(--fg);background:#f4f3ef;border-radius:8px;padding:8px 11px;margin-top:10px}
+.escolha{display:flex;gap:9px;margin-top:12px;flex-wrap:wrap}
+.escolha label{border:1px solid var(--line);border-radius:9px;padding:7px 14px;cursor:pointer;font-size:14px;font-weight:600;background:#fff}
+.escolha label:hover{border-color:var(--accent)}
+.escolha input{margin-right:7px}
+.escolha label.ap{color:var(--ok)} .escolha label.rj{color:var(--bad)}
+textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit;font-size:14px;margin-top:8px}
+button{background:#1a1a1a;color:#fff;border:0;border-radius:10px;padding:12px 26px;font-size:15px;font-weight:600;cursor:pointer;margin-top:16px}
+button:hover{background:#000}
+#msg{margin-top:12px;font-weight:600}
+.vazio{background:var(--okbg);color:var(--ok);border-radius:10px;padding:16px 18px;font-weight:600}
+`
+
+function renderItem(item: ItemRevisar, i: number): string {
+  const fonte = item.fonte ? `<p class="meta">Fonte: ${esc(item.fonte)}</p>` : ""
+  const url = item.url
+    ? `<p class="meta">Link: <a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.url)}</a></p>`
+    : `<p class="meta">Sem URL de fonte registrada.</p>`
+  const detalhe = item.detalhe ? `<p>${esc(item.detalhe)}</p>` : ""
+  return `<div class="item" data-id="${esc(item.id)}" data-classe="${esc(item.classe)}">
+  <span class="classe">${esc(ROTULO_CLASSE[item.classe] ?? item.classe)}</span>
+  <h2>${esc(item.titulo)}</h2>
+  ${detalhe}${fonte}${url}
+  <div class="efeito">${esc(item.efeito)}</div>
+  <div class="escolha">
+    <label class="ap"><input type="radio" name="d${i}" value="aprovar">Aprovar</label>
+    <label class="rj"><input type="radio" name="d${i}" value="rejeitar">Rejeitar</label>
+    <label><input type="radio" name="d${i}" value="adiar" checked>Decidir depois</label>
+  </div>
+</div>`
+}
+
+export function renderPaginaRevisao(cand: CandidatoCoverage, postUrl: string): string {
+  const itens = cand.itensRevisar
+  const corpo = itens.length
+    ? itens.map(renderItem).join("")
+    : `<div class="vazio">Nada esperando revisão para este candidato.</div>`
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Revisar · ${esc(cand.nome_urna)}</title>
+<style>${CSS_REVISAO}</style>
+</head>
+<body>
+<main>
+<a class="voltar" href="../${esc(NOME_INDEX)}">Voltar para a tabela de cobertura</a>
+<h1>Revisar · ${esc(cand.nome_urna)}</h1>
+<p class="sub">${itens.length} item(ns) esperando decisão. Nada aqui muda o site sozinho:
+o envio grava suas decisões e a aplicação é um passo separado.
+<a href="https://puxaficha.com.br/candidato/${esc(cand.slug)}" target="_blank" rel="noopener">Ver a ficha pública</a>.</p>
+<form id="f">
+${corpo}
+<h3>Observação livre</h3>
+<textarea name="livre" placeholder="Contexto, correção de texto, o que investigar antes de aplicar."></textarea>
+<button type="submit">Enviar decisões</button>
+<div id="msg"></div>
+</form>
+</main>
+<script>
+const SLUG = ${JSON.stringify(cand.slug)};
+const ITENS = ${JSON.stringify(itens.map((i) => ({ id: i.id, classe: i.classe, titulo: i.titulo })))};
+document.getElementById('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const decisoes = ITENS.map((it, i) => {
+    const sel = document.querySelector('input[name="d' + i + '"]:checked');
+    return { id: it.id, classe: it.classe, titulo: it.titulo, decisao: sel ? sel.value : 'adiar' };
+  });
+  const msg = document.getElementById('msg');
+  try {
+    const r = await fetch(${JSON.stringify(postUrl)}, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: SLUG, decisoes, livre: document.querySelector('textarea[name=livre]').value })
+    });
+    msg.textContent = r.ok ? 'Decisões enviadas. Pode fechar ou voltar para a tabela.' : 'Falhou ao enviar (HTTP ' + r.status + ').';
+    msg.style.color = r.ok ? '#1c6b2d' : '#a12622';
+  } catch (err) {
+    msg.textContent = 'Falhou ao enviar: ' + err;
+    msg.style.color = '#a12622';
+  }
+});
+</script>
+</body>
+</html>`
+}
+
+let NOME_INDEX = "index.html"
+
 // ── main ────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const opcoes = parseArgs(process.argv.slice(2))
+  if (!opcoes.fromSnapshot) {
+    throw new Error(
+      "--from-snapshot=PATH é obrigatório. Rode scripts/audit/coverage-snapshot.sql contra o banco " +
+        "(somente leitura) e salve a coluna `snapshot` num arquivo .json."
+    )
+  }
+  NOME_INDEX = basename(opcoes.out)
 
   const pendentes = opcoes.comPendentes
     ? lerPendingWrites(join(RAIZ, "supabase", "migrations"), opcoes.migrationsDesde)
     : []
 
-  let coorte = await coletar(opcoes)
+  let coorte = lerSnapshot(opcoes.fromSnapshot, opcoes.slugs)
   if (pendentes.length) {
     const r = aplicarPendentes(coorte, pendentes)
     coorte = r.coorte
@@ -512,6 +508,23 @@ async function main(): Promise<void> {
   mkdirSync(dirname(opcoes.out), { recursive: true })
   writeFileSync(opcoes.out, html, "utf8")
   console.error(`[cobertura] HTML: ${opcoes.out} (${html.length} bytes)`)
+
+  // Uma página de revisão por candidato com fila pendente, ao lado do relatório.
+  const dirRevisao = join(dirname(opcoes.out), "revisao")
+  mkdirSync(dirRevisao, { recursive: true })
+  let paginas = 0
+  let itens = 0
+  for (const cand of coorte) {
+    if (cand.itensRevisar.length === 0) continue
+    writeFileSync(
+      join(dirRevisao, `${cand.slug}.html`),
+      renderPaginaRevisao(cand, opcoes.reviewPost),
+      "utf8"
+    )
+    paginas += 1
+    itens += cand.itensRevisar.length
+  }
+  console.error(`[cobertura] revisão: ${paginas} página(s), ${itens} item(ns) em ${dirRevisao}`)
 
   if (opcoes.json) {
     const dump = coorte.map((c) => ({
