@@ -31,6 +31,7 @@
 import { readFileSync } from "node:fs"
 
 import {
+  estadoDesligado,
   mapPorHost,
   probeUrlReal,
   runLinkCheck,
@@ -61,6 +62,14 @@ async function main(): Promise<void> {
     apply: false,
     onlyVisible: false,
     limit: null,
+    // Auditoria de snapshot é uma execução única e sem memória: a confirmação
+    // em duas execuções (ver o cabeçalho de link-check-pontos-atencao.ts) nunca
+    // acontece aqui. `estadoDesligado` degrada para o lado seguro (nada é
+    // confirmado, nada é despublicável), e por isso o gate abaixo barra também
+    // a morte SUSPEITA: sem isso, este caminho ficaria verde por construção.
+    execucaoId: `snapshot-${new Date().toISOString()}`,
+    estado: estadoDesligado(),
+    intervaloConfirmacaoMs: 6 * 3600_000,
     fetchRows: async () => rows,
     probeUrls: (urls) => mapPorHost(urls, 6, 1500, (url) => probeUrlReal(url, opcoes)),
     despublicar: async () => {
@@ -76,9 +85,14 @@ async function main(): Promise<void> {
 
   const noEscopo = (v: ClaimVeredito) => !gateSomentePublicos || v.publico
 
-  const mortas = resultado.claimsComFonteMorta.filter(noEscopo)
+  // Com `estadoDesligado`, `claimsComFonteMorta` (confirmadas) é vazio por
+  // construção; a lista que carrega o sinal numa execução única é a de morte
+  // suspeita, mesmo critério do gate de pré-publicação (--fail-on-morte-suspeita).
+  const mortas = [...resultado.claimsComFonteMorta, ...resultado.claimsComMorteSuspeita].filter(
+    noEscopo
+  )
   if (failOnDead && mortas.length > 0) {
-    console.error(`[link-check-snapshot] ✗ ${mortas.length} claim(s) visível(is) com fonte morta`)
+    console.error(`[link-check-snapshot] ✗ ${mortas.length} claim(s) visível(is) com fonte morta ou suspeita de morte`)
     process.exitCode = 1
   }
 
