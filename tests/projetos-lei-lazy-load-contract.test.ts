@@ -14,10 +14,31 @@ describe("inventário de projetos de lei sob demanda", () => {
       source.indexOf("withSupabaseRetry(`legislacao_mandato_executivo(${slug})`"),
     )
 
-    assert.match(initialQuery, /select\("\*", \{ count: "exact" \}\)/)
+    assert.match(initialQuery, /select\(PROJETOS_LEI_COLUNAS, \{ count: "exact" \}\)/)
     assert.match(initialQuery, /\.limit\(25\)/)
     assert.match(source, /projetos_lei_total: projetos\.count/)
     assert.match(source, /projetos_lei_truncados:/)
+  })
+
+  test("as duas queries de projetos_lei nunca voltam a puxar colunas mortas", async () => {
+    const source = await readFile(API_PATH, "utf8")
+    const colunas = source.match(/const PROJETOS_LEI_COLUNAS =\s*\n?\s*"([^"]+)"/)
+
+    assert.ok(colunas, "PROJETOS_LEI_COLUNAS precisa existir como lista explícita de colunas")
+    const lista = colunas[1].split(",").map((c) => c.trim())
+
+    // `metadata` (jsonb) é 60% do peso da tabela e não é lido em lugar nenhum;
+    // `coverage_scope` e `created_at` também não. Puxá-los de volta reintroduz a
+    // cauda de latência que encostava no statement_timeout de 3s do role `anon`.
+    for (const morta of ["metadata", "coverage_scope", "created_at"]) {
+      assert.ok(!lista.includes(morta), `coluna ${morta} não deve voltar ao select de projetos_lei`)
+    }
+    // Campos que a ficha e o DTO público realmente consomem.
+    for (const viva of ["id", "tipo", "numero", "ano", "ementa", "situacao", "destaque", "coverage_id"]) {
+      assert.ok(lista.includes(viva), `coluna ${viva} é consumida e precisa continuar no select`)
+    }
+    // Nenhuma das duas queries pode voltar para o select estrela.
+    assert.doesNotMatch(source, /\.from\("projetos_lei"\)\s*\n\s*\.select\("\*"/)
   })
 
   test("o endpoint público limita cada página a 100 e sanitiza a saída", async () => {
