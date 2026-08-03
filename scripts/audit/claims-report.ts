@@ -111,6 +111,7 @@ td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:none}
 tr.primeira-do-candidato td{border-top:2px solid #dcdad3}
 tr.decidida{background:#fbfbf9}
+.num{font-weight:700;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .cand{font-weight:700;white-space:nowrap}
 .cand a{color:var(--fg);text-decoration:none}
 .cand a:hover{text-decoration:underline}
@@ -190,7 +191,8 @@ function render(linhas: Linha[], probes: Map<string, UrlProbe>, postUrl: string,
       return `<tr class="${primeira ? "primeira-do-candidato" : ""}" data-i="${i}"
   data-slug="${esc(cand.slug)}" data-status="${st.chave}" data-grav="${esc(grav)}"
   data-cat="${esc(claim.categoria ?? "")}" data-prov="${claim.gerado_por === "ia" ? (claim.verificado ? "ia-revisada" : "ia-sem-revisao") : "curadoria"}"
-  data-busca="${esc(busca)}">
+  data-busca="${esc(busca)}" data-num="${i + 1}">
+  <td class="num">${i + 1}</td>
   <td class="cand"><a href="https://puxaficha.com.br/candidato/${esc(cand.slug)}" target="_blank" rel="noopener">${esc(cand.nome_urna)}</a></td>
   <td class="meta nowrap">${esc(cand.partido_sigla ?? "—")}</td>
   <td class="meta nowrap">${esc(cand.estado ?? "BR")}</td>
@@ -210,7 +212,10 @@ function render(linhas: Linha[], probes: Map<string, UrlProbe>, postUrl: string,
     })
     .join("")
 
-  const dados = linhas.map(({ cand, claim }) => ({
+  // O numero exibido viaja junto na decisao: e por ele que a conversa sobre a
+  // fila acontece ("a claim 14"), entao ele precisa existir do lado de la tambem.
+  const dados = linhas.map(({ cand, claim }, i) => ({
+    numero: i + 1,
     slug: cand.slug,
     id: claim.id,
     classe: "claim_ponto_atencao",
@@ -240,6 +245,7 @@ function render(linhas: Linha[], probes: Map<string, UrlProbe>, postUrl: string,
 <h1>Claims dos candidatos a ${esc(cargo)}</h1>
 <p class="sub">${linhas.length} claim(s) de ${new Set(linhas.map((l) => l.cand.slug)).size} candidato(s), publicadas ou não.
 Uma linha por claim; quem tem mais de uma aparece em linhas seguidas.
+O numero da coluna Claim # e fixo e nao muda com filtro, entao serve para falar de uma claim especifica.
 Estado das fontes conferido agora com o mesmo prober do gate de link-check: ${esc(resumoSondagem)}.
 Nada aqui muda o site: o envio grava suas decisões e a aplicação é passo separado, com migration e readback.</p>
 
@@ -257,7 +263,7 @@ Nada aqui muda o site: o envio grava suas decisões e a aplicação é passo sep
 
 <div class="twrap"><table>
 <thead><tr>
-  <th>Candidato</th><th>Partido</th><th>UF</th><th>Cargo</th><th>Status</th><th>Gravidade</th>
+  <th>Claim #</th><th>Candidato</th><th>Partido</th><th>UF</th><th>Cargo</th><th>Status</th><th>Gravidade</th>
   <th>Categoria</th><th>Origem</th><th>Claim</th><th>Fontes</th><th>Decisão</th>
 </tr></thead>
 <tbody id="corpo">${trs}</tbody>
@@ -310,7 +316,7 @@ document.getElementById('enviar').addEventListener('click', async () => {
     if (d === 'adiar') return;
     const m = DADOS[i];
     if (!porSlug.has(m.slug)) porSlug.set(m.slug, []);
-    porSlug.get(m.slug).push({ id: m.id, classe: m.classe, titulo: m.titulo, decisao: d });
+    porSlug.get(m.slug).push({ numero: m.numero, id: m.id, classe: m.classe, titulo: m.titulo, decisao: d });
   });
   if (porSlug.size === 0){ msg.textContent = 'Nenhuma decisão marcada.'; msg.style.color = '#8a6100'; return; }
   const livre = document.getElementById('livre').value;
