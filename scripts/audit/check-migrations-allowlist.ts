@@ -6,13 +6,23 @@
  *      selecionadas tem uma anotação `-- @write` imediatamente acima. Statement
  *      de escrita sem anotação é erro: seria escrita invisível para o gate.
  *   2. TODA anotação `-- @write` está contida na allowlist informada, casando tabela, slug e,
- *      quando a allowlist especifica, ano, tema ou teto de registros.
+ *      quando a allowlist especifica, ano, tema ou teto de registros. Escrita em
+ *      tabela de referência é anotada com `ref=` e conferida contra o bloco
+ *      `referencias`.
  *
  * Não toca banco nem rede. Sai != 0 na primeira violação.
  *
  * Uso:
- *   tsx scripts/audit/check-migrations-allowlist.ts --desde=20260802 \
+ *   tsx scripts/audit/check-migrations-allowlist.ts --desde=20260802200000 \
  *     --allowlist=scripts/audit/allowlist-governadores-ac.json
+ *
+ * ATENÇÃO AO `--desde`: ele é comparação de PREFIXO do nome do arquivo, não data.
+ * Cada recorte precisa da própria janela, começando no timestamp da primeira
+ * migration DELE, porque a allowlist de um recorte reprova legitimamente as
+ * migrations de outro. Dois recortes nasceram em 2026-08-02: os presidenciáveis
+ * em ...120000/130000/140000 e os governadores do AC em ...200000 em diante.
+ * Rodar `--desde=20260802` com a allowlist do AC varre os dois e devolve 18
+ * violações que não são defeito das migrations, e sim janela errada.
  */
 
 import { readFileSync, readdirSync } from "node:fs"
@@ -32,10 +42,23 @@ interface AllowEntry {
   campos: string[]
 }
 
+/**
+ * Escrita permitida em tabela de REFERÊNCIA (sem candidato dono), declarada na
+ * migration com `ref=` em vez de `slug=`. Fica em bloco separado de propósito:
+ * `coorte` governa de quem se pode falar, e correção de referência não pertence
+ * a ninguém da coorte.
+ */
+interface AllowRef {
+  tabela: string
+  ref: string
+  campos: string[]
+}
+
 interface Allowlist {
   coorte: string[]
   fora_por_construcao: { slugs: string[] }
   entries: AllowEntry[]
+  referencias?: AllowRef[]
 }
 
 const ESCRITA = /^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i
@@ -71,6 +94,25 @@ export function violacoesDeAllowlist(writes: PendingWrite[], allow: Allowlist): 
   const contagemPorEntrada = new Map<AllowEntry, number>()
 
   for (const w of writes) {
+    if (w.ref !== undefined) {
+      const entrada = (allow.referencias ?? []).find(
+        (e) => e.tabela === w.tabela && e.ref === w.ref
+      )
+      if (!entrada) {
+        erros.push(
+          `${w.arquivo}:${w.linha}: referência (${w.tabela}, ref=${w.ref}) não está no bloco referencias da allowlist`
+        )
+        continue
+      }
+      const fora = w.campos.filter((c) => !entrada.campos.includes(c))
+      if (fora.length) {
+        erros.push(
+          `${w.arquivo}:${w.linha}: campos fora da allowlist para ${w.tabela}/ref=${w.ref}: ${fora.join(", ")}`
+        )
+      }
+      continue
+    }
+
     if (!allow.coorte.includes(w.slug)) {
       erros.push(`${w.arquivo}:${w.linha}: slug ${w.slug} está fora da coorte da allowlist`)
       continue
@@ -164,7 +206,7 @@ function main(): void {
   )
   for (const w of writes) {
     console.error(
-      `  OK ${w.tabela}/${w.slug}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
+      `  OK ${w.tabela}/${w.slug || `ref=${w.ref}`}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
     )
   }
 
