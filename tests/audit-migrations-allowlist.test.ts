@@ -88,3 +88,40 @@ FROM public.candidatos c WHERE c.slug = 'fulano-de-tal';
   assert.equal(erros.length, 1)
   assert.match(erros[0], /fora da coorte/)
 })
+
+const LOTE_SQL = `-- @write tabela=pontos_atencao ref=familia-sem-mandato-eletivo campos=despublicacao_motivo,despublicado_em
+UPDATE public.pontos_atencao
+   SET despublicacao_motivo = 'familia-sem-mandato-eletivo: claim que o proprio banco contradiz.',
+       despublicado_em = now()
+ WHERE id IN ('367f4442-4146-4be0-b20a-30e89bc27337')
+   AND visivel = false;
+`
+
+test("ref que abre um literal maior conta como mencionada no statement", () => {
+  // Escrita em lote rotula a propria linha: o motivo gravado COMECA com a ref e
+  // continua com a explicacao, entao o literal exato `'<ref>'` nunca aparece.
+  // Antes desta forma, uma escrita corretamente declarada era rejeitada, e a
+  // saida do gate empurrava para afrouxar a anotacao.
+  const writes = parsePendingWrites(LOTE_SQL, "limpeza.sql")
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].ref, "familia-sem-mandato-eletivo")
+  assert.deepEqual(writes[0].campos, ["despublicacao_motivo", "despublicado_em"])
+})
+
+test("a forma frouxa nao acredita em anotacao que o SQL nao sustenta", () => {
+  // O identificador continua tendo que aparecer literal: trocar o rotulo dentro
+  // do SQL volta a ser erro, senao o afrouxamento viraria um buraco no gate.
+  const mentiroso = LOTE_SQL.replace("'familia-sem-mandato-eletivo:", "'outra-familia:")
+  assert.throws(() => parsePendingWrites(mentiroso, "limpeza.sql"), /não menciona esse ref/)
+})
+
+test("ref mencionada so em comentario nao conta como statement", () => {
+  // Comentario nao e escrita: o gate le o statement, nao a prosa em volta dele.
+  const soComentario = `-- @write tabela=pontos_atencao ref=familia-sem-mandato-eletivo campos=despublicacao_motivo
+-- contexto: 'familia-sem-mandato-eletivo: explicacao que vive so no comentario'
+UPDATE public.pontos_atencao
+   SET despublicacao_motivo = 'outra-coisa'
+ WHERE visivel = false;
+`
+  assert.throws(() => parsePendingWrites(soComentario, "limpeza.sql"), /não menciona esse ref/)
+})
