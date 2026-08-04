@@ -159,6 +159,13 @@ export default function PrivacidadePage() {
             <li>Hashes técnicos de tokens de verificação e gestão</li>
             <li>Lista de fichas acompanhadas e histórico básico de envio dos digests</li>
           </Ul>
+          <P>
+            Também registramos eventos operacionais de uso do site. Cada evento guarda um hash
+            salgado do endereço de IP, que existe apenas como limite anti-abuso das rotas públicas.
+            O IP em claro nunca é armazenado, e o hash é separado por rota, de modo que o valor
+            gravado não identifica a pessoa nem permite ligar o mesmo visitante entre superfícies
+            diferentes. O detalhamento está na seção 10 e o prazo de descarte, na seção 06.
+          </P>
         </div>
       </section>
 
@@ -413,8 +420,12 @@ export default function PrivacidadePage() {
             <li>
               <strong>Eventos operacionais:</strong> registramos interações mínimas para medir
               uso do produto, como clique em candidato, início de comparação, conclusão do quiz,
-              clique em fonte externa e busca sem resultado. Esses eventos usam apenas contagens,
-              tipo de superfície e domínio da fonte externa. Eles <strong>não incluem</strong>{" "}
+              clique em fonte externa e busca sem resultado. Cada evento guarda contagens, tipo de
+              superfície, domínio da fonte externa e um hash salgado do endereço de IP, usado
+              exclusivamente como limite anti-abuso da rota. O IP em claro nunca é armazenado, o
+              hash é separado por rota para que o mesmo visitante não seja correlacionável entre
+              superfícies, e esses registros são apagados após 90 dias, conforme a seção 06. Os
+              eventos <strong>não incluem</strong>{" "}
               termo digitado, URL completa, nome do candidato, slug, email, token ou resposta do quiz.
             </li>
             <li>
