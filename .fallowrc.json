@@ -9,15 +9,7 @@
   "ignorePatterns": [
     "tests/**"
   ],
-  "ignoreExports": [
-    {
-      "file": "scripts/lib/historico-manual-fix-contract.ts",
-      "exports": [
-        "SENSITIVE_MAJORITARIAN_CANDIDATURA_CARGOS",
-        "hasCandidaturaMarker"
-      ]
-    }
-  ],
+  "ignoreExports": [],
   "rules": {
     "test-only-dependencies": "off"
   }
