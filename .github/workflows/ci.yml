@@ -63,6 +63,14 @@ jobs:
       - name: Test
         run: npm test
 
+      # Cobertura (c8) com os thresholds do c8.config.json, que existiam mas
+      # nunca eram executados em lugar nenhum. Não bloqueante na véspera do
+      # lançamento: reporta queda de cobertura sem derrubar o verify.
+      # Decisão 2026-08-04; avaliar promover a bloqueante depois do lançamento.
+      - name: Cobertura (não bloqueante)
+        continue-on-error: true
+        run: npm run test:coverage:raw
+
       - name: Build
         # Valores de placeholder: o build não acessa o Supabase (as páginas
         # são renderizadas sob demanda). Um fork usa os próprios valores.
