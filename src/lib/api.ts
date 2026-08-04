@@ -1,7 +1,6 @@
 import "server-only"
 import { cache } from "react"
 import { unstable_cache, unstable_noStore as noStore } from "next/cache"
-import { headers } from "next/headers"
 import { collectQuizVotacaoTitulos, QUIZ_PERGUNTAS } from "@/data/quiz/perguntas"
 import {
   buildFinanciamentoContexto,
@@ -1291,24 +1290,23 @@ export async function getCandidatoBySlugResource(
     return getCandidatoBySlugResourceUncached(slug)
   }
 
-  const cacheBypass = process.env.PF_RELEASE_VERIFY_CACHE_BYPASS?.trim()
-  /** Em produção na Vercel, ler `headers()` em toda ficha torna a rota dinâmica; o bypass fica desligado salvo opt-in explícito. */
-  const allowCacheBypass =
-    Boolean(cacheBypass) &&
-    (process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION === "1" ||
-      process.env.VERCEL_ENV !== "production")
-  if (allowCacheBypass) {
-    try {
-      const h = await headers()
-      const bypassHeader = h.get("x-pf-release-verify-cache-bypass")
-      if (bypassHeader === cacheBypass) {
-        noStore()
-        return getCandidatoBySlugResourceUncached(slug)
-      }
-    } catch {
-      // Fora de request Next (ou contexto estatico): segue o caminho em cache.
-    }
-  }
+  // O bypass por header `x-pf-release-verify-cache-bypass` foi REMOVIDO daqui.
+  //
+  // Ele lia `headers()` a cada ficha sempre que `PF_RELEASE_VERIFY_CACHE_BYPASS`
+  // e `PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION` estavam setadas, e as
+  // duas estão setadas no ambiente de produção. Ler headers em runtime numa rota
+  // estática dispara `app-static-to-dynamic-error`, ou seja HTTP 500. Foi o que
+  // derrubou todas as fichas em 03/08 (PR #70, revertido em `c0ef9a7`). Enquanto
+  // esta leitura existisse, `/candidato/[slug]` NUNCA poderia ser cacheada, e ela
+  // é a rota que um pico de tráfego mais concentra.
+  //
+  // A capacidade que o bypass dava (obter uma ficha fresca sob demanda) não se
+  // perdeu, mudou de porta: `POST /api/revalidate` com a tag
+  // `public-candidato-ficha` agora expira de imediato (ver o comentário lá sobre
+  // a omissão deliberada do profile), então revalidar e requisitar devolve
+  // conteúdo fresco de verdade. Antes disso não devolvia: com profile `"max"` a
+  // primeira requisição após o revalidate ainda servia a versão antiga, o que
+  // tornava aquele caminho inútil como ferramenta de verificação.
   try {
     return await getCachedCandidatoBySlugResource(slug)
   } catch {

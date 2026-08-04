@@ -7,17 +7,37 @@ import { buildCandidateMetadataDescription } from "@/lib/ui-labels"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
 import { CandidatoFichaView } from "./CandidatoFichaView"
 
-// Bloco 7 do review 2026-04-24: a rota preserva cache nos recursos da ficha,
-// mas a página em si precisa ser dinâmica porque o RootLayout lê `headers()`
-// para CSP nonce. Pre-render on demand aqui dispara DYNAMIC_SERVER_USAGE em
-// produção; o cache de dados segue em src/lib/api.ts via unstable_cache.
-// `searchParams.tab` deixou de ser lido no servidor (o que tornava a rota
-// dinâmica em Next 15); agora a aba inicial vinda de `?tab=` é resolvida
-// no client por `CandidatoProfile`.
-// O caminho de bypass do release-verify (`PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION`
-// + header `x-pf-release-verify-cache-bypass`) continua transformando o request em
-// no-store so quando ativado, sem afetar o build.
-export const dynamic = "force-dynamic"
+// Esta rota foi `force-dynamic` por duas razões, e as duas caíram.
+//
+// A primeira era o RootLayout lendo `headers()` para o nonce de CSP, o que
+// tornava TODA página do site dinâmica. Resolvido no PR #71: o nonce saiu do
+// middleware e o layout não lê mais headers.
+//
+// A segunda era `getCandidatoBySlugResource` lendo `headers()` no bypass de
+// release-verify, com as duas env vars ligadas em produção. Isso derrubou todas
+// as fichas com 500 quando a rota virou estática (PR #70, revertido em
+// `c0ef9a7`). O bypass foi removido; ficha fresca sob demanda agora se obtém
+// com `POST /api/revalidate`, que passou a expirar de imediato.
+//
+// `searchParams.tab` não é lido no servidor; a aba inicial vinda de `?tab=` é
+// resolvida no client por `CandidatoProfile`.
+export const revalidate = 3600
+
+/**
+ * Medido nesta sessão: sem `generateStaticParams` o Next 16 mantém a rota
+ * dinâmica e serve `private, no-store` mesmo com o `revalidate` acima. Ou seja,
+ * este export não é enfeite, é ele que torna a ficha passível de cache.
+ *
+ * A lista é PROPOSITALMENTE vazia. Gerar as 253 fichas no build custaria ~13
+ * queries cada (`fetchCandidatoCompleto`), mais de 3 mil queries por deploy
+ * contra a cota de egress do plano Free do Supabase, e ameaçaria o teto de 180s
+ * de `staticPageGenerationTimeout`. Com a lista vazia e `dynamicParams` no
+ * default, cada ficha é gerada na primeira visita e servida do cache pela hora
+ * seguinte: 1 render por ficha por hora em vez de 1 render por visita.
+ */
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
+  return []
+}
 
 export async function generateMetadata({
   params,

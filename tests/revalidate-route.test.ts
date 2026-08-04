@@ -321,13 +321,38 @@ describe("revalidate route contract", () => {
     assert.match(src, /status:\s*405/, "GET deve retornar 405")
   })
 
-  it("rota injeta revalidateTag de next/cache na chamada POST com profile max (Next 16)", () => {
-    const src = readFileSync(routePath, "utf8")
+  /**
+   * Correcao editorial precisa valer JA na proxima visita.
+   *
+   * `revalidateTag(tag, "max")` marca a entrada como stale: a proxima
+   * requisicao ainda recebe a versao ANTIGA e so a seguinte ve a corrigida.
+   * Num site de checagem isso e inaceitavel, entao o profile e omitido de
+   * proposito para obter expiracao imediata.
+   *
+   * `updateTag(tag)` nao serve aqui: ela LANCA fora de Server Action (o Next
+   * checa `workStore.page.endsWith("/route")` e joga E872) e esta rota e um
+   * Route Handler.
+   */
+  it("POST expira a tag de imediato, sem o profile max", () => {
+    const raw = readFileSync(routePath, "utf8")
+    // Assercao negativa tem que olhar o CODIGO, nao o comentario que explica
+    // por que `"max"` foi abandonado.
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")
     assert.match(src, /import\s*\{\s*revalidateTag\s*\}\s*from\s*"next\/cache"/)
     assert.match(
       src,
-      /revalidateFn:\s*\(tag\)\s*=>\s*revalidateTag\(tag,\s*"max"\)/,
-      "POST deve passar revalidateTag(tag, \"max\") pra helper executeRevalidateRequest",
+      /revalidateFn:\s*\(tag\)\s*=>\s*revalidateTag\(tag,\s*\{\s*expire:\s*0\s*\}\)/,
+      "POST deve chamar revalidateTag(tag, { expire: 0 }) para expiracao imediata",
+    )
+    assert.doesNotMatch(
+      src,
+      /revalidateTag\(tag,\s*"max"\)/,
+      'profile "max" serve a versao antiga mais uma vez apos a correcao',
+    )
+    assert.doesNotMatch(
+      src,
+      /\bupdateTag\s*\(/,
+      "updateTag lanca E872 fora de Server Action; esta rota e um Route Handler",
     )
   })
 
