@@ -10,8 +10,12 @@ name: Backup do banco
 # do ingest.yml (schedule e dispatch executam só o código da main).
 #
 # Secrets necessários (Settings → Secrets and variables → Actions):
-#   SUPABASE_DB_URL        connection string direta do Postgres (Project
-#                          Settings → Database → Connection string)
+#   SUPABASE_DB_URL        connection string do Postgres. Use a **Session
+#                          Pooler** (Project Settings → Database → Connection
+#                          string → Session pooler): a "Direct connection"
+#                          resolve só IPv6 em projetos novos e os runners do
+#                          GitHub Actions não têm IPv6, o que falha em
+#                          connection timeout
 #   BACKUP_ENCRYPTION_KEY  passphrase forte (ex.: `openssl rand -base64 32`),
 #                          guardada também fora do GitHub: sem ela o backup
 #                          não abre
