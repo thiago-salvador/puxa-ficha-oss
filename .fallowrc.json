@@ -6,9 +6,10 @@
     "shadcn",
     "react-devtools-core"
   ],
-  "ignorePatterns": [
-    "tests/**"
+  "entry": [
+    "tests/visual/**/*.spec.ts"
   ],
+  "ignorePatterns": [],
   "ignoreExports": [],
   "rules": {
     "test-only-dependencies": "off"
