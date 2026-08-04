@@ -11,6 +11,7 @@ import {
   type AlertDigestEmailCandidate,
 } from "@/lib/alerts-shared"
 import { logAlertsApiExit, logAlertsEvent } from "@/lib/alerts-log"
+import { resolveChainOrigin } from "@/lib/cron-chain-origin"
 import { secretsMatch } from "@/lib/crypto-utils"
 import { sendTransactionalEmail } from "@/lib/email"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
@@ -536,7 +537,10 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
     const hasMore = nextCursor < total
 
     if (hasMore && shouldChain) {
-      const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin)
+      // Origem canonica, nunca req.nextUrl.origin: em producao o cron chega pela
+      // URL *.vercel.app atras do SSO e o fetch encadeado morre num 302 silencioso
+      // (mesmo bug do news/refresh, ver src/lib/cron-chain-origin.ts).
+      const nextUrl = new URL(req.nextUrl.pathname, resolveChainOrigin(req))
       nextUrl.searchParams.set("cursor", String(nextCursor))
       nextUrl.searchParams.set("limit", String(limit))
       nextUrl.searchParams.set("chain", "1")
@@ -544,13 +548,24 @@ export function createSendDigestHandler(deps: SendDigestDeps = defaultSendDigest
 
       deps.afterResponse(async () => {
         try {
-          await deps.fetchImpl(nextUrl.toString(), {
+          const res = await deps.fetchImpl(nextUrl.toString(), {
             method: "POST",
             headers: {
               Authorization: `Bearer ${expectedSecret}`,
             },
             cache: "no-store",
+            // Um redirect aqui e sempre bug (SSO, dominio errado): seguir o 3xx
+            // esconderia a falha de novo.
+            redirect: "manual",
           })
+          if (!res.ok) {
+            deps.logAlertsEvent({
+              route: "send-digest",
+              event: "digest_chain_fetch_failed",
+              level: "error",
+              detail: { nextCursor, status: res.status },
+            })
+          }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message.slice(0, 300) : "unknown"
           deps.logAlertsEvent({
