@@ -233,6 +233,32 @@ describe("middleware route protection", () => {
     assert.equal(response.headers.get("x-middleware-next"), "1")
   })
 
+  it("impõe um teto de tempo no fetch da lista de slugs", async () => {
+    // O `!res.ok` e o catch cobrem erro e status ruim, mas não conexão pendurada.
+    // Sem AbortSignal, uma chamada travada segura /candidato/* (a rota mais quente)
+    // até o limite do runtime.
+    let recebido: RequestInit | undefined
+    globalThis.fetch = async (_input, init) => {
+      recebido = init
+      return slugListResponse(["lula"])
+    }
+
+    await middleware(request("http://localhost/candidato/lula"))
+
+    assert.ok(recebido?.signal, "o fetch precisa carregar um AbortSignal com teto de tempo")
+    assert.equal(recebido?.signal?.aborted, false)
+  })
+
+  it("mantém fail-open quando o fetch da lista de slugs estoura o teto", async () => {
+    globalThis.fetch = async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError")
+    }
+
+    const response = await middleware(request("http://localhost/candidato/slug-qualquer"))
+
+    assert.equal(response.headers.get("x-middleware-next"), "1")
+  })
+
   it("keeps embed routes public and frameable", async () => {
     const response = await middleware(request("http://localhost/embed/lula"))
 

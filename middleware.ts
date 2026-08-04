@@ -116,8 +116,13 @@ async function isValidCandidatoSlug(request: NextRequest, slug: string): Promise
     //      (`s-maxage=300, stale-while-revalidate=600`), respeitado pelo CDN,
     //      que e quem atende esta chamada;
     //   2. o `export const revalidate = 300` da rota, que governa o ISR dela.
+    // Teto de 1500ms porque este fetch está no caminho de TODA requisição a
+    // /candidato/*: sem ele, uma conexão pendurada segura a rota mais quente do
+    // site até o limite do runtime. O TimeoutError cai no catch abaixo, que já é
+    // fail-open, então o pior caso vira "o page render decide", não indisponibilidade.
     const res = await fetch(url, {
       headers: { "x-middleware-internal": "candidato-slugs" },
+      signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) {
       // Fail-open: se o endpoint interno falhou, deixa o page render decidir.
