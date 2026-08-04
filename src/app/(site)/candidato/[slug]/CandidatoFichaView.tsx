@@ -19,7 +19,6 @@ import {
 } from "@/components/DeferredCandidateClientWidgets"
 import { SocialLinks } from "@/components/SocialLinks"
 import { DataSourceNotice } from "@/components/DataSourceNotice"
-import { DataUnavailableState } from "@/components/DataUnavailableState"
 import { ProfileSourceFooter } from "@/components/ProfileSourceFooter"
 import { JsonLd } from "@/components/JsonLd"
 import {
@@ -58,16 +57,26 @@ export async function CandidatoFichaView({
   const ficha = fichaResource.data
   if (!ficha) {
     if (fichaResource.sourceStatus === "degraded") {
-      return (
-        <div className="min-h-screen bg-background">
-          <div className="mx-auto max-w-7xl px-5 pt-20 md:px-12">
-            <DataUnavailableState
-              title="Ficha temporariamente indisponível"
-              description={fichaResource.sourceMessage ?? undefined}
-            />
-          </div>
-          <Footer />
-        </div>
+      // LANÇAR, e não renderizar um 200 com a página de indisponível.
+      //
+      // Esta rota é servida do cache (`export const revalidate` em page.tsx).
+      // Um 200 renderizado durante uma falha transiente do Supabase ENTRA no
+      // cache e passa a ser servido para todo mundo pela hora seguinte: um
+      // piscar de alguns segundos vira uma ficha quebrada por uma hora. É
+      // exatamente o incidente de 2026-08-02 que o PR #40 corrigiu na camada de
+      // dados, e que reapareceria na camada de HTML assim que a rota deixou de
+      // ser `force-dynamic`.
+      //
+      // Rejeição não é cacheada: o Next não escreve entrada de ISR para um
+      // render que lançou. O `error.tsx` deste segmento cobre a UX, com uma
+      // mensagem equivalente e um botão "Tentar novamente" que refaz o render,
+      // e por ser error boundary ele responde por requisição, sempre fresco.
+      //
+      // Mesmo princípio de `requireLiveResourceForCache` em src/lib/api.ts:
+      // degradado nunca pode virar estado persistente.
+      throw new Error(
+        fichaResource.sourceMessage ??
+          `Ficha temporariamente indisponível: leitura degradada de ${slug}`,
       )
     }
     notFound()

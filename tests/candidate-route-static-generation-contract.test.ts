@@ -67,6 +67,61 @@ describe("candidate dynamic route build contract", () => {
     assert.doesNotMatch(api, /x-pf-release-verify-cache-bypass/)
   })
 
+  /**
+   * Segundo gatilho do MESMO erro, e o que passou batido na primeira tentativa.
+   *
+   * `noStore()` derruba uma rota estatica igualzinho a `headers()`: dispara
+   * `app-static-to-dynamic-error` e a resposta vira HTTP 500. Havia uma lista de
+   * 6 slugs (`PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS`) que chamava `noStore()` por
+   * slug, e as seis fichas respondiam 500, duas delas de presidenciaveis.
+   *
+   * Com ISR nao existe render sem cache por slug na mesma rota: `noStore()` no
+   * caminho de dados da ficha e sempre bug, nunca escolha.
+   */
+  it("o caminho de dados da ficha nao chama noStore() em runtime", () => {
+    const api = stripComments(readFileSync(join(root, "src/lib/api.ts"), "utf8"))
+    assert.doesNotMatch(api, /\bnoStore\s*\(\s*\)/)
+    assert.doesNotMatch(api, /unstable_noStore/)
+    assert.doesNotMatch(api, /PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS/)
+  })
+
+  /**
+   * Render degradado NAO pode virar 200 numa rota cacheada.
+   *
+   * `CandidatoFichaView` devolvia `DataUnavailableState` com status 200 quando o
+   * recurso vinha degradado. Enquanto a rota era `force-dynamic` isso se
+   * resolvia sozinho na requisicao seguinte; cacheada, aquele 200 e servido para
+   * todo mundo pela hora seguinte, que e o incidente de 2026-08-02 (PR #40)
+   * reaparecendo na camada de HTML.
+   *
+   * Rejeicao nao e cacheada, entao o caminho degradado tem que LANCAR e deixar o
+   * `error.tsx` do segmento responder.
+   */
+  it("ficha degradada lanca em vez de renderizar 200 cacheavel", () => {
+    const view = stripComments(
+      readFileSync(join(root, "src/app/(site)/candidato/[slug]/CandidatoFichaView.tsx"), "utf8"),
+    )
+    assert.match(
+      view,
+      /sourceStatus\s*===\s*"degraded"\)\s*\{\s*throw new Error\(/,
+      "o ramo degradado precisa lancar",
+    )
+    assert.doesNotMatch(
+      view,
+      /<DataUnavailableState/,
+      "renderizar DataUnavailableState aqui devolve 200 e o 200 entra no cache",
+    )
+  })
+
+  it("o segmento da ficha tem error.tsx para cobrir o throw", () => {
+    const errorBoundary = readFileSync(
+      join(root, "src/app/(site)/candidato/[slug]/error.tsx"),
+      "utf8",
+    )
+    assert.match(errorBoundary, /"use client"/)
+    assert.match(errorBoundary, /reset/, "precisa oferecer nova tentativa ao leitor")
+  })
+
   it("/api/candidato-slugs remains the public full-slug inventory", () => {
     const apiRoute = readFileSync(join(root, "src/app/api/candidato-slugs/route.ts"), "utf8")
     assert.match(apiRoute, /getCandidatoSlugStaticParams/)

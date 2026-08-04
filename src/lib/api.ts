@@ -1,6 +1,6 @@
 import "server-only"
 import { cache } from "react"
-import { unstable_cache, unstable_noStore as noStore } from "next/cache"
+import { unstable_cache } from "next/cache"
 import { collectQuizVotacaoTitulos, QUIZ_PERGUNTAS } from "@/data/quiz/perguntas"
 import {
   buildFinanciamentoContexto,
@@ -1273,23 +1273,28 @@ async function getCandidatoBySlugFromRelationResource(
   return liveResource(ficha)
 }
 
-const PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS = new Set([
-  "augusto-cury",
-  "cabo-daciolo",
-  "edmilson-costa",
-  "marcelo-brigadeiro",
-  "natasha-slhessarenko",
-  "renan-santos",
-])
+// `PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS` foi REMOVIDA daqui.
+//
+// Era um conjunto de 6 slugs (augusto-cury, cabo-daciolo, edmilson-costa,
+// marcelo-brigadeiro, natasha-slhessarenko, renan-santos) que chamavam
+// `noStore()` para nunca serem cacheados. Com a rota servida do cache, uma
+// chamada a `noStore()` em runtime dispara `app-static-to-dynamic-error`: as
+// seis fichas respondiam HTTP 500, e duas delas sao presidenciaveis. Medido
+// antes desta remocao, no build desta branch.
+//
+// Com ISR nao existe render sem cache por slug na mesma rota: ou a chamada sai,
+// ou a ficha inteira volta a ser dinamica. O frescor daquelas fichas passa a vir
+// de `POST /api/revalidate` com a tag `public-candidato-ficha`, que neste mesmo
+// PR passou a expirar de imediato. O proprio doc daquela rota ja a descreve como
+// o caminho para "apply factual, edicao manual".
+//
+// Diferenca pratica assumida: edicao feita direto no banco, sem chamar o
+// revalidate, leva ate 1h para aparecer nessas fichas, como ja acontece com
+// todas as outras.
 
 export async function getCandidatoBySlugResource(
   slug: string
 ): Promise<DataResource<FichaCandidato | null>> {
-  if (PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS.has(slug)) {
-    noStore()
-    return getCandidatoBySlugResourceUncached(slug)
-  }
-
   // O bypass por header `x-pf-release-verify-cache-bypass` foi REMOVIDO daqui.
   //
   // Ele lia `headers()` a cada ficha sempre que `PF_RELEASE_VERIFY_CACHE_BYPASS`
