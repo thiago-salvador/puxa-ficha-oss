@@ -7,14 +7,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let candidatoUrls: MetadataRoute.Sitemap = []
   try {
     const candidatos = (await getCandidatosResource()).data
-    candidatoUrls = candidatos.map((c) => {
+    candidatoUrls = candidatos.flatMap((c) => {
       const lastModified = parseMetadataDate(c.ultima_atualizacao) ?? new Date()
-      return {
-        url: `https://puxaficha.com.br/candidato/${c.slug}`,
-        lastModified,
-        changeFrequency: "weekly" as const,
-        priority: 0.8,
-      }
+      return [
+        {
+          url: `https://puxaficha.com.br/candidato/${c.slug}`,
+          lastModified,
+          changeFrequency: "weekly" as const,
+          priority: 0.8,
+        },
+        {
+          // A linha do tempo tem canonical e OG image próprios, então merece
+          // entrada própria no sitemap, com prioridade menor que a ficha.
+          url: `https://puxaficha.com.br/candidato/${c.slug}/timeline`,
+          lastModified,
+          changeFrequency: "weekly" as const,
+          priority: 0.5,
+        },
+      ]
     })
   } catch {
     // Supabase indisponível: retorna sitemap estático sem candidatos
