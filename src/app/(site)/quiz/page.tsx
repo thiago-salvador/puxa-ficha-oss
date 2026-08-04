@@ -1,8 +1,10 @@
 import type { Metadata } from "next"
 import Image from "next/image"
+import { Suspense } from "react"
 import { Footer } from "@/components/Footer"
 import { SectionDivider } from "@/components/SectionHeader"
 import { QuizLanding } from "@/components/quiz/QuizLanding"
+import { QuizLinkExpiradoAviso } from "@/components/quiz/QuizLinkExpiradoAviso"
 import { buildAbsoluteUrl, buildTwitterMetadata } from "@/lib/metadata"
 
 const title = "Quem me representa? | Puxa Ficha"
@@ -66,6 +68,13 @@ export default function QuizPage() {
       <div className="pt-8 sm:pt-12">
         <SectionDivider />
       </div>
+
+      {/* Só aparece para quem caiu aqui vindo de um link curto de resultado que
+          já não resolve. Suspense com fallback nulo para o resto da landing
+          seguir no HTML estático. */}
+      <Suspense fallback={null}>
+        <QuizLinkExpiradoAviso />
+      </Suspense>
 
       <QuizLanding />
       <Footer />

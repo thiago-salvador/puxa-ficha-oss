@@ -26,14 +26,14 @@ export async function GET(
   const qs = await resolveShortTokenForRoute(token)
 
   if (!qs) {
-    return new NextResponse("Link de resultado inválido ou expirado.", {
-      status: 404,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-        "x-robots-tag": "noindex, nofollow",
-      },
-    })
+    // Token inválido ou expirado devolvia texto cru em 404, que é um beco sem
+    // saída para quem clicou num link compartilhado. Agora volta para a landing
+    // do quiz, que explica o que houve e oferece refazer o quiz.
+    const landing = new URL("/quiz?erro=link-expirado", request.nextUrl.origin)
+    const expirado = NextResponse.redirect(landing, 307)
+    expirado.headers.set("cache-control", "no-store")
+    expirado.headers.set("x-robots-tag", "noindex, nofollow")
+    return expirado
   }
 
   const target = new URL(`/quiz/resultado?${qs}`, request.nextUrl.origin)

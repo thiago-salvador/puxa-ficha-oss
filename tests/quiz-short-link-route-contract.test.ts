@@ -11,12 +11,17 @@ const pagePath = join(dirPath, "page.tsx")
 
 /**
  * Contrato /quiz/r/[token]:
- * - token inválido/ausente → HTTP 404 real (nunca 200 com "404 surface")
+ * - token inválido/expirado → HTTP 307 redirect para /quiz?erro=link-expirado,
+ *   com cache-control no-store e x-robots-tag noindex (G6-08: o 404 de texto
+ *   cru era um beco sem saída para quem clicava em link compartilhado; a troca
+ *   pelo redirect foi decisão consciente do master review, e o noindex evita
+ *   que a landing com erro vire soft-404 indexável)
  * - token válido → HTTP 307 redirect para /quiz/resultado
  *
  * Regressão passada: usar notFound() em page.tsx fazia o App Router renderizar
- * a boundary de not-found com HTTP 200, cegando monitoramento externo e
- * quebrando o contrato de short-link inválido.
+ * a boundary de not-found com HTTP 200, cegando monitoramento externo. O
+ * contrato segue proibindo notFound() e page.tsx neste segmento: toda resposta
+ * é HTTP explícito emitido pelo route.ts.
  */
 describe("/quiz/r/[token] route contract", () => {
   it("não existe page.tsx neste segmento (contrato HTTP via route.ts)", () => {
@@ -31,8 +36,11 @@ describe("/quiz/r/[token] route contract", () => {
 
   const src = existsSync(routePath) ? readFileSync(routePath, "utf8") : ""
 
-  it("retorna HTTP 404 real quando token não resolve", () => {
-    assert.match(src, /status:\s*404/, "deve emitir status 404 explícito")
+  it("redireciona para a landing do quiz quando token não resolve", () => {
+    assert.match(src, /\/quiz\?erro=link-expirado/, "token inválido deve voltar para /quiz?erro=link-expirado")
+    assert.match(src, /redirect\s*\([^)]*,\s*307\s*\)/, "redirect de token inválido deve ser 307 explícito")
+    assert.match(src, /no-store/, "resposta de token inválido deve levar cache-control no-store")
+    assert.match(src, /noindex/, "resposta de token inválido deve levar x-robots-tag noindex")
     assert.doesNotMatch(src, /\bnotFound\s*\(/, "não pode depender de notFound() (boundary vira HTTP 200)")
   })
 
