@@ -297,6 +297,11 @@ export default function PrivacidadePage() {
             titular apagar o cadastro na área de gestão. Logs mínimos de envio podem permanecer
             pelo tempo necessário para prevenção de abuso, auditoria e resolução de falhas.
           </P>
+          <P>
+            Eventos operacionais de uso do site, que guardam apenas um código derivado do endereço
+            de IP para conter abuso e nunca o IP em si, são apagados após 90 dias. O descarte roda
+            automaticamente, uma vez por dia.
+          </P>
         </div>
       </section>
 
