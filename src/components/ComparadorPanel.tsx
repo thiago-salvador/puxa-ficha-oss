@@ -246,9 +246,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                 type="button"
                 onClick={() => toggle(candidato.id)}
                 aria-pressed={selected}
-                aria-label={selected
+                aria-label={`${selected
                   ? `Remover ${candidato.nome_urna} da comparação`
-                  : `Adicionar ${candidato.nome_urna} à comparação`}
+                  : `Adicionar ${candidato.nome_urna} à comparação`}. ${
+                  candidato.idade ? `${candidato.idade} anos, ` : ""
+                }${candidato.total_processos} processos, ${candidato.total_votos_mapeados} votações mapeadas`}
                 className={`flex w-full items-center gap-3 rounded-[12px] border px-4 py-3.5 text-left transition-all ${
                   selected
                     ? "border-foreground bg-foreground/[0.03]"
@@ -286,11 +288,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                 </div>
                 <div
                   aria-hidden="true"
-                  className="flex flex-wrap gap-2 text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
+                  className="flex shrink-0 flex-col items-end gap-0.5 text-right text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
                 >
-                  {candidato.idade && <span>{candidato.idade}</span>}
-                  <span>{candidato.total_processos}p</span>
-                  <span>{candidato.total_votos_mapeados}v</span>
+                  {candidato.idade && <span>{candidato.idade} anos</span>}
+                  <span>{candidato.total_processos} processos</span>
+                  <span>{candidato.total_votos_mapeados} votações</span>
                 </div>
               </button>
             )
