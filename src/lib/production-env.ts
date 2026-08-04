@@ -14,6 +14,30 @@ function isHex32Bytes(value: string): boolean {
 }
 
 /**
+ * Token esperado no header `x-pf-release-verify-cache-bypass`, ou `null` quando
+ * o bypass não vale neste ambiente.
+ *
+ * Incidente de 2026-08-03: `PF_RELEASE_VERIFY_CACHE_BYPASS` e
+ * `PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION` ficaram ligadas em
+ * produção por 106 dias. Com as duas setadas, toda ficha lia `headers()` em
+ * runtime; ler header em rota estática dispara `app-static-to-dynamic-error` e
+ * `/candidato/[slug]` passou a responder HTTP 500 em produção.
+ *
+ * Por isso o escape de produção deixou de existir: em `VERCEL_ENV=production` o
+ * bypass é ignorado INDEPENDENTE do opt-in, e a variável de opt-in virou inerte
+ * (a remoção dela no painel da Vercel é higiene, não pré-requisito). Verificação
+ * de release com bypass roda em Preview, que é onde ela sempre deveria ter
+ * rodado.
+ */
+export function resolveReleaseVerifyCacheBypassToken(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (env.VERCEL_ENV === "production") return null
+  const token = env.PF_RELEASE_VERIFY_CACHE_BYPASS?.trim()
+  return token ? token : null
+}
+
+/**
  * Falha rápido no boot do servidor em produção se variáveis críticas faltarem.
  * Não roda em preview/local para não quebrar `next build` sem .env completo.
  */

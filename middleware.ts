@@ -1,5 +1,11 @@
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
+import type { AccessCookieScope } from "@/lib/access-cookie-digest"
+import {
+  accessCookieMatches,
+  constantTimeEqual,
+  deriveAccessCookieValue,
+} from "@/lib/access-cookie-digest"
 import { resolveEstadoUf } from "@/lib/br-uf"
 import { buildContentSecurityPolicy } from "@/lib/content-security-policy"
 import { getRankingDefinitionBySlug } from "@/data/ranking-definitions"
@@ -116,8 +122,13 @@ async function isValidCandidatoSlug(request: NextRequest, slug: string): Promise
     //      (`s-maxage=300, stale-while-revalidate=600`), respeitado pelo CDN,
     //      que e quem atende esta chamada;
     //   2. o `export const revalidate = 300` da rota, que governa o ISR dela.
+    // Teto de 1500ms porque este fetch está no caminho de TODA requisição a
+    // /candidato/*: sem ele, uma conexão pendurada segura a rota mais quente do
+    // site até o limite do runtime. O TimeoutError cai no catch abaixo, que já é
+    // fail-open, então o pior caso vira "o page render decide", não indisponibilidade.
     const res = await fetch(url, {
       headers: { "x-middleware-internal": "candidato-slugs" },
+      signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) {
       // Fail-open: se o endpoint interno falhou, deixa o page render decidir.
@@ -214,41 +225,51 @@ function buildCleanRedirect(request: NextRequest) {
   return NextResponse.redirect(cleanUrl)
 }
 
-/**
- * Comparação constante (runtime-agnóstica, sem node:crypto porque o middleware
- * roda no edge). Evita o timing side-channel do `===` na verificação de token.
- * Percorre até o maior comprimento e acumula diferenças por XOR; vaza igualdade
- * de comprimento, nunca o conteúdo.
- */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (!a || !b) return false
-  let diff = a.length ^ b.length
-  const len = Math.max(a.length, b.length)
-  for (let i = 0; i < len; i++) {
-    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
-  }
-  return diff === 0
-}
-
 function hasBootstrapToken(request: NextRequest, expectedToken: string) {
   const queryToken = request.nextUrl.searchParams.get("token")
   return Boolean(queryToken && constantTimeEqual(queryToken, expectedToken))
 }
 
-function hasCookieToken(request: NextRequest, cookieName: string, expectedToken: string) {
+/**
+ * O cookie guarda a derivação (HMAC do token), nunca o token cru, então quem
+ * copiar o valor do jar não leva o segredo de bootstrap junto.
+ */
+function hasCookieToken(
+  request: NextRequest,
+  cookieName: string,
+  expectedToken: string,
+  scope: AccessCookieScope,
+) {
   const cookieToken = request.cookies.get(cookieName)?.value
-  return Boolean(cookieToken && constantTimeEqual(cookieToken, expectedToken))
+  return accessCookieMatches(cookieToken, expectedToken, scope)
 }
 
-function setAccessCookie(response: NextResponse, name: string, value: string, path: string) {
+async function setAccessCookie(
+  response: NextResponse,
+  name: string,
+  expectedToken: string,
+  scope: AccessCookieScope,
+  path: string,
+) {
   response.cookies.set({
     name,
-    value,
+    value: await deriveAccessCookieValue(expectedToken, scope),
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV !== "development",
     path,
   })
+}
+
+/**
+ * Cookie interno limitado à superfície que fez o bootstrap, em vez de path "/",
+ * que mandava o cookie em toda requisição do site (inclusive nas públicas, que
+ * não têm nada a ver com ele). As duas superfícies compartilham nome e valor
+ * derivado, mudando só o path, então um jar com as duas entradas nunca fica
+ * ambíguo na leitura.
+ */
+function internalCookiePath(pathname: string): string {
+  return pathname.startsWith("/styleguide") ? "/styleguide" : "/internaltest"
 }
 
 function resolvePreviewToken() {
@@ -287,7 +308,7 @@ function resolveInternalToken() {
   return configuredToken || null
 }
 
-function protectInternalRoute(request: NextRequest): NextResponse | Response | null {
+async function protectInternalRoute(request: NextRequest): Promise<NextResponse | Response | null> {
   if (process.env.NODE_ENV === "development") {
     return null
   }
@@ -297,10 +318,12 @@ function protectInternalRoute(request: NextRequest): NextResponse | Response | n
     return notFoundResponse()
   }
 
-  if (hasCookieToken(request, INTERNAL_COOKIE_NAME, expectedToken)) {
+  const cookiePath = internalCookiePath(request.nextUrl.pathname)
+
+  if (await hasCookieToken(request, INTERNAL_COOKIE_NAME, expectedToken, "internal")) {
     if (request.nextUrl.searchParams.has("token")) {
       const response = buildCleanRedirect(request)
-      setAccessCookie(response, INTERNAL_COOKIE_NAME, expectedToken, "/")
+      await setAccessCookie(response, INTERNAL_COOKIE_NAME, expectedToken, "internal", cookiePath)
       return response
     }
 
@@ -312,20 +335,20 @@ function protectInternalRoute(request: NextRequest): NextResponse | Response | n
   }
 
   const response = buildCleanRedirect(request)
-  setAccessCookie(response, INTERNAL_COOKIE_NAME, expectedToken, "/")
+  await setAccessCookie(response, INTERNAL_COOKIE_NAME, expectedToken, "internal", cookiePath)
   return response
 }
 
-function protectPreviewRoute(request: NextRequest): NextResponse | Response | null {
+async function protectPreviewRoute(request: NextRequest): Promise<NextResponse | Response | null> {
   const expectedToken = resolvePreviewToken()
   if (!expectedToken) {
     return notFoundResponse()
   }
 
-  if (hasCookieToken(request, PREVIEW_COOKIE_NAME, expectedToken)) {
+  if (await hasCookieToken(request, PREVIEW_COOKIE_NAME, expectedToken, "preview")) {
     if (request.nextUrl.searchParams.has("token")) {
       const response = buildCleanRedirect(request)
-      setAccessCookie(response, PREVIEW_COOKIE_NAME, expectedToken, "/preview")
+      await setAccessCookie(response, PREVIEW_COOKIE_NAME, expectedToken, "preview", "/preview")
       return response
     }
 
@@ -337,7 +360,7 @@ function protectPreviewRoute(request: NextRequest): NextResponse | Response | nu
   }
 
   const response = buildCleanRedirect(request)
-  setAccessCookie(response, PREVIEW_COOKIE_NAME, expectedToken, "/preview")
+  await setAccessCookie(response, PREVIEW_COOKIE_NAME, expectedToken, "preview", "/preview")
   return response
 }
 
@@ -345,12 +368,12 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   if (pathname.startsWith("/preview/")) {
-    const response = protectPreviewRoute(request)
+    const response = await protectPreviewRoute(request)
     return response ? withContentSecurityPolicy(request, response) : nextWithContentSecurityPolicy(request)
   }
 
   if (pathname.startsWith("/internaltest") || pathname.startsWith("/styleguide")) {
-    const response = protectInternalRoute(request)
+    const response = await protectInternalRoute(request)
     return response ? withContentSecurityPolicy(request, response) : nextWithContentSecurityPolicy(request)
   }
 
