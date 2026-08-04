@@ -32,6 +32,22 @@ test.describe("Acessibilidade automatizada", () => {
       await page.goto(path, { waitUntil: "domcontentloaded" })
       await page.waitForLoadState("networkidle").catch(() => undefined)
 
+      // As animações de entrada (hero-fade, stagger-item, section-reveal) mantêm
+      // opacity 0 durante o delay; o axe roda depois que todas terminam, senão o
+      // H1 ainda invisível dispara page-has-heading-one (falha intermitente do
+      // job de a11y na main em 04/08). Se alguma animação nunca terminar, o
+      // timeout deixa o axe rodar mesmo assim e reportar a violação real.
+      await page
+        .waitForFunction(
+          () =>
+            Array.from(
+              document.querySelectorAll(".hero-fade, .stagger-item, .section-reveal"),
+            ).every((el) => getComputedStyle(el).opacity === "1"),
+          undefined,
+          { timeout: 10_000 },
+        )
+        .catch(() => undefined)
+
       const results = await new AxeBuilder({ page }).analyze()
       const blockingViolations = results.violations.filter((violation) =>
         violation.impact === "moderate" ||
