@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
-import Link from "next/link"
+import Image from "next/image"
 import { Footer } from "@/components/Footer"
+import { SectionDivider } from "@/components/SectionHeader"
 import { QuizLanding } from "@/components/quiz/QuizLanding"
 import { buildAbsoluteUrl, buildTwitterMetadata } from "@/lib/metadata"
 
@@ -34,12 +35,38 @@ export const revalidate = 3600
 
 export default function QuizPage() {
   return (
-    <div className="min-h-screen bg-background pt-16">
-      <header className="border-b border-border px-4 py-4">
-        <Link href="/" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-          Voltar ao início
-        </Link>
-      </header>
+    <div className="min-h-screen bg-background">
+      {/* Hero, mesmo padrão editorial das demais rotas: faixa preta, olho, título
+          em Anton caixa alta e hachura logo abaixo. */}
+      <section className="relative overflow-hidden bg-black">
+        <div className="absolute inset-0 opacity-35" aria-hidden="true">
+          <Image
+            src="/images/comparar-brutalismo.webp"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/40" />
+        <div className="relative mx-auto max-w-7xl px-5 pb-12 pt-28 sm:pb-16 sm:pt-32 md:px-12 lg:pb-20 lg:pt-40">
+          <p className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-white">
+            Quiz
+          </p>
+          <h1
+            className="mt-2 font-heading uppercase leading-[0.85] text-white"
+            style={{ fontSize: "clamp(36px, 8vw, 80px)" }}
+          >
+            Quem me representa?
+          </h1>
+        </div>
+      </section>
+
+      <div className="pt-8 sm:pt-12">
+        <SectionDivider />
+      </div>
+
       <QuizLanding />
       <Footer />
     </div>
