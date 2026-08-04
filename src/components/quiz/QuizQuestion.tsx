@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react"
 import type { QuizPergunta, RespostaLikert } from "@/data/quiz/perguntas"
 import { cn } from "@/lib/utils"
 
@@ -22,13 +22,17 @@ interface QuizQuestionProps {
 
 export function QuizQuestion({ pergunta, initialAnswer, onSubmit, onBack, reducedMotion }: QuizQuestionProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [likert, setLikert] = useState<RespostaLikert | null>(initialAnswer?.valor ?? null)
   const [importante, setImportante] = useState(initialAnswer?.importante ?? false)
+  const [focusIndex, setFocusIndex] = useState<number | null>(null)
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- A new quiz question must restore its persisted answer.
     setLikert(initialAnswer?.valor ?? null)
     setImportante(initialAnswer?.importante ?? false)
+    setFocusIndex(null)
   }, [initialAnswer?.importante, initialAnswer?.valor, pergunta.id])
 
   useEffect(() => {
@@ -48,6 +52,46 @@ export function QuizQuestion({ pergunta, initialAnswer, onSubmit, onBack, reduce
 
   const headingId = `quiz-pergunta-${pergunta.id}`
 
+  const selectedIndex = OPTIONS.findIndex((opt) => opt.value === likert)
+  // Tabulação móvel: só uma opção fica alcançável por Tab, então o grupo inteiro
+  // é uma parada só. Enquanto o foco está dentro do grupo, a parada acompanha a
+  // opção focada, para que Tab sempre saia do grupo em vez de andar de opção em
+  // opção (o foco pode chegar em qualquer opção por clique, por script ou pelo
+  // histórico do navegador, não só na que está marcada). Com o foco fora, a
+  // parada volta para a opção marcada, ou para a primeira quando ainda não há
+  // resposta, que é por onde o teclado deve entrar no grupo.
+  const rovingIndex = focusIndex ?? (selectedIndex >= 0 ? selectedIndex : 0)
+
+  // Navegação por setas no padrão WAI-ARIA para grupo de opções: as setas movem
+  // foco e seleção juntos, e circulam do fim para o começo e vice-versa.
+  function handleOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next: number
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      next = (index + 1) % OPTIONS.length
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      next = (index - 1 + OPTIONS.length) % OPTIONS.length
+    } else {
+      return
+    }
+    event.preventDefault()
+    setLikert(OPTIONS[next].value)
+    setFocusIndex(next)
+    optionRefs.current[next]?.focus()
+  }
+
+  // O foco entrou nesta opção, então ela vira a parada de tabulação do grupo.
+  function handleOptionFocus(index: number) {
+    setFocusIndex(index)
+  }
+
+  // O foco saiu desta opção. Se foi para fora do grupo, a parada de tabulação
+  // volta para a opção marcada. Se foi para outra opção, quem manda é o foco novo.
+  function handleOptionBlur(event: FocusEvent<HTMLButtonElement>) {
+    const destino = event.relatedTarget
+    if (destino && groupRef.current?.contains(destino)) return
+    setFocusIndex(null)
+  }
+
   return (
     <div ref={rootRef} className="space-y-6">
       <h2 id={headingId} className="text-lg font-medium leading-snug text-foreground md:text-xl">
@@ -59,31 +103,38 @@ export function QuizQuestion({ pergunta, initialAnswer, onSubmit, onBack, reduce
           <p className="mt-2 text-muted-foreground">{pergunta.contexto}</p>
         </details>
       ) : null}
-      <ul
+      <div
+        ref={groupRef}
         className="flex flex-col gap-2"
         role="radiogroup"
         aria-labelledby={headingId}
         aria-required="true"
       >
-        {OPTIONS.map((opt) => (
-          <li key={opt.value}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={likert === opt.value}
-              onClick={() => setLikert(opt.value)}
-              className={cn(
-                "flex min-h-11 w-full items-center rounded-lg border px-4 py-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-12",
-                likert === opt.value
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border bg-card hover:border-foreground/40"
-              )}
-            >
-              {opt.label}
-            </button>
-          </li>
+        {OPTIONS.map((opt, index) => (
+          <button
+            key={opt.value}
+            ref={(node) => {
+              optionRefs.current[index] = node
+            }}
+            type="button"
+            role="radio"
+            aria-checked={likert === opt.value}
+            tabIndex={index === rovingIndex ? 0 : -1}
+            onClick={() => setLikert(opt.value)}
+            onKeyDown={(event) => handleOptionKeyDown(event, index)}
+            onFocus={() => handleOptionFocus(index)}
+            onBlur={handleOptionBlur}
+            className={cn(
+              "flex min-h-11 w-full items-center rounded-lg border px-4 py-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-12",
+              likert === opt.value
+                ? "border-foreground bg-foreground text-background"
+                : "border-border bg-card hover:border-foreground/40"
+            )}
+          >
+            {opt.label}
+          </button>
         ))}
-      </ul>
+      </div>
       <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/20 px-3 py-3 text-sm">
         <input
           type="checkbox"

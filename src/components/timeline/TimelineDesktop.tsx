@@ -273,8 +273,9 @@ export function TimelineDesktop({
           <p className="text-[length:var(--text-caption)] font-semibold text-muted-foreground">
             Eixo visível: {Math.round(viewMin)} a {Math.round(viewMax)}
           </p>
+          {/* Sem alfa na cor: o /90 diluía o texto no fundo e derrubava o contraste para 3,89:1. */}
           {extentSpan >= 2 ? (
-            <p className="mt-0.5 text-[length:var(--text-caption)] text-muted-foreground/90">
+            <p className="mt-0.5 text-[length:var(--text-caption)] text-muted-foreground">
               Ctrl ou Cmd + rolagem sobre o gráfico para zoom. Dois cliques no gráfico aproximam cerca de 5 anos
               no ponto. Clique ou arraste no mapa acima para mover a janela.
             </p>

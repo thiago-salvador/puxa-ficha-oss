@@ -16,7 +16,7 @@ import { Footer } from "@/components/Footer"
 import { DataSourceNotice } from "@/components/DataSourceNotice"
 import { PublicDataSourcesNote } from "@/components/PublicDataSourcesNote"
 import { JsonLd } from "@/components/JsonLd"
-import { formatBRL } from "@/lib/utils"
+import { formatCompact } from "@/lib/utils"
 
 // Inerte hoje: o `await headers()` do nonce de CSP no RootLayout torna a
 // árvore inteira dinâmica e nenhuma rota pública gera ISR (medido em produção
@@ -138,9 +138,7 @@ export default async function Home() {
             {totalPatrimonio > 0 && (
               <div className="hero-fade" style={{ animationDelay: "0.5s" }}>
                 <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
-                  {totalPatrimonio >= 1_000_000
-                    ? `R$ ${(totalPatrimonio / 1_000_000).toFixed(0)}M`
-                    : formatBRL(totalPatrimonio)}
+                  {formatCompact(totalPatrimonio)}
                 </p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
                   patrimônio declarado
@@ -191,14 +189,14 @@ export default async function Home() {
 
       {/* Section header */}
       <section className="mx-auto max-w-7xl px-5 pt-12 sm:pt-16 md:px-12 lg:pt-20">
-        <div className="section-reveal flex items-end justify-between">
+        <div className="section-reveal flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
           <div>
             <p className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-foreground">
               01 Presidência
             </p>
             <h2
               className="mt-1 font-heading uppercase leading-[0.95] text-foreground"
-              style={{ fontSize: "clamp(28px, 5vw, 48px)" }}
+              style={{ fontSize: "clamp(22px, 5vw, 48px)" }}
             >
               Presidenciáveis
             </h2>
@@ -206,7 +204,7 @@ export default async function Home() {
           <Link
             href="/governadores"
             className="font-heading uppercase leading-[0.95] text-muted-foreground transition-colors hover:text-foreground"
-            style={{ fontSize: "clamp(28px, 5vw, 48px)" }}
+            style={{ fontSize: "clamp(22px, 5vw, 48px)" }}
           >
             Governadores
           </Link>

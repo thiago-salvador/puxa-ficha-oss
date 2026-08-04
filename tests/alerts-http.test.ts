@@ -1311,6 +1311,143 @@ describe("alerts HTTP routes", () => {
       assert.equal(chainedRequests[0]?.authorization, `Bearer ${CRON_SECRET}`)
     })
 
+    it("chains against the canonical origin in production even when invoked via *.vercel.app", async () => {
+      // Mesmo bug do news/refresh (incidente 2026-08-04): em producao o cron
+      // chega pela URL do deployment atras do Vercel SSO, e encadear contra ela
+      // morre num 302 silencioso. O chain deve mirar a origem canonica.
+      const savedVercelEnv = process.env.VERCEL_ENV
+      const savedEncryptionKey = process.env.PF_ALERTS_TOKEN_ENCRYPTION_KEY
+      process.env.VERCEL_ENV = "production"
+      // Com VERCEL_ENV=production o resolver de chave dos tokens exige a env
+      // explicita (32 bytes em hex) em vez do fallback de dev.
+      process.env.PF_ALERTS_TOKEN_ENCRYPTION_KEY = "ab".repeat(32)
+      try {
+        const subscriberOne = seedSubscriber({
+          id: "sub_digest_origin_1",
+          email: "primeiro-origin@example.com",
+          manageToken: "ManageTokenOrigin001",
+          verified: true,
+          verified_at: "2026-04-09T10:00:00.000Z",
+          verify_token_hash: null,
+        })
+        const subscriberTwo = seedSubscriber({
+          id: "sub_digest_origin_2",
+          email: "segundo-origin@example.com",
+          manageToken: "ManageTokenOrigin002",
+          verified: true,
+          verified_at: "2026-04-09T10:00:00.000Z",
+          verify_token_hash: null,
+        })
+        const fixture = new AlertsRouteFixture({
+          candidatos_publico: [seedCandidate()],
+          alert_subscribers: [subscriberOne, subscriberTwo],
+          alert_subscriptions: [
+            { id: "asub_origin_1", subscriber_id: subscriberOne.id, candidato_id: "cand_lula" },
+            { id: "asub_origin_2", subscriber_id: subscriberTwo.id, candidato_id: "cand_lula" },
+          ],
+          candidate_changes: [
+            {
+              id: "chg_origin_1",
+              candidato_id: "cand_lula",
+              titulo: "Nova atualização editorial",
+              descricao: "Texto curto da mudança.",
+              created_at: "2026-04-10T12:00:00.000Z",
+            },
+          ],
+        })
+        const chainedRequests: string[] = []
+        const afterCallbacks: Array<() => Promise<void> | void> = []
+        const handler = createSendDigestHandler({
+          ...createDeps(fixture),
+          afterResponse: (callback: () => Promise<void> | void) => {
+            afterCallbacks.push(callback)
+          },
+          fetchImpl: async (input: string | URL | Request) => {
+            chainedRequests.push(String(input))
+            return new Response(JSON.stringify({ ok: true }), { status: 200 })
+          },
+        })
+
+        const response = await handler(
+          new NextRequest(
+            "https://puxa-ficha-abc123-thiagosalvador.vercel.app/api/alerts/send-digest?limit=1",
+            { method: "POST", headers: { authorization: `Bearer ${CRON_SECRET}` } },
+          ),
+        )
+
+        assert.equal(response.status, 200)
+        assert.equal(afterCallbacks.length, 1)
+        await afterCallbacks[0]?.()
+
+        assert.equal(chainedRequests.length, 1)
+        const chainedUrl = new URL(chainedRequests[0] ?? "")
+        assert.equal(chainedUrl.origin, "https://puxaficha.com.br")
+        assert.equal(chainedUrl.pathname, "/api/alerts/send-digest")
+        assert.equal(chainedUrl.searchParams.get("cursor"), "1")
+      } finally {
+        if (savedVercelEnv === undefined) delete process.env.VERCEL_ENV
+        else process.env.VERCEL_ENV = savedVercelEnv
+        if (savedEncryptionKey === undefined) delete process.env.PF_ALERTS_TOKEN_ENCRYPTION_KEY
+        else process.env.PF_ALERTS_TOKEN_ENCRYPTION_KEY = savedEncryptionKey
+      }
+    })
+
+    it("logs digest_chain_fetch_failed when the chained fetch answers non-2xx (e.g. SSO 302)", async () => {
+      const subscriberOne = seedSubscriber({
+        id: "sub_digest_302_1",
+        email: "primeiro-302@example.com",
+        manageToken: "ManageTokenRedir001",
+        verified: true,
+        verified_at: "2026-04-09T10:00:00.000Z",
+        verify_token_hash: null,
+      })
+      const subscriberTwo = seedSubscriber({
+        id: "sub_digest_302_2",
+        email: "segundo-302@example.com",
+        manageToken: "ManageTokenRedir002",
+        verified: true,
+        verified_at: "2026-04-09T10:00:00.000Z",
+        verify_token_hash: null,
+      })
+      const fixture = new AlertsRouteFixture({
+        candidatos_publico: [seedCandidate()],
+        alert_subscribers: [subscriberOne, subscriberTwo],
+        alert_subscriptions: [
+          { id: "asub_302_1", subscriber_id: subscriberOne.id, candidato_id: "cand_lula" },
+          { id: "asub_302_2", subscriber_id: subscriberTwo.id, candidato_id: "cand_lula" },
+        ],
+        candidate_changes: [
+          {
+            id: "chg_302_1",
+            candidato_id: "cand_lula",
+            titulo: "Nova atualização editorial",
+            descricao: "Texto curto da mudança.",
+            created_at: "2026-04-10T12:00:00.000Z",
+          },
+        ],
+      })
+      const afterCallbacks: Array<() => Promise<void> | void> = []
+      const handler = createSendDigestHandler({
+        ...createDeps(fixture),
+        afterResponse: (callback: () => Promise<void> | void) => {
+          afterCallbacks.push(callback)
+        },
+        fetchImpl: async () =>
+          new Response(null, { status: 302, headers: { Location: "https://vercel.com/sso-api" } }),
+      })
+
+      const response = await handler(buildDigestRequest(fixture, "?limit=1"))
+      assert.equal(response.status, 200)
+      assert.equal(afterCallbacks.length, 1)
+      await afterCallbacks[0]?.()
+
+      const failure = fixture.events.find((event) => event.event === "digest_chain_fetch_failed")
+      assert.ok(failure, "esperava evento digest_chain_fetch_failed para resposta 302")
+      assert.equal(failure?.detail?.status, 302)
+      assert.equal(failure?.detail?.nextCursor, 1)
+      assert.equal(failure?.level, "error")
+    })
+
     it("does not chain past the configured digest depth ceiling", async () => {
       const subscriberOne = seedSubscriber({
         id: "sub_digest_depth_1",

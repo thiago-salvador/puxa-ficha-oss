@@ -14,6 +14,7 @@ import {
   getAppSupabaseUrl,
 } from "./supabase"
 import { isSupabaseNoRowError } from "./supabase-errors"
+import { resolveReleaseVerifyCacheBypassToken } from "./production-env"
 import { normalizeVotoFromApi } from "@/lib/quiz-scoring"
 import type {
   QuizAlignmentDataset,
@@ -1291,13 +1292,13 @@ export async function getCandidatoBySlugResource(
     return getCandidatoBySlugResourceUncached(slug)
   }
 
-  const cacheBypass = process.env.PF_RELEASE_VERIFY_CACHE_BYPASS?.trim()
-  /** Em produção na Vercel, ler `headers()` em toda ficha torna a rota dinâmica; o bypass fica desligado salvo opt-in explícito. */
-  const allowCacheBypass =
-    Boolean(cacheBypass) &&
-    (process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION === "1" ||
-      process.env.VERCEL_ENV !== "production")
-  if (allowCacheBypass) {
+  // Ler `headers()` aqui torna a ficha dinâmica em runtime. Em produção isso
+  // dispara `app-static-to-dynamic-error` e devolve HTTP 500: foi a queda de
+  // 2026-08-03, com as duas variáveis do bypass ligadas no painel havia 106
+  // dias. O gate agora mora em `resolveReleaseVerifyCacheBypassToken`, que
+  // devolve `null` em `VERCEL_ENV=production` sem consultar opt-in nenhum.
+  const cacheBypass = resolveReleaseVerifyCacheBypassToken()
+  if (cacheBypass) {
     try {
       const h = await headers()
       const bypassHeader = h.get("x-pf-release-verify-cache-bypass")
