@@ -3,9 +3,21 @@ import { NextResponse } from "next/server"
 import { findSubscriberByManageToken } from "@/lib/alerts"
 import { setAlertManageTokenCookie } from "@/lib/alerts-session"
 import { normalizeOpaqueToken } from "@/lib/alerts-shared"
+import { createFixedWindowIpRateLimiter } from "@/lib/request-rate-limit"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+// Mesmo motivo do teto em src/app/api/alerts/session/route.ts: cada manage token
+// inventado custa um SELECT com service role em alert_subscribers e ocupa um slot
+// do semáforo do Supabase, degradando a ficha pública junto. As quatro rotas de
+// mutação de alertas ganharam o guard no review de 2026-08-03 e esta ficou de
+// fora, mesmo fazendo a mesma consulta e sendo alcançável por GET simples.
+const acessoRateLimiter = createFixedWindowIpRateLimiter({
+  namespace: "alertas-acesso",
+  max: 120,
+  windowMs: 60_000,
+})
 
 function buildRedirectUrl(req: NextRequest, verifyToken: string | null, hash: string | null): URL {
   const target = verifyToken ? `/alertas/verificar?token=${encodeURIComponent(verifyToken)}` : "/alertas/gerenciar"
@@ -22,6 +34,18 @@ export async function GET(req: NextRequest) {
 
   const response = NextResponse.redirect(buildRedirectUrl(req, verifyToken, hash))
   if (!manageToken) return response
+
+  // O teto fica depois do early-return acima porque link de e-mail sem manage
+  // token não chega no banco: só entra na cota quem vai custar consulta. Ao
+  // estourar, o contrato desta rota (página, não API) pede redirecionar sem
+  // cookie, a mesma degradação para anônimo já usada quando o token não existe,
+  // em vez de devolver 429 em JSON no meio de uma navegação do navegador.
+  try {
+    const decision = acessoRateLimiter.check(req.headers)
+    if (!decision.allowed) return response
+  } catch (error) {
+    console.warn("alertas/acesso rate limit failed open", error)
+  }
 
   // FIXACAO DE SESSAO (master review de 2026-08-03). Antes, qualquer string que
   // casasse com ALERT_TOKEN_RE virava cookie de sessao por 180 dias, sem nenhuma

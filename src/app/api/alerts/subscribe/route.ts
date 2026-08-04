@@ -27,6 +27,7 @@ import {
   resolveAlertManageToken,
   setAlertManageTokenCookie,
 } from "@/lib/alerts-session"
+import { hashTrustedClientIp } from "@/lib/client-ip"
 import { rejectCrossSiteAlertsMutation } from "@/lib/alerts-csrf"
 import {
   createFixedWindowIpRateLimiter,
@@ -43,6 +44,15 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const MAX_NEW_SUBSCRIBERS_PER_HOUR = 24
+const IP_RATE_WINDOW_MS = 3_600_000
+const SUBSCRIBE_IP_NAMESPACE = "alerts-subscribe"
+
+/**
+ * Teto durável de e-mails disparados por um mesmo cliente na janela de uma hora,
+ * contado no banco. Mesmo valor do teto de assinantes novos: o orçamento de
+ * e-mail por IP é um só, independente do caminho que pediu o envio.
+ */
+const MAX_EMAILS_PER_IP_HOUR = 24
 
 /**
  * Teto por IP no processo, aplicado a TODA requisicao de subscribe.
@@ -58,10 +68,86 @@ const MAX_NEW_SUBSCRIBERS_PER_HOUR = 24
  * barata, que fecha a assimetria entre os dois caminhos.
  */
 const subscribeRateLimiter = createFixedWindowIpRateLimiter({
-  namespace: "alerts-subscribe",
+  namespace: SUBSCRIBE_IP_NAMESPACE,
   max: 12,
   windowMs: 10 * 60_000,
 })
+
+/**
+ * A coluna `last_email_request_ip_hash` chega pela migration
+ * `..._alert_subscribers_last_email_request_ip_hash`. Enquanto ela não estiver
+ * aplicada, o PostgREST responde coluna desconhecida (`42703` na leitura,
+ * `PGRST204` na escrita). Reconhecer essa assinatura é o que permite deploy do
+ * código e aplicação da migration em qualquer ordem: sem coluna, o teto durável
+ * degrada aberto e o limitador em memória volta a ser a única camada de dentro.
+ *
+ * Mesma degradação já usada em `src/lib/analytics-launch-store.ts`.
+ */
+function isMissingEmailIpHashColumn(
+  error: { code?: string; message?: string } | null,
+): boolean {
+  if (!error) return false
+  if (error.code === "42703" || error.code === "PGRST204") return true
+  const message = error.message?.toLowerCase() ?? ""
+  return (
+    message.includes("last_email_request_ip_hash") &&
+    (message.includes("column") || message.includes("schema cache"))
+  )
+}
+
+let avisouColunaAusente = false
+
+function avisarColunaAusenteUmaVez() {
+  if (avisouColunaAusente) return
+  avisouColunaAusente = true
+  console.error(
+    "alerts subscribe: coluna last_email_request_ip_hash ausente, teto durável por IP desligado até a migration ser aplicada",
+  )
+}
+
+/**
+ * Teto durável do envio de e-mail, do lado do banco.
+ *
+ * Conta assinantes cujo último e-mail na janela foi pedido por este mesmo
+ * cliente. O contador em memória é por instância e em serverless cada instância
+ * nova nasce com o balde zerado, então ele nunca foi teto de verdade: com uma
+ * lista de endereços já inscritos, o atacante conseguia um e-mail por endereço
+ * limitado só pelo cooldown de 15 min de cada assinante, gastando cota do Resend
+ * e queimando a reputação do domínio.
+ *
+ * Repetir o MESMO endereço não acumula (o carimbo é sobrescrito na linha dele);
+ * quem segura esse caso é o cooldown. Este contador existe para o ataque que se
+ * espalha por muitos endereços, que é justamente o que o cooldown não vê.
+ */
+async function enforceEmailIpBudget(
+  supabase: AlertsServiceRoleClient,
+  emailIpHash: string,
+  sinceIso: string,
+  exceededReason: string,
+  deps: Pick<SubscribeDeps, "logAlertsApiExit">,
+): Promise<NextResponse | null> {
+  const { count, error } = await supabase
+    .from("alert_subscribers")
+    .select("*", { count: "exact", head: true })
+    .eq("last_email_request_ip_hash", emailIpHash)
+    .gte("last_verification_email_sent_at", sinceIso)
+
+  if (error) {
+    if (isMissingEmailIpHashColumn(error)) {
+      avisarColunaAusenteUmaVez()
+      return null
+    }
+    deps.logAlertsApiExit("subscribe", 503, "email_ip_rate_check_failed")
+    return NextResponse.json({ error: "Rate check failed" }, { status: 503 })
+  }
+
+  if ((count ?? 0) >= MAX_EMAILS_PER_IP_HOUR) {
+    deps.logAlertsApiExit("subscribe", 429, exceededReason)
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 })
+  }
+
+  return null
+}
 
 /**
  * Resposta unica de sucesso, identica nos tres caminhos (assinante novo, ja
@@ -116,25 +202,48 @@ async function markVerificationEmailSent(
   candidateSlug: string,
   failureEvent: string,
   deps: Pick<SubscribeDeps, "logAlertsEvent">,
+  emailIpHash: string,
 ): Promise<void> {
-  const { error } = await supabase
-    .from("alert_subscribers")
-    .update({
-      last_verification_email_sent_at: new Date().toISOString(),
-    })
-    .eq("id", subscriberId)
+  const sentAt = new Date().toISOString()
 
-  if (error) {
+  const avisarFalha = (message: string | undefined) => {
     deps.logAlertsEvent({
       route: "subscribe",
       event: failureEvent,
       level: "warn",
       detail: {
         candidateSlug,
-        message: error.message?.slice(0, 200),
+        message: message?.slice(0, 200),
       },
     })
   }
+
+  const { error } = await supabase
+    .from("alert_subscribers")
+    .update({
+      last_verification_email_sent_at: sentAt,
+      last_email_request_ip_hash: emailIpHash,
+    })
+    .eq("id", subscriberId)
+
+  if (!error) return
+
+  if (isMissingEmailIpHashColumn(error)) {
+    // Sem a coluna ainda, regrava só o carimbo de tempo em vez de perder a
+    // escrita inteira: sem `last_verification_email_sent_at` o cooldown de 15
+    // min deixaria de existir, e ele é a única barreira que sobra enquanto a
+    // migration não é aplicada.
+    avisarColunaAusenteUmaVez()
+    const { error: retryError } = await supabase
+      .from("alert_subscribers")
+      .update({ last_verification_email_sent_at: sentAt })
+      .eq("id", subscriberId)
+
+    if (retryError) avisarFalha(retryError.message)
+    return
+  }
+
+  avisarFalha(error.message)
 }
 
 export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDeps) {
@@ -184,6 +293,13 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
     const supabase = deps.createAlertsServiceRoleClient()
     const requestTime = deps.now()
     const now = requestTime.getTime()
+    const ipHash = hashAlertIp(extractClientIp(req.headers))
+    // Hash distinto do `ip_consentimento_hash` de propósito: aquele é registro
+    // de consentimento e não pode trocar de fórmula sem invalidar linha antiga;
+    // este é balde de rate limit, e o namespace da rota impede correlacionar o
+    // mesmo visitante entre superfícies pelo valor gravado.
+    const emailIpHash = hashTrustedClientIp(req.headers, SUBSCRIBE_IP_NAMESPACE)
+    const ipWindowStartIso = new Date(now - IP_RATE_WINDOW_MS).toISOString()
     const lastVerificationSentAt = existingSubscriber?.last_verification_email_sent_at
       ? new Date(existingSubscriber.last_verification_email_sent_at).getTime()
       : 0
@@ -201,6 +317,15 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
           })
           return neutralSubscribeResponse(candidate.slug)
         }
+
+        const budgetResponse = await enforceEmailIpBudget(
+          supabase,
+          emailIpHash,
+          ipWindowStartIso,
+          "rate_limit_manage_email_ip_hour",
+          deps,
+        )
+        if (budgetResponse) return budgetResponse
 
         const nextManageToken = createAlertToken()
         const manageTokenHash = hashAlertToken(nextManageToken)
@@ -247,6 +372,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
           candidate.slug,
           "manage_access_sent_timestamp_update_failed",
           deps,
+          emailIpHash,
         )
 
         deps.logAlertsApiExit("subscribe", 200, "verified_manage_link_sent", {
@@ -286,15 +412,12 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
       )
     }
 
-    const ipHash = hashAlertIp(extractClientIp(req.headers))
-
     if (!existingSubscriber) {
-      const since = new Date(now - 3_600_000).toISOString()
       const { count, error: countError } = await supabase
         .from("alert_subscribers")
         .select("*", { count: "exact", head: true })
         .eq("ip_consentimento_hash", ipHash)
-        .gte("created_at", since)
+        .gte("created_at", ipWindowStartIso)
 
       if (countError) {
         deps.logAlertsApiExit("subscribe", 503, "rate_check_failed")
@@ -325,6 +448,21 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
         candidateSlug: candidate.slug,
       })
       return neutralSubscribeResponse(candidate.slug)
+    }
+
+    if (existingSubscriber) {
+      // Assinante que já existe não passa pelo teto de assinantes novos acima,
+      // então sem esta checagem o reenvio do e-mail de confirmação ficaria com o
+      // mesmo buraco do link de gestão: durável nenhum, só o cooldown por
+      // endereço.
+      const budgetResponse = await enforceEmailIpBudget(
+        supabase,
+        emailIpHash,
+        ipWindowStartIso,
+        "rate_limit_verification_email_ip_hour",
+        deps,
+      )
+      if (budgetResponse) return budgetResponse
     }
 
     const verifyToken = createAlertToken()
@@ -429,6 +567,7 @@ export function createSubscribeHandler(deps: SubscribeDeps = defaultSubscribeDep
       candidate.slug,
       "verification_email_sent_timestamp_update_failed",
       deps,
+      emailIpHash,
     )
 
     deps.logAlertsApiExit("subscribe", 200, "requires_verification_email_sent", {

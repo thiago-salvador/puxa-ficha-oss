@@ -3,6 +3,11 @@ import { NextResponse } from "next/server"
 import { createServiceRoleSupabaseClient } from "@/lib/supabase"
 import { secretsMatch } from "@/lib/crypto-utils"
 import {
+  ANALYTICS_LAUNCH_RETENTION_DAYS,
+  analyticsLaunchRetentionCutoffIso,
+  purgeAnalyticsLaunchEventsOlderThan,
+} from "@/lib/analytics-launch-store"
+import {
   analyzePublishedConsistency,
   probeAnonLeak,
   type PublishedRow,
@@ -26,6 +31,9 @@ export const maxDuration = 15
  * anomalia dura => HTTP 500 => Vercel avisa o dono. Sem servico de alerta novo.
  * O tier caro (realidade politica via web) NAO roda aqui; fica na automacao
  * Codex de freshness, fora do caminho de custo do site.
+ *
+ * Carona de manutenção: este handler também executa o expurgo de retenção de
+ * `analytics_launch_events` (90 dias). Ver o bloco no fim da função.
  *
  * Auth: Vercel Cron injeta `Authorization: Bearer <CRON_SECRET>`. Fail-closed.
  */
@@ -81,13 +89,33 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // Expurgo de retenção de analytics_launch_events. Pega carona neste cron porque
+  // o projeto não tem pg_cron habilitado (só pg_trgm e unaccent) e porque abrir
+  // entrada nova de cron custaria invocação diária a mais sem ganho nenhum.
+  // Roda ANTES do desvio de 500 de propósito: dia com anomalia estrutural é
+  // exatamente o dia em que ninguém quer descobrir depois que a retenção parou.
+  // Fail-open: erro daqui vira log e campo na resposta, nunca derruba o gate.
+  const expurgo = await purgeAnalyticsLaunchEventsOlderThan(analyticsLaunchRetentionCutoffIso())
+  if (expurgo.status === "ok") {
+    console.log(
+      `[published-consistency] analytics_retencao ${JSON.stringify({
+        dias: ANALYTICS_LAUNCH_RETENTION_DAYS,
+        removidos: expurgo.removidos,
+      })}`,
+    )
+  } else {
+    console.error(
+      `[published-consistency] analytics_retencao_falhou ${JSON.stringify(expurgo)}`,
+    )
+  }
+
   if (report.hard.length) {
     console.error(
       `[published-consistency] HARD ${JSON.stringify({ total: report.total, hard: report.hard })}`,
     )
     // 500 => notificacao nativa de falha de cron do Vercel (sem infra extra).
     return NextResponse.json(
-      { ok: false, total: report.total, hard: report.hard, soft: report.soft },
+      { ok: false, total: report.total, hard: report.hard, soft: report.soft, expurgo },
       { status: 500 },
     )
   }
@@ -96,7 +124,7 @@ export async function GET(req: NextRequest) {
     `[published-consistency] ok ${JSON.stringify({ total: report.total, soft: report.soft.length })}`,
   )
   return NextResponse.json(
-    { ok: true, total: report.total, byCargo: report.byCargo, soft: report.soft },
+    { ok: true, total: report.total, byCargo: report.byCargo, soft: report.soft, expurgo },
     { status: 200, headers: { "cache-control": "no-store" } },
   )
 }

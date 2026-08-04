@@ -46,10 +46,73 @@ export function formatDate(date: string | Date): string {
   return Number.isNaN(parsed.getTime()) ? "Data indisponível" : dateFormatter.format(parsed)
 }
 
+/**
+ * Todos os valores exibidos ao público saem destes formatadores pt-BR.
+ * Sufixos em inglês (K/M) e ponto decimal são regressão: site cívico em
+ * pt-BR não pode exibir "R$ 1.7M", que é ambíguo para o leitor brasileiro.
+ *
+ * O sufixo compacto é montado à mão de propósito: `notation: "compact"`
+ * diverge entre motores de ICU (o Node renderizava "R$ 200 mil" e o
+ * Chromium "R$ 200,0 mil" para o mesmo valor), o que quebrava a hidratação
+ * dos componentes client. Intl entra só no decimal, que é estável.
+ */
+const COMPACT_SCALES: Array<{ limit: number; suffix: string }> = [
+  { limit: 1_000_000_000, suffix: "bi" },
+  { limit: 1_000_000, suffix: "mi" },
+  { limit: 1_000, suffix: "mil" },
+]
+
+function compactParts(value: number): { text: string; suffix: string } | null {
+  for (const { limit, suffix } of COMPACT_SCALES) {
+    if (Math.abs(value) >= limit) {
+      const rounded = Math.round((value / limit) * 10) / 10
+      // 999.950 arredonda para "1.000 mil": promove para a escala seguinte.
+      if (Math.abs(rounded) >= 1_000 && limit < 1_000_000_000) {
+        return compactParts(rounded * limit)
+      }
+      const digits = Number.isInteger(rounded) ? 0 : 1
+      return { text: formatDecimal(rounded, digits), suffix }
+    }
+  }
+  return null
+}
+
+const decimalFormatters = new Map<number, Intl.NumberFormat>()
+
+function getDecimalFormatter(digits: number): Intl.NumberFormat {
+  let formatter = decimalFormatters.get(digits)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })
+    decimalFormatters.set(digits, formatter)
+  }
+  return formatter
+}
+
+/** Moeda compacta: "R$ 129,8 mi", "R$ 595,1 mil". Abaixo de mil cai no BRL cheio. */
 export function formatCompact(value: number): string {
-  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}K`
-  return formatBRL(value)
+  const parts = compactParts(value)
+  if (!parts) return formatBRL(value)
+  return `R$ ${parts.text} ${parts.suffix}`
+}
+
+/** Contagem compacta sem moeda: "46,6 mi", "213 mil". */
+export function formatCompactNumber(value: number): string {
+  const parts = compactParts(value)
+  if (!parts) return formatDecimal(value, 0)
+  return `${parts.text} ${parts.suffix}`
+}
+
+/** Decimal pt-BR com casas fixas: formatDecimal(0.491, 3) -> "0,491". */
+export function formatDecimal(value: number, digits = 1): string {
+  return getDecimalFormatter(digits).format(value)
+}
+
+/** Percentual pt-BR: formatPercent(4.7) -> "4,7%". */
+export function formatPercent(value: number, digits = 1): string {
+  return `${formatDecimal(value, digits)}%`
 }
 
 export function getInitials(name: string): string {
@@ -87,14 +150,11 @@ const KNOWN_PARTIES = [
   "uniao",
 ]
 
-const REMOTE_PARTY_LOGOS: Record<string, string> = {
-  mobiliza:
-    "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-  pmn: "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-  pcb: "https://upload.wikimedia.org/wikipedia/commons/d/d5/PCB_Logo.svg",
-  pode: "https://upload.wikimedia.org/wikipedia/commons/2/2d/Podemos_%28Brasil%29_logo.svg",
-  podemos:
-    "https://upload.wikimedia.org/wikipedia/commons/2/2d/Podemos_%28Brasil%29_logo.svg",
+/** Siglas que compartilham o arquivo local de outra sigla (G5-09: logos remotos
+ * da Wikimedia foram trazidos para /partidos/ e normalizados como os demais). */
+const PARTY_LOGO_ALIASES: Record<string, string> = {
+  pmn: "mobiliza",
+  podemos: "pode",
 }
 
 /** Returns the URL only if it uses http or https protocol. Blocks javascript: and other schemes. */
@@ -111,9 +171,8 @@ export function safeHref(url: string | null | undefined): string | null {
 
 export function getPartyLogoUrl(sigla: string): string | null {
   const normalized = sigla.toLowerCase().replace(/\s/g, "")
-  const remoteLogo = REMOTE_PARTY_LOGOS[normalized]
-  if (remoteLogo) return remoteLogo
-  if (KNOWN_PARTIES.includes(normalized)) return `/partidos/${normalized}.png`
+  const resolved = PARTY_LOGO_ALIASES[normalized] ?? normalized
+  if (KNOWN_PARTIES.includes(resolved)) return `/partidos/${resolved}.png`
   return null
 }
 

@@ -38,8 +38,14 @@ export async function fetchPhotoAsBase64(url: string | null): Promise<string | n
 // ── Formatting helpers (pure, no external import for Satori compat) ──
 
 function fmtCompact(value: number): string {
-  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}K`
+  if (value >= 1_000) {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value)
+  }
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
