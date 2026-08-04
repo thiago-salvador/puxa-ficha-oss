@@ -262,7 +262,7 @@ test("ProfileOverview does NOT fall to 'Perfil em construção' when ficha has o
   )
 
   assert.doesNotMatch(html, /Perfil em construção/)
-  assert.match(html, /R\$ 9\.9M/)
+  assert.match(html, /R\$[\s ]9,9[\s ]mi/)
 })
 
 test("ProfileOverview financiamento teaser picks the most recent ano_eleicao", () => {
@@ -301,7 +301,7 @@ test("ProfileOverview financiamento teaser picks the most recent ano_eleicao", (
     })
   )
 
-  assert.match(html, /R\$ 9\.9M/)
+  assert.match(html, /R\$[\s ]9,9[\s ]mi/)
   assert.doesNotMatch(html, /R\$ 1\.1M/)
 })
 
@@ -337,7 +337,7 @@ test("ProfileOverview cota parlamentar teaser picks the most recent ano", () => 
 
   assert.match(html, /Ano do registro: 2023/)
   assert.doesNotMatch(html, /Ano do registo: 2019/)
-  assert.match(html, /R\$ 5\.5M/)
+  assert.match(html, /R\$[\s ]5,5[\s ]mi/)
   assert.doesNotMatch(html, /R\$ 1\.2M/)
 })
 
