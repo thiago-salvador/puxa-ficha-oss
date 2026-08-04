@@ -200,8 +200,72 @@ class DegradedDataError extends Error {
   }
 }
 
+/**
+ * Degradação PARCIAL: há dado verdadeiro para servir (os nomes da lista), mas
+ * parte dos números veio zerada. Diferente da falha total, o payload precisa
+ * chegar ao usuário; o que não pode é entrar no Data Cache, porque congela os
+ * zeros por APP_DATA_REVALIDATE_SECONDS. Incidente 2026-08-04, véspera do
+ * lançamento: um timeout de segundos em `v_comparador` deixou a home uma hora
+ * inteira com processos, patrimônio e pontos de atenção zerados, que é
+ * justamente o conteúdo que dá sentido ao site.
+ */
+class PartialDegradedDataError<T> extends Error {
+  readonly sourceMessage: string | null
+  readonly partialData: T
+
+  constructor(partialData: T, sourceMessage: string | null | undefined) {
+    super(sourceMessage ?? "recurso parcialmente degradado")
+    this.name = "PartialDegradedDataError"
+    this.sourceMessage = sourceMessage ?? null
+    this.partialData = partialData
+  }
+}
+
+/**
+ * Executa o recurso fora do cache e, se ele voltar degradado, rejeita com o
+ * payload em mãos. Rejeição não entra no `unstable_cache`, então a próxima
+ * requisição tenta de novo em vez de servir o estado ruim congelado.
+ */
+async function rejectPartialForCache<T>(
+  resource: Promise<DataResource<T>>
+): Promise<DataResource<T>> {
+  const resolved = await resource
+  if (resolved.sourceStatus !== "live") {
+    throw new PartialDegradedDataError(resolved.data, resolved.sourceMessage)
+  }
+  return resolved
+}
+
+type ResumoEnriquecimento = {
+  patrimonio: number | null
+  processos: number
+  pontosAtencao: number
+}
+
+/**
+ * Último enriquecimento bem-sucedido por candidato, na memória da instância.
+ * Serve de rede quando `v_comparador` não responde: em vez de publicar "0
+ * processos" para quem tem processo, o card repete o número que já era
+ * verdadeiro. Some quando a instância morre, e isso é aceitável: o pior caso
+ * volta a ser o zero de hoje, nunca um número inventado.
+ */
+const ULTIMO_ENRIQUECIMENTO = new Map<string, ResumoEnriquecimento>()
+
+function lembrarEnriquecimento(mapa: Map<string, ResumoEnriquecimento>): void {
+  for (const [id, valores] of mapa) {
+    ULTIMO_ENRIQUECIMENTO.set(id, valores)
+  }
+}
+
+function ultimoEnriquecimento(id: string): ResumoEnriquecimento | undefined {
+  return ULTIMO_ENRIQUECIMENTO.get(id)
+}
+
 /** Converte o throw da camada de cache no degradedResource de sempre; o resto sobe. */
 function degradedFromError<T>(error: unknown, fallbackData: T): DataResource<T> {
+  if (error instanceof PartialDegradedDataError) {
+    return degradedResource(error.partialData as T, error.sourceMessage)
+  }
   if (error instanceof DegradedDataError) {
     return degradedResource(fallbackData, error.sourceMessage)
   }
@@ -773,7 +837,7 @@ async function getGlobalSearchIndexResourceUncached(): Promise<
 }
 
 const getCachedGlobalSearchIndexResource = unstable_cache(
-  async () => getGlobalSearchIndexResourceUncached(),
+  async () => rejectPartialForCache(getGlobalSearchIndexResourceUncached()),
   // Bumped 2026-04-26 (Bloco 1 review 2026-04-24): force one-time bust of Vercel
   // Data Cache so the new subtitle/searchText (without raw 'incerto') is exercised.
   //
@@ -784,7 +848,7 @@ const getCachedGlobalSearchIndexResource = unstable_cache(
   // sobrevive a deploy, e a rota de revalidacao por tag depende de
   // PF_REVALIDATE_SECRET, entao o bump da chave e o caminho que funciona sem
   // segredo. Mesma chave aplicada a todos os resources que listam candidatos.
-  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -1502,10 +1566,7 @@ async function getCandidatosComResumoResourceUncached(
     { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
 
-  const compareMap = new Map<
-    string,
-    { patrimonio: number | null; processos: number; pontosAtencao: number }
-  >()
+  const compareMap = new Map<string, ResumoEnriquecimento>()
   for (const row of compareRows ?? []) {
     compareMap.set(row.id, {
       patrimonio: row.patrimonio_declarado ?? null,
@@ -1514,12 +1575,21 @@ async function getCandidatosComResumoResourceUncached(
     })
   }
 
-  const data = candidatos.map((c) => ({
-    candidato: c,
-    patrimonio: compareMap.get(c.id)?.patrimonio ?? null,
-    processos: compareMap.get(c.id)?.processos ?? 0,
-    pontos_atencao: compareMap.get(c.id)?.pontosAtencao ?? 0,
-  }))
+  if (!compareError) {
+    lembrarEnriquecimento(compareMap)
+  }
+
+  const data = candidatos.map((c) => {
+    // Sem enriquecimento vivo, o último valor conhecido vale mais do que zero:
+    // "0 processos" é uma afirmação falsa sobre um candidato, "sem dado" não.
+    const enriquecimento = compareMap.get(c.id) ?? ultimoEnriquecimento(c.id)
+    return {
+      candidato: c,
+      patrimonio: enriquecimento?.patrimonio ?? null,
+      processos: enriquecimento?.processos ?? 0,
+      pontos_atencao: enriquecimento?.pontosAtencao ?? 0,
+    }
+  })
 
   if (compareError) {
     return degradedResource(
@@ -1533,10 +1603,10 @@ async function getCandidatosComResumoResourceUncached(
 
 const getCachedCandidatosComResumoResource = unstable_cache(
   async (cargo?: string, estado?: string) =>
-    getCandidatosComResumoResourceUncached(cargo, estado),
+    rejectPartialForCache(getCandidatosComResumoResourceUncached(cargo, estado)),
   // Bumped 2026-04-26: dados de candidato vem ja sanitizados via getCandidatosResource;
   // o suffix forca bust de cache antigo do Bloco 1.
-  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-resumo"],
@@ -2181,8 +2251,8 @@ async function getQuizAlignmentDatasetResourceUncached(
 
 const getCachedQuizAlignmentDatasetResource = unstable_cache(
   async (cargo: string, estado: string) =>
-    getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined),
-  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+    rejectPartialForCache(getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined)),
+  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["quiz-dataset"],
