@@ -382,7 +382,7 @@ function buildSectionFreshness(
           !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
           !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS
             ? `Perfil atual consolidado em ${formatDate(updatedAt)}.`
-            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Revalide este bloco antes de tratá-lo como atual.`,
+            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Pode não refletir mudanças recentes.`,
           updatedAt.toISOString(),
           updatedAt.getFullYear(),
           updatedAt.toISOString(),
