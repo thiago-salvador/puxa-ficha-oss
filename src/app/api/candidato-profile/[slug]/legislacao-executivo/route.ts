@@ -31,6 +31,12 @@ export async function GET(
       sourceStatus: resource.sourceStatus,
       sourceMessage: resource.sourceMessage ?? null,
     },
-    { headers: { "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=3600" } },
+    // Pior caso real: 3.600 linhas, ~1,1 MB de JSON (~144 KB gzip na rede) e
+    // ~9s de fetch paginado no servidor. Re-paginar aqui foi rejeitado no #65
+    // (multiplicaria leituras no Supabase); o alívio é a janela SWR de 24h:
+    // depois do s-maxage o CDN responde o stale na hora e revalida em
+    // background, tirando o custo frio do caminho do usuário sem nenhuma
+    // leitura extra no banco.
+    { headers: { "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400" } },
   )
 }
