@@ -5,6 +5,8 @@ import { EmbedCodeGenerator } from "@/components/EmbedCodeGenerator"
 export const metadata: Metadata = {
   title: "Widget embed | Puxa Ficha",
   description: "Gere o código HTML para incorporar o resumo de um candidato no seu site.",
+  // Sem isto a página herda o canonical "/" do layout do site e aponta para a home.
+  alternates: { canonical: "/embed" },
   robots: { index: true, follow: true },
 }
 

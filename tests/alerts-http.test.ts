@@ -249,7 +249,11 @@ describe("alerts HTTP routes", () => {
         )
 
         assert.equal(response.status, 403)
-        assert.deepEqual(await readJson(response), { error: "Cross-site request blocked" })
+        // O verify é a única rota que já devolve o código estável de erro (`reason`),
+        // usado pela tela de confirmação para escolher a mensagem em português.
+        const csrfBody: Record<string, string> = { error: "Cross-site request blocked" }
+        if (csrfCase.name === "verify") csrfBody.reason = "origem_bloqueada"
+        assert.deepEqual(await readJson(response), csrfBody)
         csrfCase.assertBlocked(fixture)
         assert.deepEqual(fixture.apiExits.at(-1), {
           route: csrfCase.routeLog,
@@ -577,7 +581,10 @@ describe("alerts HTTP routes", () => {
       )
 
       assert.equal(response.status, 400)
-      assert.deepEqual(await readJson(response), { error: "Invalid payload" })
+      assert.deepEqual(await readJson(response), {
+        error: "Invalid payload",
+        reason: "payload_invalido",
+      })
     })
 
     it("returns 410 when the verification link expired", async () => {
@@ -606,6 +613,7 @@ describe("alerts HTTP routes", () => {
       assert.equal(response.status, 410)
       assert.deepEqual(await readJson(response), {
         error: "Invalid or expired verification link",
+        reason: "link_invalido_ou_expirado",
       })
       assert.match(
         response.headers.get("cache-control") ?? "",
@@ -639,6 +647,7 @@ describe("alerts HTTP routes", () => {
       assert.equal(response.status, 410)
       assert.deepEqual(await readJson(response), {
         error: "Invalid or expired verification link",
+        reason: "link_invalido_ou_expirado",
       })
       // Uniformização: a resposta não pode sinalizar que o manage token era válido —
       // logo, nenhum cookie de sessão é setado neste caminho.
@@ -661,6 +670,7 @@ describe("alerts HTTP routes", () => {
       assert.equal(response.status, 410)
       assert.deepEqual(await readJson(response), {
         error: "Invalid or expired verification link",
+        reason: "link_invalido_ou_expirado",
       })
       assertAlertManageCookie(response, undefined)
     })
