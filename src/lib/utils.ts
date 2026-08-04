@@ -46,10 +46,56 @@ export function formatDate(date: string | Date): string {
   return Number.isNaN(parsed.getTime()) ? "Data indisponível" : dateFormatter.format(parsed)
 }
 
+/**
+ * Todos os valores exibidos ao público saem destes formatadores pt-BR.
+ * Sufixos em inglês (K/M) e ponto decimal são regressão: site cívico em
+ * pt-BR não pode exibir "R$ 1.7M", que é ambíguo para o leitor brasileiro.
+ */
+const compactBRLFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
+const compactNumberFormatter = new Intl.NumberFormat("pt-BR", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
+
+const decimalFormatters = new Map<number, Intl.NumberFormat>()
+
+function getDecimalFormatter(digits: number): Intl.NumberFormat {
+  let formatter = decimalFormatters.get(digits)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    })
+    decimalFormatters.set(digits, formatter)
+  }
+  return formatter
+}
+
+/** Moeda compacta: "R$ 129,8 mi", "R$ 595,1 mil". Abaixo de mil cai no BRL cheio. */
 export function formatCompact(value: number): string {
-  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}K`
+  if (Math.abs(value) >= 1_000) return compactBRLFormatter.format(value)
   return formatBRL(value)
+}
+
+/** Contagem compacta sem moeda: "46,6 mi", "213 mil". */
+export function formatCompactNumber(value: number): string {
+  return compactNumberFormatter.format(value)
+}
+
+/** Decimal pt-BR com casas fixas: formatDecimal(0.491, 3) -> "0,491". */
+export function formatDecimal(value: number, digits = 1): string {
+  return getDecimalFormatter(digits).format(value)
+}
+
+/** Percentual pt-BR: formatPercent(4.7) -> "4,7%". */
+export function formatPercent(value: number, digits = 1): string {
+  return `${formatDecimal(value, digits)}%`
 }
 
 export function getInitials(name: string): string {

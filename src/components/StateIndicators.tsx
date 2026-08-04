@@ -6,6 +6,7 @@ import {
   STATE_INDICATOR_CONFIG,
   STATE_INDICATOR_ORDER,
 } from "@/lib/state-indicator-metadata"
+import { formatPercent } from "@/lib/utils"
 import { IndicadorFonteTag } from "@/components/IndicadorFonteTag"
 import { SectionLabel, SectionTitle } from "./SectionHeader"
 
@@ -77,7 +78,7 @@ function TrendArrow({
         isPositive ? "text-green-700" : "text-red-700"
       }`}
     >
-      {arrow} {Math.abs(pctChange).toFixed(1)}%
+      {arrow} {formatPercent(Math.abs(pctChange), 1)}
     </span>
   )
 }

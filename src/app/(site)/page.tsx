@@ -16,7 +16,7 @@ import { Footer } from "@/components/Footer"
 import { DataSourceNotice } from "@/components/DataSourceNotice"
 import { PublicDataSourcesNote } from "@/components/PublicDataSourcesNote"
 import { JsonLd } from "@/components/JsonLd"
-import { formatBRL } from "@/lib/utils"
+import { formatCompact } from "@/lib/utils"
 
 export const revalidate = 3600
 
@@ -132,9 +132,7 @@ export default async function Home() {
             {totalPatrimonio > 0 && (
               <div className="hero-fade" style={{ animationDelay: "0.5s" }}>
                 <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
-                  {totalPatrimonio >= 1_000_000
-                    ? `R$ ${(totalPatrimonio / 1_000_000).toFixed(0)}M`
-                    : formatBRL(totalPatrimonio)}
+                  {formatCompact(totalPatrimonio)}
                 </p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
                   patrimônio declarado
