@@ -120,6 +120,16 @@ jobs:
           PF_EXPECT_PLACEHOLDER_DATA: "1"
         run: npx playwright test tests/visual/main-routes.spec.ts
 
+      # Fluxos de lançamento (acesso interno, short link do quiz, página de
+      # doadores) rodam com fixtures locais e sem segredo. O alerts-flow nasce
+      # em /candidato/lula e precisa de dados reais: fica skipped aqui e segue
+      # como checagem manual pré-lançamento (npm run test:playwright:launch
+      # contra um servidor com dados reais).
+      - name: Fluxos de lançamento (fixtures locais)
+        env:
+          PF_EXPECT_PLACEHOLDER_DATA: "1"
+        run: npm run test:playwright:launch
+
       - name: Publicar relatório em caso de falha
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0

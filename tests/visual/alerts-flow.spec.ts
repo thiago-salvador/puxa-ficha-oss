@@ -6,6 +6,17 @@ const VERIFY_TOKEN = "VerifyTokenPlaywright001"
 test.describe("Alertas e2e", () => {
   test.skip(({ browserName, isMobile }) => isMobile || browserName === "webkit", "Fluxo de token/API coberto no launch desktop; mobile visual cobre layout.")
 
+  // O fluxo inteiro nasce em /candidato/lula, que só renderiza o botão de
+  // seguir com dados reais do Supabase. No job de PR do CI o servidor sobe com
+  // env placeholder e este e2e não tem como iniciar; fica de fora lá
+  // (PF_EXPECT_PLACEHOLDER_DATA=1) e permanece como checagem manual
+  // pré-lançamento: npm run test:playwright:launch contra um servidor com
+  // dados reais.
+  test.skip(
+    process.env.PF_EXPECT_PLACEHOLDER_DATA === "1",
+    "Fluxo depende de dados reais do Supabase; o job de PR roda com env placeholder",
+  )
+
   test("ativa, verifica, pausa, reativa, cancela tudo e apaga os dados", async ({
     page,
   }) => {
