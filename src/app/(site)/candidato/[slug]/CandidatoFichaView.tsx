@@ -61,6 +61,10 @@ export async function CandidatoFichaView({
       return (
         <div className="min-h-screen bg-background">
           <div className="mx-auto max-w-7xl px-5 pt-20 md:px-12">
+            {/* Quando a fonte pública está fora do ar, a ficha não renderiza o
+                nome do candidato, que é o título de nível 1 da rota. O aviso
+                assume esse papel de forma oculta para o leitor de tela. */}
+            <h1 className="sr-only">Ficha temporariamente indisponível</h1>
             <DataUnavailableState
               title="Ficha temporariamente indisponível"
               description={fichaResource.sourceMessage ?? undefined}

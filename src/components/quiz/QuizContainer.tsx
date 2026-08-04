@@ -10,6 +10,10 @@ import { QuizGovernadorSemUf } from "./QuizGovernadorSemUf"
 import { QuizProgress } from "./QuizProgress"
 import { QuizQuestion } from "./QuizQuestion"
 
+// Título de nível 1 da rota de perguntas. A tela não mostra um título visível,
+// então ele entra oculto para que leitores de tela tenham a âncora do documento.
+const QUIZ_PAGE_TITLE = "Quiz eleitoral: quem me representa?"
+
 const QUIZ_SESSION_STORAGE_VERSION = 1
 const QUIZ_PROGRESS_STORAGE_EVENT = "puxaficha:quiz-progress-storage"
 
@@ -197,6 +201,9 @@ function QuizActiveSession({ cargo, uf, perguntas, storageKey }: QuizActiveSessi
   if (finishing) {
     return (
       <div className="mx-auto flex min-h-[40vh] max-w-lg flex-col items-center justify-center gap-3 px-4 py-16">
+        {/* O título da rota é o mesmo em todos os estados do quiz, e fica oculto
+            visualmente porque o desenho da tela já começa pela pergunta. */}
+        <h1 className="sr-only">{QUIZ_PAGE_TITLE}</h1>
         <p className="text-center text-sm font-medium text-foreground" role="status" aria-live="polite">
           Processando resultado…
         </p>
@@ -207,6 +214,7 @@ function QuizActiveSession({ cargo, uf, perguntas, storageKey }: QuizActiveSessi
 
   return (
     <div className="mx-auto max-w-lg space-y-8 px-4 py-8">
+      <h1 className="sr-only">{QUIZ_PAGE_TITLE}</h1>
       <p className="text-center text-xs text-muted-foreground">
         {cargo === "Governador" && uf ? (
           <>
