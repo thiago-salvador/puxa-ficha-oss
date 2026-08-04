@@ -92,14 +92,19 @@ export function BrazilMap({
         className="relative w-full flex-shrink-0 lg:w-[55%]"
         onMouseMove={handleMouseMove}
       >
+        {/*
+          Mapa puramente decorativo para tecnologia assistiva: o diretório de estados
+          ao lado já expõe as 27 UFs como links de texto, que é o caminho acessível.
+          Marcar os polígonos como interativos criava controles aninhados dentro do
+          svg (violação nested-interactive) e 27 paradas mudas de Tab.
+        */}
         <svg
           viewBox="-20 -20 870 950"
           className="w-full"
           style={{
             transform: "rotate(-2deg)",
           }}
-          role="img"
-          aria-label="Mapa do Brasil por região e estados"
+          aria-hidden="true"
         >
           <defs>
             {/* Shadow under entire map */}
@@ -153,15 +158,6 @@ export function BrazilMap({
                   onClick={() => {
                     touchedRef.current = null
                     router.push(`/uf/${state.sigla.toLowerCase()}`)
-                  }}
-                  role="link"
-                  aria-label={`${state.name} (${state.sigla})`}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      router.push(`/uf/${state.sigla.toLowerCase()}`)
-                    }
                   }}
                 >
                   {/* Lateral/extrude face (shadow) */}
