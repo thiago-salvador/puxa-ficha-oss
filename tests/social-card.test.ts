@@ -79,7 +79,7 @@ describe("extractCardData", () => {
 
   test("picks latest patrimonio year", () => {
     const data = extractCardData(makeFicha(), null)
-    assert.match(data.patrimonio, /1[,.]5M/)
+    assert.match(data.patrimonio, /1,5[\s\u00a0]mi/)
     assert.equal(data.patrimonioAno, "2022")
   })
 

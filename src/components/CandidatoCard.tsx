@@ -62,7 +62,7 @@ export const CandidatoCard = memo(function CandidatoCard({
       className="stagger-item group block"
       style={{ animationDelay: `${index * 60}ms` }}
     >
-      <div className="relative overflow-hidden rounded-[20px] shadow-sm transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:shadow-xl group-hover:shadow-black/10 sm:rounded-[24px]">
+      <div className="relative overflow-hidden rounded-[20px] shadow-sm transition-[transform,translate,box-shadow] duration-300 ease-out group-hover:-translate-y-2 group-hover:shadow-xl group-hover:shadow-black/10 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 sm:rounded-[24px]">
           <div
             ref={photoFrameRef}
             className="relative w-full overflow-hidden"
@@ -79,13 +79,13 @@ export const CandidatoCard = memo(function CandidatoCard({
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             priority={!deferPhotoUntilVisible && index < 4}
-            className="absolute inset-0 h-full w-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105"
+            className="absolute inset-0 h-full w-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
             fallbackClassName="absolute inset-0 h-full w-full"
             initialsClassName="text-[72px] sm:text-[90px]"
           />
 
           {/* Glass overlay - slides up on hover */}
-          <div className="absolute inset-x-0 bottom-0 sm:translate-y-[calc(100%-5.5rem)] sm:transition-transform sm:duration-500 sm:ease-[cubic-bezier(0.16,1,0.3,1)] sm:group-hover:translate-y-0 sm:group-focus-within:translate-y-0">
+          <div className="absolute inset-x-0 bottom-0 sm:translate-y-[calc(100%-5.5rem)] sm:transition-transform sm:duration-500 sm:ease-[cubic-bezier(0.16,1,0.3,1)] sm:group-hover:translate-y-0 sm:group-focus-within:translate-y-0 sm:motion-reduce:transition-none">
             <div className="glass-dark flex min-h-[5.5rem] flex-col justify-end px-3 pb-2.5 pt-2.5 sm:min-h-0 sm:block sm:px-5 sm:pb-5 sm:pt-4">
 
               {/* Party logo + sigla — always visible.

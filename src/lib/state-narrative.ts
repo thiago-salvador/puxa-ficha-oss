@@ -1,5 +1,6 @@
 import type { IndicadorEstadual } from "@/lib/types"
 import { STATE_INDICATOR_CONFIG } from "@/lib/state-indicator-metadata"
+import { formatPercent } from "@/lib/utils"
 import type { StateRankingResult } from "@/lib/state-ranking"
 
 function pctChange(prev: number, latest: number): number {
@@ -80,7 +81,7 @@ function buildTrendCandidate(
   return {
     indicador,
     absPct: Math.abs(pct),
-    phrase: `${cfg.label} ${dir} ${Math.abs(pct).toFixed(1)}% entre ${previous.ano} e ${latest.ano} (${nuance}).`,
+    phrase: `${cfg.label} ${dir} ${formatPercent(Math.abs(pct), 1)} entre ${previous.ano} e ${latest.ano} (${nuance}).`,
   }
 }
 
