@@ -44,6 +44,8 @@
     "audit:public-security-surface:gate": "tsx scripts/audit-public-security-surface.ts",
     "audit:supabase-abort-signal": "tsx scripts/audit-supabase-abort-signal.ts",
     "validate:seed": "tsx scripts/validate-seed.ts",
+    "audit:fotos": "tsx scripts/check-candidate-photo-resolution.ts",
+    "audit:fotos:gate": "tsx scripts/check-candidate-photo-resolution.ts --gate",
     "audit:seed-sq-identity": "tsx scripts/audit-seed-sq-identity.ts",
     "audit:seed-sq-identity:gate": "tsx scripts/audit-seed-sq-identity.ts --gate",
     "audit:ids-cohort": "tsx scripts/check-ids-cohort.ts",

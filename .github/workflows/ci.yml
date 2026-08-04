@@ -57,6 +57,11 @@ jobs:
       - name: Validar seed
         run: npm run validate:seed
 
+      # Foto de origem abaixo do slot em 2x (562x750) sai borrada na grade da
+      # home; recompressão não conserta resolução que nunca existiu (G5-02).
+      - name: Resolução das fotos de candidato
+        run: npm run audit:fotos:gate
+
       - name: Dead code (knip)
         run: npm run check:dead-code
 
