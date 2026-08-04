@@ -33,6 +33,8 @@ export interface SubscriberRow extends AlertSubscriberRecordBase {
   verify_token_hash: string | null
   manage_token_ciphertext: string
   ip_consentimento_hash: string | null
+  /** Balde do teto durável por IP do subscribe; não é o hash de consentimento. */
+  last_email_request_ip_hash: string | null
   created_at: string
 }
 
@@ -71,9 +73,11 @@ interface AlertsTables {
 }
 
 type TableName = keyof AlertsTables
-type MutationOperation = "update"
+type MutationOperation = "update" | "select"
 
-type QueryResult<T> = Promise<{ data: T; error: { message: string } | null; count?: number | null }>
+type QueryError = { code?: string; message: string }
+
+type QueryResult<T> = Promise<{ data: T; error: QueryError | null; count?: number | null }>
 
 type QueryOptions = {
   count?: "exact"
@@ -255,6 +259,11 @@ class SelectMutationQuery<T extends Record<string, unknown>> {
 
   private async execute(): QueryResult<unknown> {
     if (this.operation === "select") {
+      const selectError = this.fixture.consumeMutationError(this.tableName, "select")
+      if (selectError) {
+        return { data: null, error: selectError, count: null }
+      }
+
       const allMatchingRows = this.rows.filter((row) => this.filters.every((filter) => filter(row)))
       const rows = this.getMatchingRows()
       const projectedRows = rows.map((row) => projectColumns(row, this.columns))
@@ -355,7 +364,7 @@ export class AlertsRouteFixture {
   private pendingMutationErrors: Array<{
     tableName: TableName
     operation: MutationOperation
-    error: { message: string }
+    error: QueryError
   }> = []
 
   readonly emails: SendEmailInput[] = []
@@ -400,6 +409,19 @@ export class AlertsRouteFixture {
       tableName,
       operation: "update",
       error: { message },
+    })
+  }
+
+  /**
+   * Faz a próxima leitura da tabela devolver erro do PostgREST. Serve para
+   * exercitar degradação de coluna ausente (`42703`), o cenário em que o código
+   * é deployado antes de a migration ser aplicada.
+   */
+  failNextSelect(tableName: TableName, error: QueryError) {
+    this.pendingMutationErrors.push({
+      tableName,
+      operation: "select",
+      error,
     })
   }
 
@@ -473,6 +495,7 @@ export class AlertsRouteFixture {
         last_verification_email_sent_at: subscriber.last_verification_email_sent_at ?? null,
         last_digest_sent_at: subscriber.last_digest_sent_at ?? null,
         ip_consentimento_hash: subscriber.ip_consentimento_hash ?? null,
+        last_email_request_ip_hash: subscriber.last_email_request_ip_hash ?? null,
         created_at: subscriber.created_at ?? new Date().toISOString(),
       } satisfies SubscriberRow
     }
@@ -715,6 +738,7 @@ export function seedSubscriber(
     last_verification_email_sent_at: input.last_verification_email_sent_at ?? null,
     last_digest_sent_at: input.last_digest_sent_at ?? null,
     ip_consentimento_hash: input.ip_consentimento_hash ?? null,
+    last_email_request_ip_hash: input.last_email_request_ip_hash ?? null,
     created_at: input.created_at ?? "2026-04-08T10:00:00.000Z",
   }
 }

@@ -58,6 +58,75 @@ export async function countRecentAnalyticsEventsByIpHash(
   return { status: "ok", count: count ?? 0 }
 }
 
+/**
+ * Janela de retenção dos eventos, em dias.
+ *
+ * Desde que a tabela passou a guardar `ip_hash`, guardar linha para sempre
+ * deixou de ser só volume e virou dado pseudônimo parado: pela LGPD, o que foi
+ * coletado para limitar abuso não pode sobreviver à finalidade. 90 dias cobrem
+ * com folga a janela de um minuto do limitador e ainda deixam espaço para
+ * investigar abuso retroativo. O outro motivo é teto físico: o banco é Free de
+ * 500 MB, e sink de evento sem expurgo é a forma mais barata de estourar a cota
+ * justamente no pico de lançamento.
+ *
+ * Quem executa o expurgo é o cron diário que já existe
+ * (`/api/internal/published-consistency`), porque o projeto não tem pg_cron
+ * habilitado. A política também está registrada no comentário da tabela pela
+ * migration `..._analytics_launch_events_retencao_90_dias`.
+ */
+export const ANALYTICS_LAUNCH_RETENTION_DAYS = 90
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000
+
+/** Instante a partir do qual o evento ainda é retido. Tudo antes disso é expurgado. */
+export function analyticsLaunchRetentionCutoffIso(agora: Date = new Date()): string {
+  return new Date(agora.getTime() - ANALYTICS_LAUNCH_RETENTION_DAYS * MS_POR_DIA).toISOString()
+}
+
+export type AnalyticsPurgeResult =
+  | { status: "ok"; removidos: number; cutoffIso: string }
+  | { status: "tabela_ausente" }
+  | { status: "falhou"; message: string }
+
+/**
+ * A tabela pode não existir no ambiente (migration ainda não aplicada, banco de
+ * preview recém-criado). O PostgREST responde `42P01` na consulta e `PGRST205`
+ * quando o cache de schema não conhece o recurso.
+ */
+function isMissingAnalyticsTable(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  if (error.code === "42P01" || error.code === "PGRST205") return true
+  const message = error.message?.toLowerCase() ?? ""
+  return message.includes("analytics_launch_events") && message.includes("does not exist")
+}
+
+/**
+ * Apaga os eventos fora da janela de retenção. Nunca lança: é passo acessório de
+ * um cron cujo trabalho principal é outro, então falha de expurgo vira log e
+ * resultado tipado, não 500 que apagaria o sinal do gate de consistência.
+ * O DELETE por `created_at` apoia no índice `idx_analytics_launch_events_created`.
+ */
+export async function purgeAnalyticsLaunchEventsOlderThan(
+  cutoffIso: string,
+): Promise<AnalyticsPurgeResult> {
+  try {
+    const supabase = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
+    const { count, error } = await supabase
+      .from("analytics_launch_events")
+      .delete({ count: "exact" })
+      .lt("created_at", cutoffIso)
+
+    if (error) {
+      if (isMissingAnalyticsTable(error)) return { status: "tabela_ausente" }
+      return { status: "falhou", message: error.message }
+    }
+
+    return { status: "ok", removidos: count ?? 0, cutoffIso }
+  } catch (erro) {
+    return { status: "falhou", message: erro instanceof Error ? erro.message : String(erro) }
+  }
+}
+
 interface AnalyticsLaunchEventRow {
   event_name: AnalyticsEventName
   payload: AnalyticsPayload

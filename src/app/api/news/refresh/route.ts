@@ -3,6 +3,7 @@ import { after, NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
 import { createServiceRoleSupabaseClient } from "@/lib/supabase"
 import { secretsMatch } from "@/lib/crypto-utils"
+import { resolveChainOrigin } from "@/lib/cron-chain-origin"
 import {
   defaultNewsRefreshDeps,
   refreshCandidatosNews,
@@ -130,7 +131,10 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     const hasMore = page.candidatos.length > 0 && nextCursor < page.total
 
     if (hasMore && shouldChain) {
-      const nextUrl = new URL(req.nextUrl.pathname, req.nextUrl.origin)
+      // Origem canonica, nunca req.nextUrl.origin: em producao o cron chega pela
+      // URL *.vercel.app atras do SSO e o fetch encadeado morre num 302 silencioso
+      // (ver src/lib/cron-chain-origin.ts).
+      const nextUrl = new URL(req.nextUrl.pathname, resolveChainOrigin(req))
       nextUrl.searchParams.set("cursor", String(nextCursor))
       nextUrl.searchParams.set("limit", String(limit))
       nextUrl.searchParams.set("chain", "1")
@@ -141,11 +145,17 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
 
       deps.afterResponse(async () => {
         try {
-          await deps.fetchImpl(nextUrl.toString(), {
+          const res = await deps.fetchImpl(nextUrl.toString(), {
             method: "POST",
             headers: { Authorization: `Bearer ${expectedSecret}` },
             cache: "no-store",
+            // Um redirect aqui e sempre bug (SSO, dominio errado): seguir o 3xx
+            // esconderia a falha de novo.
+            redirect: "manual",
           })
+          if (!res.ok) {
+            deps.log("chain_fetch_failed", { nextCursor, status: res.status })
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message.slice(0, 300) : "unknown"
           deps.log("chain_fetch_failed", { nextCursor, message })
