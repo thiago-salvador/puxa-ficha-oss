@@ -1,0 +1,98 @@
+name: Backup do banco
+
+# O Supabase Free não tem backup automático acessível; este workflow roda o
+# scripts/backup-supabase.sh todo dia e guarda o dump como artifact CIFRADO.
+# O repositório é público e o dump carrega PII (alert_subscribers): o artifact
+# nunca sobe em claro, e o workflow falha antes de dumpar se a chave de
+# criptografia não estiver configurada.
+#
+# Nunca roda em pull_request: usa secrets e o modelo de confiança é o mesmo
+# do ingest.yml (schedule e dispatch executam só o código da main).
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL        connection string direta do Postgres (Project
+#                          Settings → Database → Connection string)
+#   BACKUP_ENCRYPTION_KEY  passphrase forte (ex.: `openssl rand -base64 32`),
+#                          guardada também fora do GitHub: sem ela o backup
+#                          não abre
+#
+# Para restaurar (sempre em projeto Supabase NOVO, nunca produção):
+#   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+#     -pass env:BACKUP_ENCRYPTION_KEY \
+#     -in puxa-ficha-<data>.dump.enc -out puxa-ficha.dump
+#   pg_restore --no-owner --no-privileges -d "postgresql://<projeto-novo>" puxa-ficha.dump
+
+on:
+  schedule:
+    # Diário às 05:30 UTC (02:30 em Brasília), antes do cron de ingestão.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-db
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checar secrets antes de tocar o banco
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_ENCRYPTION_KEY" ]; then
+            echo "::error::SUPABASE_DB_URL e/ou BACKUP_ENCRYPTION_KEY ausentes nos Actions secrets." >&2
+            exit 1
+          fi
+
+      - name: Instalar postgresql-client-17
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" |
+            sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Gerar dump
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: bash scripts/backup-supabase.sh backups
+
+      - name: Cifrar dump (o artifact nunca sobe em claro)
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          DUMP="$(ls backups/puxa-ficha-*.dump)"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 \
+            -pass env:BACKUP_ENCRYPTION_KEY \
+            -in "$DUMP" -out "$DUMP.enc"
+          rm -f "$DUMP"
+          ls -lh backups/
+
+      # Retenção de 14 dias: janela suficiente para notar e recuperar um erro
+      # de escrita em massa, sem acumular PII cifrada indefinidamente.
+      - name: Publicar artifact cifrado
+        # Por tag major (sem SHA como no checkout) por falta de SHA verificado
+        # offline; pinar na primeira rodada verde, seguindo o padrão do repo.
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-db-${{ github.run_id }}
+          path: backups/*.dump.enc
+          retention-days: 14
+          if-no-files-found: error
