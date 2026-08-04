@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { Inter, Anton } from "next/font/google"
-import { headers } from "next/headers"
 import { SITE_URL } from "@/lib/metadata"
 import { getPreviewMetadataRobots } from "@/lib/preview-indexing"
 import "./globals.css"
@@ -23,14 +22,18 @@ export const metadata: Metadata = {
   robots: getPreviewMetadataRobots(),
 }
 
-export default async function RootLayout({
+// Sem `await headers()` aqui de proposito. Este layout embrulha TODA rota do
+// site, entao ler headers() tornava cada pagina dinamica e anulava os
+// `export const revalidate` das 12 paginas publicas: o build marcava tudo como
+// `ƒ` e a producao respondia `cache-control: private, no-store` com
+// `x-vercel-cache: MISS` em 100% dos HTML. O nonce de CSP que justificava a
+// leitura saiu do middleware (ver middleware.ts): a pagina nao tem script
+// inline, entao `script-src 'self'` ja barra injecao sem precisar de nonce.
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  // Keeps CSP nonce rendering request-scoped; Next applies the nonce to framework scripts.
-  await headers()
-
   return (
     <html lang="pt-BR" className={`${inter.variable} ${anton.variable}`}>
       <head>
