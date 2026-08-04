@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { config } from "../middleware"
+import { deriveAccessCookieValue } from "@/lib/access-cookie-digest"
 import {
   hasPreviewAccess,
   MIN_DEPLOYED_PREVIEW_TOKEN_LENGTH,
@@ -24,32 +25,57 @@ const APP_DIR = join(root, "src/app")
 
 const TOKEN_FORTE = "preview-secret-token-123456"
 
+/** O cookie guarda a derivação, nunca o token cru (fix de 2026-08-04). */
+async function cookieDeToken(token: string) {
+  return deriveAccessCookieValue(token, "preview")
+}
+
 describe("helper de acesso ao preview", () => {
-  it("aceita o cookie com o token configurado", () => {
+  it("aceita o cookie derivado do token configurado", async () => {
     assert.equal(
-      hasPreviewAccess({ cookieToken: TOKEN_FORTE }, { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE }),
+      await hasPreviewAccess(
+        { cookieToken: await cookieDeToken(TOKEN_FORTE) },
+        { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE },
+      ),
       true,
     )
   })
 
-  it("aceita o token de bootstrap na query, que é o par do middleware", () => {
+  it("recusa o token cru no cookie, que é o valor que vazava antes", async () => {
     assert.equal(
-      hasPreviewAccess({ queryToken: TOKEN_FORTE }, { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE }),
+      await hasPreviewAccess(
+        { cookieToken: TOKEN_FORTE },
+        { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE },
+      ),
+      false,
+    )
+  })
+
+  it("aceita o token de bootstrap na query, que é o par do middleware", async () => {
+    assert.equal(
+      await hasPreviewAccess(
+        { queryToken: TOKEN_FORTE },
+        { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE },
+      ),
       true,
     )
   })
 
-  it("recusa token errado, ausente ou vazio", () => {
+  it("recusa token errado, ausente ou vazio", async () => {
     const env = { VERCEL: "1", PF_PREVIEW_TOKEN: TOKEN_FORTE }
+    const derivado = await cookieDeToken(TOKEN_FORTE)
 
-    assert.equal(hasPreviewAccess({ cookieToken: "preview-secret-token-123457" }, env), false)
-    assert.equal(hasPreviewAccess({ cookieToken: TOKEN_FORTE.slice(0, -1) }, env), false)
-    assert.equal(hasPreviewAccess({ cookieToken: "" }, env), false)
-    assert.equal(hasPreviewAccess({ cookieToken: null, queryToken: null }, env), false)
-    assert.equal(hasPreviewAccess({}, env), false)
+    assert.equal(
+      await hasPreviewAccess({ cookieToken: await cookieDeToken("preview-secret-token-123457") }, env),
+      false,
+    )
+    assert.equal(await hasPreviewAccess({ cookieToken: derivado.slice(0, -1) }, env), false)
+    assert.equal(await hasPreviewAccess({ cookieToken: "" }, env), false)
+    assert.equal(await hasPreviewAccess({ cookieToken: null, queryToken: null }, env), false)
+    assert.equal(await hasPreviewAccess({}, env), false)
   })
 
-  it("falha fechado em ambiente deployado sem token forte", () => {
+  it("falha fechado em ambiente deployado sem token forte", async () => {
     const curto = "a".repeat(MIN_DEPLOYED_PREVIEW_TOKEN_LENGTH - 1)
 
     assert.equal(resolvePreviewToken({ VERCEL: "1" }), null)
@@ -58,8 +84,17 @@ describe("helper de acesso ao preview", () => {
     assert.equal(resolvePreviewToken({ VERCEL: "1", PF_PREVIEW_TOKEN: curto }), null)
 
     // Sem token esperado nenhum valor entra, nem o fallback de dev local.
-    assert.equal(hasPreviewAccess({ cookieToken: curto }, { VERCEL: "1", PF_PREVIEW_TOKEN: curto }), false)
-    assert.equal(hasPreviewAccess({ cookieToken: "local-preview" }, { VERCEL: "1" }), false)
+    assert.equal(
+      await hasPreviewAccess(
+        { cookieToken: await cookieDeToken(curto) },
+        { VERCEL: "1", PF_PREVIEW_TOKEN: curto },
+      ),
+      false,
+    )
+    assert.equal(
+      await hasPreviewAccess({ cookieToken: await cookieDeToken("local-preview") }, { VERCEL: "1" }),
+      false,
+    )
   })
 
   it("lê o mesmo cookie que o middleware seta", () => {
@@ -71,10 +106,13 @@ describe("helper de acesso ao preview", () => {
     )
   })
 
-  it("mantém o fallback de conveniência só fora da Vercel", () => {
+  it("mantém o fallback de conveniência só fora da Vercel", async () => {
     assert.equal(resolvePreviewToken({}), "local-preview")
-    assert.equal(hasPreviewAccess({ cookieToken: "local-preview" }, {}), true)
-    assert.equal(hasPreviewAccess({ cookieToken: "qualquer-coisa" }, {}), false)
+    assert.equal(
+      await hasPreviewAccess({ cookieToken: await cookieDeToken("local-preview") }, {}),
+      true,
+    )
+    assert.equal(await hasPreviewAccess({ cookieToken: "qualquer-coisa" }, {}), false)
   })
 })
 
@@ -124,8 +162,10 @@ function aceitaPathComPonto(rota: string): boolean {
 }
 
 function extrairPrefixosProtegidos(fonte: string): string[] {
+  // `await` opcional: os guards viraram assíncronos quando o cookie passou a
+  // guardar HMAC derivado por Web Crypto (2026-08-04).
   const blocos = fonte.matchAll(
-    /if \(([\s\S]*?)\)\s*\{\s*const response = protect\w+Route\(request\)/g,
+    /if \(([\s\S]*?)\)\s*\{\s*const response = (?:await )?protect\w+Route\(request\)/g,
   )
 
   const prefixos: string[] = []

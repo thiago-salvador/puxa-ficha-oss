@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import { NextRequest } from "next/server"
 import { middleware } from "../middleware"
+import { deriveAccessCookieValue } from "@/lib/access-cookie-digest"
 
 const env = process.env as Record<string, string | undefined>
 const savedEnv: Partial<Record<string, string | undefined>> = {}
@@ -55,10 +56,15 @@ describe("middleware route protection", () => {
       request("http://localhost/preview/candidato/lula?token=preview-secret-token-123456"),
     )
 
+    const setCookie = response.headers.get("set-cookie") ?? ""
+    const derivado = await deriveAccessCookieValue("preview-secret-token-123456", "preview")
+
     assert.equal(response.status, 307)
     assert.equal(response.headers.get("location"), "http://localhost/preview/candidato/lula")
-    assert.match(response.headers.get("set-cookie") ?? "", /pf_preview_token=preview-secret-token-123456/)
-    assert.match(response.headers.get("set-cookie") ?? "", /Path=\/preview/)
+    assert.match(setCookie, new RegExp(`pf_preview_token=${derivado}`))
+    assert.match(setCookie, /Path=\/preview/)
+    // O ponto do fix: o cookie prova posse, não carrega o segredo.
+    assert.equal(setCookie.includes("preview-secret-token-123456"), false)
   })
 
   it("allows preview routes with a valid preview cookie", async () => {
@@ -66,14 +72,51 @@ describe("middleware route protection", () => {
     env.VERCEL_ENV = "production"
     env.PF_PREVIEW_TOKEN = "preview-secret-token-123456"
 
+    const derivado = await deriveAccessCookieValue("preview-secret-token-123456", "preview")
     const response = await middleware(
+      request("http://localhost/preview/candidato/lula", `pf_preview_token=${derivado}`),
+    )
+
+    assert.equal(response.headers.get("x-middleware-next"), "1")
+  })
+
+  it("recusa cookie com o token cru, em preview e no interno", async () => {
+    // Regressão 2026-08-04: o cookie guardava o próprio token, então qualquer
+    // leitura do jar devolvia um segredo reutilizável no bootstrap por `?token=`.
+    // Com o valor derivado, o token cru deixa de ser aceito como cookie.
+    env.NODE_ENV = "production"
+    env.VERCEL_ENV = "production"
+    env.PF_PREVIEW_TOKEN = "preview-secret-token-123456"
+    env.PF_INTERNAL_TOKEN = "internal-secret-token-123456"
+
+    const preview = await middleware(
       request(
         "http://localhost/preview/candidato/lula",
         "pf_preview_token=preview-secret-token-123456",
       ),
     )
+    assert.equal(preview.status, 404)
 
-    assert.equal(response.headers.get("x-middleware-next"), "1")
+    const interno = await middleware(
+      request("http://localhost/internaltest", "pf_internal_token=internal-secret-token-123456"),
+    )
+    assert.equal(interno.status, 404)
+  })
+
+  it("nao aceita o cookie de uma superficie na outra", async () => {
+    // Escopos separados na derivação: o valor do cookie interno não vale em
+    // /preview, mesmo com os dois tokens configurados.
+    env.NODE_ENV = "production"
+    env.VERCEL_ENV = "production"
+    env.PF_PREVIEW_TOKEN = "preview-secret-token-123456"
+    env.PF_INTERNAL_TOKEN = "internal-secret-token-123456"
+
+    const derivadoInterno = await deriveAccessCookieValue("internal-secret-token-123456", "internal")
+    const response = await middleware(
+      request("http://localhost/preview/candidato/lula", `pf_preview_token=${derivadoInterno}`),
+    )
+
+    assert.equal(response.status, 404)
   })
 
   it("fails closed in Vercel production when the preview token is missing or too short", async () => {
@@ -120,8 +163,9 @@ describe("middleware route protection", () => {
     const bootstrap = await middleware(
       request("http://localhost/preview/candidato/lula?token=preview-secret-token-123456"),
     )
+    const derivado = await deriveAccessCookieValue("preview-secret-token-123456", "preview")
     assert.equal(bootstrap.status, 307)
-    assert.match(bootstrap.headers.get("set-cookie") ?? "", /pf_preview_token=preview-secret-token-123456/)
+    assert.match(bootstrap.headers.get("set-cookie") ?? "", new RegExp(`pf_preview_token=${derivado}`))
   })
 
   it("applies the same token bootstrap flow to internaltest and styleguide routes", async () => {
@@ -132,18 +176,28 @@ describe("middleware route protection", () => {
     const denied = await middleware(request("http://localhost/internaltest"))
     assert.equal(denied.status, 404)
 
+    const derivado = await deriveAccessCookieValue("internal-secret-token", "internal")
     const bootstrap = await middleware(
       request("http://localhost/internaltest?token=internal-secret-token"),
     )
+    const setCookie = bootstrap.headers.get("set-cookie") ?? ""
     assert.equal(bootstrap.status, 307)
     assert.equal(bootstrap.headers.get("location"), "http://localhost/internaltest")
-    assert.match(bootstrap.headers.get("set-cookie") ?? "", /pf_internal_token=internal-secret-token/)
-    assert.match(bootstrap.headers.get("set-cookie") ?? "", /Path=\//)
+    assert.match(setCookie, new RegExp(`pf_internal_token=${derivado}`))
+    assert.equal(setCookie.includes("internal-secret-token"), false)
+    // Limitado à superfície do bootstrap: com Path=/ o cookie viajava em toda
+    // requisição pública do site sem precisar disso.
+    assert.match(setCookie, /Path=\/internaltest/)
 
     const viaCookie = await middleware(
-      request("http://localhost/styleguide", "pf_internal_token=internal-secret-token"),
+      request("http://localhost/styleguide", `pf_internal_token=${derivado}`),
     )
     assert.equal(viaCookie.headers.get("x-middleware-next"), "1")
+
+    const bootstrapStyleguide = await middleware(
+      request("http://localhost/styleguide?token=internal-secret-token"),
+    )
+    assert.match(bootstrapStyleguide.headers.get("set-cookie") ?? "", /Path=\/styleguide/)
   })
 
   it("fails closed in Vercel production when the internal token is missing or too short", async () => {

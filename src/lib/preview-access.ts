@@ -12,6 +12,7 @@
  */
 import { cookies } from "next/headers"
 import { notFound } from "next/navigation"
+import { accessCookieMatches } from "@/lib/access-cookie-digest"
 import { secretsMatch } from "@/lib/crypto-utils"
 
 /** Mesmo cookie que o middleware seta em `/preview` depois do bootstrap por query. */
@@ -61,19 +62,20 @@ export function resolvePreviewToken(env: PreviewEnv = readEnv()): string | null 
  * o par exato do middleware. O bootstrap importa justamente no caso que o matcher
  * deixa passar: ali o middleware nunca roda, então nunca troca query por cookie.
  *
- * Comparação em tempo constante via `secretsMatch` (timingSafeEqual sobre o
- * SHA-256 dos dois lados), o mesmo comparador das rotas protegidas por segredo.
+ * Os dois lados comparam em tempo constante, mas com valores diferentes de
+ * propósito: a query traz o token cru (`secretsMatch`), e o cookie traz o HMAC do
+ * token (`accessCookieMatches`), porque desde 2026-08-04 o cookie não transporta
+ * mais o segredo. Token cru mandado como cookie é recusado, e é isso que se
+ * quer: um valor copiado do jar não vira token de bootstrap.
  */
-export function hasPreviewAccess(
+export async function hasPreviewAccess(
   tokens: { cookieToken?: string | null; queryToken?: string | null },
   env: PreviewEnv = readEnv(),
-): boolean {
+): Promise<boolean> {
   const expectedToken = resolvePreviewToken(env)
   if (!expectedToken) return false
-  return (
-    secretsMatch(tokens.cookieToken, expectedToken) ||
-    secretsMatch(tokens.queryToken, expectedToken)
-  )
+  if (secretsMatch(tokens.queryToken, expectedToken)) return true
+  return accessCookieMatches(tokens.cookieToken, expectedToken, "preview")
 }
 
 function readQueryToken(
@@ -95,7 +97,7 @@ export async function requirePreviewAccess(
   const cookieToken = cookieStore.get(PREVIEW_COOKIE_NAME)?.value ?? null
   const queryToken = readQueryToken(searchParams ? await searchParams : undefined)
 
-  if (!hasPreviewAccess({ cookieToken, queryToken })) {
+  if (!(await hasPreviewAccess({ cookieToken, queryToken }))) {
     notFound()
   }
 }
