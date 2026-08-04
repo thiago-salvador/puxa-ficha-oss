@@ -304,7 +304,11 @@ export function BrazilMap({
             const slug = MACRO_REGION_CSS_SLUG[macro]
             return (
               <div key={region}>
-                <h3 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                {/* Nível 2 porque a legenda de região vem logo abaixo do título
+                    da página, sem nenhum nível intermediário entre os dois. O
+                    tamanho e o peso do texto vêm das classes, então a troca de
+                    tag não muda nada visualmente. */}
+                <h2 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
                   <span
                     className="size-2.5 shrink-0 rounded-sm border border-border/50"
                     style={{
@@ -313,7 +317,7 @@ export function BrazilMap({
                     aria-hidden
                   />
                   {region}
-                </h3>
+                </h2>
                 <ul className="mt-1.5 space-y-0.5">
                   {ufs.map((uf) => {
                     const isActive = hovered === uf
