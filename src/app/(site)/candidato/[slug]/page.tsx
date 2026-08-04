@@ -66,6 +66,22 @@ export async function generateMetadata({
   return {
     title,
     description: desc,
+    // Carimbo do momento em que ESTE HTML foi gerado.
+    //
+    // Com ISR, uma revalidação que falha não devolve erro: o Next continua
+    // servindo o último snapshot bom (medido nesta sessão: render lançando em
+    // 100% das tentativas e a rota respondendo 200 com o conteúdo anterior).
+    // Isso é ótimo para o leitor e péssimo para quem opera, porque o site pode
+    // ficar congelado no passado sem emitir nenhum sinal.
+    //
+    // Este carimbo é o sinal. `npm run cache:aquecer -- --frescor-max-horas=N`
+    // passa em todas as fichas e falha quando alguma carrega um carimbo velho
+    // demais, o que só acontece se a revalidação estiver falhando em série.
+    // Sem o aquecimento periódico o carimbo não prova nada, porque ISR só
+    // revalida quando alguém acessa.
+    other: {
+      "pf-rendered-at": new Date().toISOString(),
+    },
     alternates: {
       canonical: `/candidato/${slug}`,
     },
