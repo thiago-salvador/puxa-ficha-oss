@@ -13,6 +13,11 @@ import {
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion"
 import type { BrazilMapIndicadoresPreview } from "@/lib/brazil-map-preview"
 
+/**
+ * Estados grandes o bastante para caber uma sigla legível dentro do polígono.
+ * Os demais (AC, AL, AP, DF, ES, PB, PE, RJ, RN, SE) não recebem rótulo no mapa:
+ * o diretório de UFs ao lado e o tooltip de hover já dão o nome de todos eles.
+ */
 const LARGE_STATES = new Set([
   "AM", "PA", "MT", "BA", "MG", "GO", "MA", "MS", "RS", "PR", "SP",
   "PI", "TO", "RO", "CE", "RR", "SC",
@@ -44,6 +49,15 @@ const STROKE_WIDTH_DF = 2.4
 
 /** Sem siglas no mapa abaixo de lg (evita sobreposicao). O diretorio lateral mantem todas as UFs. */
 const MAP_LABEL_CLASS = "pointer-events-none select-none hidden lg:inline"
+
+/**
+ * Tamanho da sigla em unidades do viewBox, não em pixels de tela: o svg encolhe
+ * junto com o container, então o texto renderiza menor do que este número.
+ * Com 18 unidades a sigla sai por volta de 11px no lg (svg com 530px) e 14px em
+ * telas largas (svg com 676px), ficando acima do piso legível. Os 10px e 8px
+ * anteriores renderizavam entre 4,9px e 7,8px.
+ */
+const MAP_LABEL_FONT_SIZE = "18px"
 
 function regionPaint(sigla: string): { top: string; side: string; hover: string } {
   const macro = getRegionForSigla(sigla)
@@ -186,8 +200,8 @@ export function BrazilMap({
                     }}
                   />
 
-                  {/* State label — large states: tuned positions; small states: centroid sigla */}
-                  {LARGE_STATES.has(state.sigla) ? (
+                  {/* Sigla apenas nos estados grandes, em posição ajustada à mão */}
+                  {LARGE_STATES.has(state.sigla) &&
                     (() => {
                       const labelPos = LABEL_POS[state.sigla] ?? { x: state.cx, y: state.cy }
                       return (
@@ -199,7 +213,7 @@ export function BrazilMap({
                           className={MAP_LABEL_CLASS}
                           filter="url(#map-label-shadow)"
                           style={{
-                            fontSize: "10px",
+                            fontSize: MAP_LABEL_FONT_SIZE,
                             fontFamily: "Inter, system-ui, sans-serif",
                             fontWeight: 700,
                             letterSpacing: "0.05em",
@@ -210,27 +224,7 @@ export function BrazilMap({
                           {state.sigla}
                         </text>
                       )
-                    })()
-                  ) : (
-                    <text
-                      x={state.cx}
-                      y={state.cy + liftY}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      className={MAP_LABEL_CLASS}
-                      filter="url(#map-label-shadow)"
-                      style={{
-                        fontSize: "8px",
-                        fontFamily: "Inter, system-ui, sans-serif",
-                        fontWeight: 700,
-                        letterSpacing: "0.04em",
-                        fill: "rgba(255, 255, 255, 0.96)",
-                        transition: prefersReducedMotion ? "none" : "fill 0.3s ease",
-                      }}
-                    >
-                      {state.sigla}
-                    </text>
-                  )}
+                    })()}
                 </g>
               )
             })}
