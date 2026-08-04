@@ -50,18 +50,32 @@ export function formatDate(date: string | Date): string {
  * Todos os valores exibidos ao público saem destes formatadores pt-BR.
  * Sufixos em inglês (K/M) e ponto decimal são regressão: site cívico em
  * pt-BR não pode exibir "R$ 1.7M", que é ambíguo para o leitor brasileiro.
+ *
+ * O sufixo compacto é montado à mão de propósito: `notation: "compact"`
+ * diverge entre motores de ICU (o Node renderizava "R$ 200 mil" e o
+ * Chromium "R$ 200,0 mil" para o mesmo valor), o que quebrava a hidratação
+ * dos componentes client. Intl entra só no decimal, que é estável.
  */
-const compactBRLFormatter = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-  notation: "compact",
-  maximumFractionDigits: 1,
-})
+const COMPACT_SCALES: Array<{ limit: number; suffix: string }> = [
+  { limit: 1_000_000_000, suffix: "bi" },
+  { limit: 1_000_000, suffix: "mi" },
+  { limit: 1_000, suffix: "mil" },
+]
 
-const compactNumberFormatter = new Intl.NumberFormat("pt-BR", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-})
+function compactParts(value: number): { text: string; suffix: string } | null {
+  for (const { limit, suffix } of COMPACT_SCALES) {
+    if (Math.abs(value) >= limit) {
+      const rounded = Math.round((value / limit) * 10) / 10
+      // 999.950 arredonda para "1.000 mil": promove para a escala seguinte.
+      if (Math.abs(rounded) >= 1_000 && limit < 1_000_000_000) {
+        return compactParts(rounded * limit)
+      }
+      const digits = Number.isInteger(rounded) ? 0 : 1
+      return { text: formatDecimal(rounded, digits), suffix }
+    }
+  }
+  return null
+}
 
 const decimalFormatters = new Map<number, Intl.NumberFormat>()
 
@@ -79,13 +93,16 @@ function getDecimalFormatter(digits: number): Intl.NumberFormat {
 
 /** Moeda compacta: "R$ 129,8 mi", "R$ 595,1 mil". Abaixo de mil cai no BRL cheio. */
 export function formatCompact(value: number): string {
-  if (Math.abs(value) >= 1_000) return compactBRLFormatter.format(value)
-  return formatBRL(value)
+  const parts = compactParts(value)
+  if (!parts) return formatBRL(value)
+  return `R$ ${parts.text} ${parts.suffix}`
 }
 
 /** Contagem compacta sem moeda: "46,6 mi", "213 mil". */
 export function formatCompactNumber(value: number): string {
-  return compactNumberFormatter.format(value)
+  const parts = compactParts(value)
+  if (!parts) return formatDecimal(value, 0)
+  return `${parts.text} ${parts.suffix}`
 }
 
 /** Decimal pt-BR com casas fixas: formatDecimal(0.491, 3) -> "0,491". */
