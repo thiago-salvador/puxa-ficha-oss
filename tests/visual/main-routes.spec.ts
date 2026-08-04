@@ -29,6 +29,14 @@ function isExternalImageResponse(url: string): boolean {
   }
 }
 
+// Rotas que só renderizam conteúdo com dados reais do Supabase. No job de PR
+// do CI o servidor sobe com env placeholder (sem segredo, funciona em fork) e
+// essas rotas ficam de fora via PF_EXPECT_PLACEHOLDER_DATA=1. A regressão que
+// este teste vigia (CSP sem nonce quebrando todo script inline, incidente de
+// 03/08) é global, definida no middleware e no layout raiz, então as rotas
+// restantes detectam a mesma classe de erro.
+const DATA_DEPENDENT_ROUTES = new Set(["/candidato/lula", "/candidato/lula/timeline"])
+
 test.describe("Main routes visual verification", () => {
   const mainRoutes = [
     "/",
@@ -42,6 +50,10 @@ test.describe("Main routes visual verification", () => {
 
   mainRoutes.forEach((route) => {
     test(`route ${route} renders successfully`, async ({ page }) => {
+      test.skip(
+        process.env.PF_EXPECT_PLACEHOLDER_DATA === "1" && DATA_DEPENDENT_ROUTES.has(route),
+        "Rota depende de dados reais do Supabase; o job de PR roda com env placeholder",
+      )
       // Register listeners before goto to catch errors during page load
       const consoleErrors: string[] = []
       const httpErrors: string[] = []
