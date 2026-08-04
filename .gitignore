@@ -46,6 +46,9 @@ logs/
 scripts/audit-factual-*.json
 scripts/tse-situacao-audit.json
 
+# dumps do banco (PII de assinantes; nunca versionar, ver scripts/backup-supabase.sh)
+backups/
+
 # typescript
 *.tsbuildinfo
 

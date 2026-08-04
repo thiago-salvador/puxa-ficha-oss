@@ -61,6 +61,10 @@ export async function CandidatoFichaView({
       return (
         <div className="min-h-screen bg-background">
           <div className="mx-auto max-w-7xl px-5 pt-20 md:px-12">
+            {/* Quando a fonte pública está fora do ar, a ficha não renderiza o
+                nome do candidato, que é o título de nível 1 da rota. O aviso
+                assume esse papel de forma oculta para o leitor de tela. */}
+            <h1 className="sr-only">Ficha temporariamente indisponível</h1>
             <DataUnavailableState
               title="Ficha temporariamente indisponível"
               description={fichaResource.sourceMessage ?? undefined}
@@ -238,21 +242,23 @@ export async function CandidatoFichaView({
         data-pf-hero
         className="mx-auto max-w-7xl px-5 pt-6 pb-6 sm:pt-8 sm:pb-8 md:px-12"
       >
-        <div className="flex flex-col gap-6 sm:gap-8 lg:flex-row lg:items-center lg:gap-12">
+        <div className="flex flex-row items-start gap-4 sm:flex-col sm:gap-8 lg:flex-row lg:items-center lg:gap-12">
           {ficha.foto_url && (
             <div className="shrink-0 self-start">
+              {/* No mobile o retrato fica menor ao lado do nome em vez de sumir:
+                  é o elemento que identifica a ficha na largura com mais tráfego. */}
               <CandidatePhoto
                 src={ficha.foto_url}
                 alt={`Foto de ${ficha.nome_urna}`}
                 name={ficha.nome_urna}
                 width={315}
                 height={420}
-                sizes="(max-width: 1024px) 270px, 315px"
+                sizes="(max-width: 640px) 96px, (max-width: 1024px) 270px, 315px"
                 priority
                 fetchPriority="high"
-                className="hidden object-cover object-top sm:block sm:h-[360px] sm:w-[270px] sm:rounded-[20px] lg:h-[420px] lg:w-[315px]"
-                fallbackClassName="hidden sm:flex sm:h-[360px] sm:w-[270px] sm:rounded-[20px] lg:h-[420px] lg:w-[315px]"
-                initialsClassName="text-6xl"
+                className="h-[128px] w-[96px] rounded-[12px] object-cover object-top sm:h-[360px] sm:w-[270px] sm:rounded-[20px] lg:h-[420px] lg:w-[315px]"
+                fallbackClassName="flex h-[128px] w-[96px] rounded-[12px] sm:h-[360px] sm:w-[270px] sm:rounded-[20px] lg:h-[420px] lg:w-[315px]"
+                initialsClassName="text-2xl sm:text-6xl"
               />
             </div>
           )}
@@ -300,7 +306,7 @@ export async function CandidatoFichaView({
 
             <p
               data-pf-hero-meta
-              className="mt-2 hidden text-[length:var(--text-caption)] font-semibold text-muted-foreground sm:mt-3 sm:block sm:text-[length:var(--text-body-sm)]"
+              className="mt-2 text-[length:var(--text-caption)] font-semibold text-muted-foreground sm:mt-3 sm:text-[length:var(--text-body-sm)]"
             >
               {[
                 ficha.cargo_atual ? sanitizePtBrText(ficha.cargo_atual) : null,

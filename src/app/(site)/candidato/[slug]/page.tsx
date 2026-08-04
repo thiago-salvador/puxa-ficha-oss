@@ -14,9 +14,10 @@ import { CandidatoFichaView } from "./CandidatoFichaView"
 // `searchParams.tab` deixou de ser lido no servidor (o que tornava a rota
 // dinâmica em Next 15); agora a aba inicial vinda de `?tab=` é resolvida
 // no client por `CandidatoProfile`.
-// O caminho de bypass do release-verify (`PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION`
-// + header `x-pf-release-verify-cache-bypass`) continua transformando o request em
-// no-store so quando ativado, sem afetar o build.
+// O caminho de bypass do release-verify (header `x-pf-release-verify-cache-bypass`)
+// só existe fora de produção: desde a queda de 2026-08-03, `VERCEL_ENV=production`
+// ignora o bypass mesmo com `PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION`
+// setada. Verificação de release com bypass roda em Preview.
 export const dynamic = "force-dynamic"
 
 export async function generateMetadata({

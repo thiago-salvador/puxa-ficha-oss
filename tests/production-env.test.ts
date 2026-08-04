@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, it } from "node:test"
-import { validateProductionEnvironment } from "../src/lib/production-env"
+import {
+  resolveReleaseVerifyCacheBypassToken,
+  validateProductionEnvironment,
+} from "../src/lib/production-env"
 
 const KEYS = [
   "VERCEL_ENV",
@@ -106,5 +110,85 @@ describe("validateProductionEnvironment", () => {
       console.error = originalConsoleError
     }
     assert.match(logs.join("\n"), /PF_ALERTS_FROM_EMAIL ou SMTP_FROM em formato invalido/)
+  })
+})
+
+/**
+ * Regressão da queda de 2026-08-03.
+ *
+ * `PF_RELEASE_VERIFY_CACHE_BYPASS` e
+ * `PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION` ficaram ligadas em
+ * produção por 106 dias. Com as duas setadas, `getCandidatoBySlugResource`
+ * passava a ler `headers()` em toda ficha; header lido em runtime numa rota
+ * estática dispara `app-static-to-dynamic-error` e o `/candidato/[slug]`
+ * respondeu HTTP 500.
+ *
+ * O opt-in de produção deixou de existir: em `VERCEL_ENV=production` o bypass é
+ * ignorado independente dele. Verificação de release com bypass roda em Preview.
+ */
+describe("bypass de cache do release-verify", () => {
+  const BYPASS_KEYS = [
+    "VERCEL_ENV",
+    "PF_RELEASE_VERIFY_CACHE_BYPASS",
+    "PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION",
+  ] as const
+  const bypassSnapshot: Partial<Record<(typeof BYPASS_KEYS)[number], string | undefined>> = {}
+
+  beforeEach(() => {
+    for (const k of BYPASS_KEYS) bypassSnapshot[k] = process.env[k]
+  })
+
+  afterEach(() => {
+    for (const k of BYPASS_KEYS) {
+      if (bypassSnapshot[k] === undefined) delete process.env[k]
+      else process.env[k] = bypassSnapshot[k]
+    }
+  })
+
+  it("em produção o bypass é ignorado mesmo com as duas variáveis setadas", () => {
+    process.env.VERCEL_ENV = "production"
+    process.env.PF_RELEASE_VERIFY_CACHE_BYPASS = "token-de-verificacao"
+    process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION = "1"
+
+    assert.equal(resolveReleaseVerifyCacheBypassToken(), null)
+  })
+
+  it("em produção nenhum valor do opt-in reabre o bypass", () => {
+    process.env.VERCEL_ENV = "production"
+    process.env.PF_RELEASE_VERIFY_CACHE_BYPASS = "token-de-verificacao"
+
+    for (const optIn of ["1", "true", "yes", "0", ""]) {
+      process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION = optIn
+      assert.equal(
+        resolveReleaseVerifyCacheBypassToken(),
+        null,
+        `opt-in "${optIn}" reabriu o bypass em produção`,
+      )
+    }
+  })
+
+  it("em preview o bypass continua valendo, com o token limpo", () => {
+    process.env.VERCEL_ENV = "preview"
+    process.env.PF_RELEASE_VERIFY_CACHE_BYPASS = "  token-de-verificacao  "
+    delete process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION
+
+    assert.equal(resolveReleaseVerifyCacheBypassToken(), "token-de-verificacao")
+  })
+
+  it("sem token o bypass fica desligado em qualquer ambiente", () => {
+    delete process.env.PF_RELEASE_VERIFY_CACHE_BYPASS
+    process.env.VERCEL_ENV = "preview"
+    assert.equal(resolveReleaseVerifyCacheBypassToken(), null)
+
+    process.env.PF_RELEASE_VERIFY_CACHE_BYPASS = "   "
+    assert.equal(resolveReleaseVerifyCacheBypassToken(), null)
+  })
+
+  it("a ficha lê headers() apenas atrás do gate, sem consultar o opt-in", () => {
+    const api = readFileSync("src/lib/api.ts", "utf8")
+
+    assert.match(api, /const cacheBypass = resolveReleaseVerifyCacheBypassToken\(\)/)
+    assert.doesNotMatch(api, /PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION/)
+    assert.doesNotMatch(api, /process\.env\.PF_RELEASE_VERIFY_CACHE_BYPASS/)
   })
 })

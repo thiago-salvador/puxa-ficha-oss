@@ -14,6 +14,7 @@ import {
   getAppSupabaseUrl,
 } from "./supabase"
 import { isSupabaseNoRowError } from "./supabase-errors"
+import { resolveReleaseVerifyCacheBypassToken } from "./production-env"
 import { normalizeVotoFromApi } from "@/lib/quiz-scoring"
 import type {
   QuizAlignmentDataset,
@@ -79,7 +80,10 @@ import {
   classifyAttentionPoints,
   isNegativeHighestSeverityAttentionPoint,
 } from "@/lib/attention-points"
-import { withSupabaseRetry } from "@/lib/supabase-retry"
+import {
+  SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS,
+  withSupabaseRetry,
+} from "@/lib/supabase-retry"
 import { getCanonicalPerson } from "@/lib/canonical-person-map"
 import { formatDate } from "@/lib/utils"
 import { buildVotacaoPublicUrl } from "@/lib/quiz-votacao-url"
@@ -557,7 +561,7 @@ async function getCandidatosResourceUncached(
     }
 
     return query.order("nome_urna").abortSignal(signal)
-  })
+  }, { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS })
 
   if (error || !data) {
     if (IS_DEV) {
@@ -1274,14 +1278,11 @@ async function getCandidatoBySlugFromRelationResource(
   return liveResource(ficha)
 }
 
-const PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS = new Set([
-  "augusto-cury",
-  "cabo-daciolo",
-  "edmilson-costa",
-  "marcelo-brigadeiro",
-  "natasha-slhessarenko",
-  "renan-santos",
-])
+// Esvaziado em 2026-08-04: os 6 slugs da migração de densidade de 17/05 já foram
+// absorvidos por keyParts posteriores, e o noStore() por request custava ~15
+// round-trips ao Supabase em cada pageview de presidenciável. Mecanismo mantido
+// para emergência editorial (adicionar slug aqui + keyPart novo no cache abaixo).
+const PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS = new Set<string>([])
 
 export async function getCandidatoBySlugResource(
   slug: string
@@ -1291,13 +1292,13 @@ export async function getCandidatoBySlugResource(
     return getCandidatoBySlugResourceUncached(slug)
   }
 
-  const cacheBypass = process.env.PF_RELEASE_VERIFY_CACHE_BYPASS?.trim()
-  /** Em produção na Vercel, ler `headers()` em toda ficha torna a rota dinâmica; o bypass fica desligado salvo opt-in explícito. */
-  const allowCacheBypass =
-    Boolean(cacheBypass) &&
-    (process.env.PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION === "1" ||
-      process.env.VERCEL_ENV !== "production")
-  if (allowCacheBypass) {
+  // Ler `headers()` aqui torna a ficha dinâmica em runtime. Em produção isso
+  // dispara `app-static-to-dynamic-error` e devolve HTTP 500: foi a queda de
+  // 2026-08-03, com as duas variáveis do bypass ligadas no painel havia 106
+  // dias. O gate agora mora em `resolveReleaseVerifyCacheBypassToken`, que
+  // devolve `null` em `VERCEL_ENV=production` sem consultar opt-in nenhum.
+  const cacheBypass = resolveReleaseVerifyCacheBypassToken()
+  if (cacheBypass) {
     try {
       const h = await headers()
       const bypassHeader = h.get("x-pf-release-verify-cache-bypass")
@@ -1438,7 +1439,7 @@ const getCachedCandidatoBySlugResource = unstable_cache(
   // do Vercel Data Cache (Build warning 25202862956 em /candidato/[slug] e
   // /embed/[slug] com slugs de inventario completo). Suffix invalida cache antigo
   // com o payload pre-trim.
-  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803"],
+  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803", "density-bypass-clear-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidato-ficha"],
@@ -1497,7 +1498,8 @@ async function getCandidatosComResumoResourceUncached(
       }
 
       return query.abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
 
   const compareMap = new Map<
@@ -1575,7 +1577,8 @@ async function getCandidatosComparaveisResourceUncached(
       }
 
       return query.order("nome_urna").abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
   if (compareError) {
     if (IS_DEV) {

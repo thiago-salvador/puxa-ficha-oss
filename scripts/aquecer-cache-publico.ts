@@ -28,10 +28,36 @@
  * que se quer evitar. Somente GET, nao escreve nada, e seguro repetir.
  */
 
+import { rankingDefinitions } from "../src/data/ranking-definitions"
+import { getEstadoUFs } from "../src/lib/br-uf"
+
 const BASE_PADRAO = "https://puxaficha.com.br"
 const CONCORRENCIA_PADRAO = 4
 /** Rotas fixas que valem aquecer alem das fichas. */
-const ROTAS_FIXAS = ["/", "/rankings", "/quiz", "/comparar", "/metodologia", "/sobre"]
+const ROTAS_FIXAS = [
+  "/",
+  "/rankings",
+  "/quiz",
+  "/comparar",
+  "/metodologia",
+  "/sobre",
+  "/governadores",
+  "/doadores",
+]
+
+/**
+ * Rotas derivadas de listas conhecidas em codigo, na mesma fonte que as paginas
+ * usam: cada /uf/<uf> aquece 3 chaves proprias de Data Cache (resumo,
+ * comparaveis e indicadores do estado, 27 x 3 = 81 entradas frias que a lista
+ * fixa nunca tocava) e /rankings/<slug> vem de rankingDefinitions, a mesma
+ * lista do generateStaticParams da pagina.
+ */
+function rotasDerivadas(): string[] {
+  return [
+    ...getEstadoUFs().map((uf) => `/uf/${uf}`),
+    ...rankingDefinitions.map((definition) => `/rankings/${definition.slug}`),
+  ]
+}
 
 interface Opcoes {
   base: string
@@ -128,11 +154,14 @@ async function main(): Promise<void> {
     return
   }
 
+  const rotasSemFicha = [...ROTAS_FIXAS, ...rotasDerivadas()]
   const urls = [
-    ...(soFichas ? [] : ROTAS_FIXAS.map((r) => `${base}${r}`)),
+    ...(soFichas ? [] : rotasSemFicha.map((r) => `${base}${r}`)),
     ...slugs.map((slug) => `${base}/candidato/${slug}`),
   ]
-  console.log(`${urls.length} URLs (${slugs.length} fichas)`)
+  console.log(
+    `${urls.length} URLs (${slugs.length} fichas${soFichas ? "" : `, ${rotasSemFicha.length} rotas publicas`})`
+  )
 
   const inicio = Date.now()
   const resultados = await emLotes(urls, concorrencia)

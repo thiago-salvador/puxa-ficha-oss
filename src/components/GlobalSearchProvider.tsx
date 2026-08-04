@@ -621,24 +621,20 @@ export function GlobalSearchProvider({
                                   >
                                     {section.label !== "Atalhos" ? (
                                       <>
-                                        {item.foto_url ? (
-                                          <CandidatePhoto
-                                            src={item.foto_url}
-                                            alt={item.title}
-                                            name={item.title}
-                                            width={44}
-                                            height={44}
-                                            sizes="44px"
-                                            className="size-11 shrink-0 rounded-full object-cover object-top"
-                                            fallbackClassName="size-11 shrink-0 rounded-full"
-                                            initialsClassName="text-xs"
-                                          />
-                                        ) : (
-                                          <div
-                                            className="size-11 shrink-0 rounded-full bg-muted"
-                                            aria-hidden
-                                          />
-                                        )}
+                                        {/* Sem foto ou com foto quebrada, o CandidatePhoto
+                                            cai nas iniciais: círculo cinza vazio parece
+                                            item quebrado no fluxo de busca. */}
+                                        <CandidatePhoto
+                                          src={item.foto_url}
+                                          alt={item.title}
+                                          name={item.title}
+                                          width={44}
+                                          height={44}
+                                          sizes="44px"
+                                          className="size-11 shrink-0 rounded-full object-cover object-top"
+                                          fallbackClassName="size-11 shrink-0 rounded-full"
+                                          initialsClassName="text-xs"
+                                        />
                                         <div className="min-w-0 flex-1">
                                           <p className="font-heading text-[18px] uppercase leading-none text-foreground">
                                             <HighlightedText text={item.title} query={deferredQuery} />

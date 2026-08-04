@@ -30,9 +30,15 @@ import { SlashDivider } from "@/components/SlashDivider"
 import { StateIndicators } from "@/components/StateIndicators"
 import { StateNarrative } from "@/components/StateNarrative"
 import { StateRankingCards } from "@/components/StateRankingCards"
-import { formatBRL } from "@/lib/utils"
+import { formatCompact } from "@/lib/utils"
 import { buildTwitterMetadata } from "@/lib/metadata"
 
+// Inerte hoje: o `await headers()` do nonce de CSP no RootLayout torna a
+// árvore inteira dinâmica e nenhuma rota pública gera ISR (medido em produção
+// em 2026-08-04: x-vercel-cache MISS e cache-control no-store em todas). O
+// Data Cache do unstable_cache segue protegendo o Supabase. Este revalidate
+// volta a valer quando a CSP migrar para hash + strict-dynamic (rota do PR
+// #72, pós-lançamento); não remover sem conferir de novo com curl.
 export const revalidate = 3600
 
 function latestIndicador(
@@ -235,9 +241,7 @@ export default async function UfHubPage({
             {totalCandidatos === 0 && pop == null && pib == null && totalPatrimonio > 0 && (
               <div>
                 <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
-                  {totalPatrimonio >= 1_000_000
-                    ? `R$ ${(totalPatrimonio / 1_000_000).toFixed(0)}M`
-                    : formatBRL(totalPatrimonio)}
+                  {formatCompact(totalPatrimonio)}
                 </p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
                   patrimônio declarado

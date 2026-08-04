@@ -10,6 +10,7 @@ import { DataSourceNotice } from "@/components/DataSourceNotice"
 import { DataUnavailableState } from "@/components/DataUnavailableState"
 import { SectionDivider } from "@/components/SectionHeader"
 import { getCandidatoBySlugPreviewResource } from "@/lib/api"
+import { requirePreviewAccess } from "@/lib/preview-access"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import { formatCargoDisputadoPublicLabel } from "@/lib/ui-labels"
@@ -28,9 +29,17 @@ export const metadata: Metadata = {
 
 export default async function PreviewCandidatoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
+  // O matcher do middleware pula todo path com ponto, então `/preview/candidato/a.b`
+  // chegava aqui sem token nenhum e a leitura abaixo usa service role (enxerga
+  // candidato NÃO publicado). A checagem roda antes de qualquer leitura; o
+  // middleware virou defesa em profundidade.
+  await requirePreviewAccess(searchParams)
+
   const { slug } = await params
 
   const fichaResource = await getFichaPreview(slug)

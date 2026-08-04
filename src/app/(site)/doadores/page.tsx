@@ -1,5 +1,6 @@
 import Link from "next/link"
 import type { Metadata } from "next"
+import { headers } from "next/headers"
 import * as Sentry from "@sentry/nextjs"
 import { Footer } from "@/components/Footer"
 import {
@@ -8,6 +9,11 @@ import {
   DOADOR_REVERSE_PAGE_SIZE,
   getDoadorReverseSearchResult,
 } from "@/lib/doador-reverse"
+import type { DoadorReverseSearchResult } from "@/lib/doador-reverse-shared"
+import {
+  doadoresSearchRateLimiter,
+  retryAfterSeconds,
+} from "@/lib/doadores-search-rate-limit"
 import { buildTwitterMetadata } from "@/lib/metadata"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import { formatBRL } from "@/lib/utils"
@@ -35,6 +41,12 @@ export const metadata: Metadata = {
   }),
 }
 
+// Inerte hoje: o `await headers()` do nonce de CSP no RootLayout torna a
+// árvore inteira dinâmica e nenhuma rota pública gera ISR (medido em produção
+// em 2026-08-04: x-vercel-cache MISS e cache-control no-store em todas). O
+// Data Cache do unstable_cache segue protegendo o Supabase. Este revalidate
+// volta a valer quando a CSP migrar para hash + strict-dynamic (rota do PR
+// #72, pós-lançamento); não remover sem conferir de novo com curl.
 export const revalidate = 3600
 
 type SearchParams = { q?: string | string[] }
@@ -52,17 +64,42 @@ export default async function DoadoresPage({
 }) {
   const sp = await searchParams
   const rawQ = firstQueryParam(sp.q)
-  const result = await Sentry.startSpan(
-    {
-      name: "doadores_page.search",
-      op: "http.server",
-      attributes: {
-        "http.route": "/doadores",
-        "puxaficha.has_query": rawQ.trim().length > 0,
-      },
-    },
-    () => getDoadorReverseSearchResult(rawQ),
-  )
+
+  // Limite por IP só no caminho caro: termo que passaria do piso e chegaria ao
+  // banco. Termo vazio ou curto demais nunca sai do processo. Falha do limiter
+  // fecha (não busca), no mesmo padrão fail-closed de /api/analytics/event.
+  let aguardeSegundos: number | null = null
+  if (rawQ.trim().length >= DOADOR_REVERSE_MIN_QUERY_LENGTH) {
+    try {
+      const decision = doadoresSearchRateLimiter.check(await headers())
+      if (!decision.allowed) aguardeSegundos = retryAfterSeconds(decision)
+    } catch (error) {
+      console.error("doadores search rate limit failed closed", error)
+      aguardeSegundos = 60
+    }
+  }
+
+  const result: DoadorReverseSearchResult =
+    aguardeSegundos === null
+      ? await Sentry.startSpan(
+          {
+            name: "doadores_page.search",
+            op: "http.server",
+            attributes: {
+              "http.route": "/doadores",
+              "puxaficha.has_query": rawQ.trim().length > 0,
+            },
+          },
+          () => getDoadorReverseSearchResult(rawQ),
+        )
+      : {
+          rows: [],
+          displayQuery: rawQ.trim(),
+          normalizedQuery: "",
+          error: null,
+          termoCurtoDemais: false,
+          truncado: false,
+        }
   const hasQuery = result.normalizedQuery.length > 0 && !result.termoCurtoDemais
 
   return (
@@ -114,6 +151,13 @@ export default async function DoadoresPage({
             Buscar
           </button>
         </form>
+
+        {aguardeSegundos !== null && (
+          <p className="mb-6 text-[14px] text-destructive" role="alert">
+            Muitas buscas seguidas deste endereço. Aguarde {aguardeSegundos}{" "}
+            {aguardeSegundos === 1 ? "segundo" : "segundos"} e tente de novo.
+          </p>
+        )}
 
         {result.error && (
           <p className="mb-6 text-[14px] text-destructive" role="alert">
@@ -188,7 +232,7 @@ export default async function DoadoresPage({
           </>
         )}
 
-        {!hasQuery && (
+        {!hasQuery && aguardeSegundos === null && (
           <p className="text-[15px] text-muted-foreground">
             Digite um nome ou parte dele para buscar nas campanhas com dados de financiamento publicados.
           </p>

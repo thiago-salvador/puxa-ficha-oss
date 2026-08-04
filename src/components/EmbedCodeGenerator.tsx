@@ -118,7 +118,15 @@ export function EmbedCodeGenerator({ candidates }: { candidates: EmbedCodeGenera
             {copied === "html" ? "Copiado" : "Copiar"}
           </button>
         </div>
-        <pre className="max-h-48 overflow-auto rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed">
+        {/* Bloco com rolagem precisa ser alcançável pelo teclado: sem tabIndex, quem não usa
+            mouse não consegue rolar o código até o fim. O role e o rótulo dão ao leitor
+            de tela um nome para essa parada de foco. */}
+        <pre
+          tabIndex={0}
+          role="region"
+          aria-label="Código HTML do iframe, área com rolagem"
+          className="max-h-48 overflow-auto rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           {iframeHtml}
         </pre>
       </div>
@@ -136,7 +144,12 @@ export function EmbedCodeGenerator({ candidates }: { candidates: EmbedCodeGenera
             {copied === "script" ? "Copiado" : "Copiar"}
           </button>
         </div>
-        <pre className="max-h-48 overflow-auto rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed">
+        <pre
+          tabIndex={0}
+          role="region"
+          aria-label="Código do script opcional de altura automática, área com rolagem"
+          className="max-h-48 overflow-auto rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           {RESIZE_SNIPPET}
         </pre>
         <p className="mt-2 text-[12px] text-muted-foreground">
