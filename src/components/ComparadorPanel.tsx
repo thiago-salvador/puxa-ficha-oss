@@ -308,19 +308,21 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                     <span className="sr-only">Selecionar</span>
                   </th>
                   {[
-                    "Candidato",
-                    "Partido",
-                    "Idade",
-                    "Formação",
-                    "Patrimônio",
-                    "Votações",
-                    "Gastos",
-                    "Processos",
-                    "Alertas",
-                  ].map((heading) => (
+                    { heading: "Candidato", numeric: false },
+                    { heading: "Partido", numeric: false },
+                    { heading: "Idade", numeric: true },
+                    { heading: "Formação", numeric: false },
+                    { heading: "Patrimônio", numeric: true },
+                    { heading: "Votações", numeric: true },
+                    { heading: "Gastos", numeric: true },
+                    { heading: "Processos", numeric: true },
+                    { heading: "Alertas", numeric: true },
+                  ].map(({ heading, numeric }) => (
                     <th
                       key={heading}
-                      className="pb-3 text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.08em] text-foreground"
+                      className={`pb-3 text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.08em] text-foreground ${
+                        numeric ? "text-right" : ""
+                      }`}
                     >
                       {heading}
                     </th>
@@ -397,7 +399,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                       <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold text-foreground">
                         {formatPartyPublicLabel(candidato.partido_sigla)}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-semibold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-semibold tabular-nums text-foreground">
                         {candidato.idade != null ? (
                           candidato.idade
                         ) : (
@@ -409,27 +411,27 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                           <span className="text-muted-foreground">não informada</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.patrimonio_declarado != null ? (
                           formatCompact(candidato.patrimonio_declarado)
                         ) : (
                           <span className="font-medium text-muted-foreground">sem declaração</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.total_votos_mapeados}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.total_gasto_parlamentar != null ? (
                           formatCompact(candidato.total_gasto_parlamentar)
                         ) : (
                           <span className="font-medium text-muted-foreground">sem gasto mapeado</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.total_processos}
                       </td>
-                      <td className="py-3 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.alertas_graves}
                       </td>
                     </tr>
