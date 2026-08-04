@@ -136,7 +136,12 @@ jobs:
       - name: Fluxos de lançamento (fixtures locais)
         env:
           PF_EXPECT_PLACEHOLDER_DATA: "1"
-        run: npm run test:playwright:launch
+        # O rm evita que uma falha aqui publique o playwright-report/ verde do
+        # step anterior (o launch config só usa reporter list) e confunda a
+        # triagem pelo artifact.
+        run: |
+          rm -rf playwright-report
+          npm run test:playwright:launch
 
       - name: Publicar relatório em caso de falha
         if: failure()

@@ -1,6 +1,10 @@
 import { test, expect } from "playwright/test"
 
-const BASE_ORIGIN = new URL(process.env.PF_BASE_URL ?? "https://puxa-ficha.vercel.app").origin
+// Sem PF_BASE_URL o playwright.config sobe o servidor local na porta 3000;
+// o origin de comparação precisa apontar pra ele, senão toda imagem local com
+// falha é classificada como externa e o filtro de ruído engole console errors
+// 404/429 legítimos (achado do review de 2026-08-04).
+const BASE_ORIGIN = new URL(process.env.PF_BASE_URL ?? "http://127.0.0.1:3000").origin
 
 function isIgnorableConsoleNoise(
   message: string,

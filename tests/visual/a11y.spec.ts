@@ -4,12 +4,14 @@ import { expect, test } from "playwright/test"
 type RouteA11y = {
   name: string
   path: string
-  // Violação conhecida em produção (master review 2026-08-04, reconfirmada em
-  // 2026-08-04 com a espera de animação ativa): o teste vira fixme até o grupo
-  // G6 corrigir. Ao mergear o G6, remover o campo para reativar o gate.
-  fixmeAteG6?: string
-  // Restringe o fixme a um projeto quando o outro já passa (gate continua ativo).
-  fixmeSoNoProjeto?: "desktop" | "mobile"
+  // Regras do axe com violação conhecida em produção (master review de
+  // 2026-08-04, reconfirmada com a espera de animação ativa). Só essas regras
+  // ficam desligadas na rota até o grupo G6 corrigir; o resto do gate segue
+  // ativo, então violação nova de qualquer outra regra reprova. Ao mergear o
+  // G6, remover o campo para reativar o gate completo.
+  regrasDesligadasAteG6?: string[]
+  // Restringe o desligamento a um projeto quando o outro já passa completo.
+  regrasSoNoProjeto?: "desktop" | "mobile"
 }
 
 const ROUTES: RouteA11y[] = [
@@ -22,7 +24,7 @@ const ROUTES: RouteA11y[] = [
   {
     name: "governors",
     path: "/governadores",
-    fixmeAteG6: "G6: nested-interactive (serious) e heading-order (moderate) em producao",
+    regrasDesligadasAteG6: ["nested-interactive", "heading-order"],
   },
   { name: "uf", path: "/uf/sp" },
   { name: "rankings", path: "/rankings" },
@@ -30,23 +32,23 @@ const ROUTES: RouteA11y[] = [
   {
     name: "candidate-timeline",
     path: "/candidato/lula/timeline",
-    fixmeAteG6: "G6: color-contrast (serious) em producao, so no desktop",
-    fixmeSoNoProjeto: "desktop",
+    regrasDesligadasAteG6: ["color-contrast"],
+    regrasSoNoProjeto: "desktop",
   },
   {
     name: "quiz-questions",
     path: "/quiz/perguntas",
-    fixmeAteG6: "G6: listitem (serious) e page-has-heading-one (moderate) em producao",
+    regrasDesligadasAteG6: ["listitem", "page-has-heading-one"],
   },
   {
     name: "quiz-result",
     path: "/quiz/resultado",
-    fixmeAteG6: "G6: page-has-heading-one (moderate) em producao",
+    regrasDesligadasAteG6: ["page-has-heading-one"],
   },
   {
     name: "embed-home",
     path: "/embed",
-    fixmeAteG6: "G6: scrollable-region-focusable (serious) em producao",
+    regrasDesligadasAteG6: ["scrollable-region-focusable"],
   },
   { name: "embed-candidate", path: "/embed/lula" },
 ]
@@ -66,11 +68,17 @@ function formatViolations(violations: Awaited<ReturnType<AxeBuilder["analyze"]>>
 test.describe("Acessibilidade automatizada", () => {
   for (const route of ROUTES) {
     test(`${route.name} has no moderate, serious or critical axe violations`, async ({ page }) => {
-      test.fixme(
-        Boolean(route.fixmeAteG6) &&
-          (!route.fixmeSoNoProjeto || route.fixmeSoNoProjeto === test.info().project.name),
-        route.fixmeAteG6,
-      )
+      const regrasDesligadas =
+        route.regrasDesligadasAteG6 &&
+        (!route.regrasSoNoProjeto || route.regrasSoNoProjeto === test.info().project.name)
+          ? route.regrasDesligadasAteG6
+          : []
+      if (regrasDesligadas.length > 0) {
+        test.info().annotations.push({
+          type: "regras-desligadas-ate-g6",
+          description: regrasDesligadas.join(", "),
+        })
+      }
       const path =
         route.name === "alerts-access" && test.info().project.name === "mobile"
           ? "/alertas/gerenciar"
@@ -94,7 +102,7 @@ test.describe("Acessibilidade automatizada", () => {
         )
         .catch(() => undefined)
 
-      const results = await new AxeBuilder({ page }).analyze()
+      const results = await new AxeBuilder({ page }).disableRules(regrasDesligadas).analyze()
       const blockingViolations = results.violations.filter((violation) =>
         violation.impact === "moderate" ||
         violation.impact === "serious" ||
