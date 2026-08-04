@@ -45,6 +45,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.7,
     },
     {
+      // Página geradora do widget (/embed nua). O robots.txt bloqueia apenas
+      // "/embed/", ou seja, o widget em si, e não esta página pública.
+      url: "https://puxaficha.com.br/embed",
+      changeFrequency: "monthly",
+      priority: 0.4,
+    },
+    {
       url: "https://puxaficha.com.br/doadores",
       changeFrequency: "weekly",
       priority: 0.6,
