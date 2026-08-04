@@ -79,7 +79,10 @@ import {
   classifyAttentionPoints,
   isNegativeHighestSeverityAttentionPoint,
 } from "@/lib/attention-points"
-import { withSupabaseRetry } from "@/lib/supabase-retry"
+import {
+  SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS,
+  withSupabaseRetry,
+} from "@/lib/supabase-retry"
 import { getCanonicalPerson } from "@/lib/canonical-person-map"
 import { formatDate } from "@/lib/utils"
 import { buildVotacaoPublicUrl } from "@/lib/quiz-votacao-url"
@@ -557,7 +560,7 @@ async function getCandidatosResourceUncached(
     }
 
     return query.order("nome_urna").abortSignal(signal)
-  })
+  }, { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS })
 
   if (error || !data) {
     if (IS_DEV) {
@@ -1494,7 +1497,8 @@ async function getCandidatosComResumoResourceUncached(
       }
 
       return query.abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
 
   const compareMap = new Map<
@@ -1572,7 +1576,8 @@ async function getCandidatosComparaveisResourceUncached(
       }
 
       return query.order("nome_urna").abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
   if (compareError) {
     if (IS_DEV) {
