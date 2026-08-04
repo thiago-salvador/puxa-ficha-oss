@@ -11,42 +11,41 @@ const MIN_PRODUCTION_PREVIEW_TOKEN_LENGTH = 24
 const applyProductionHttpsHeaders =
   process.env.VERCEL === "1" || process.env.PF_FORCE_PRODUCTION_SECURITY_HEADERS === "1"
 
+function createCspNonce() {
+  return Buffer.from(crypto.randomUUID()).toString("base64")
+}
+
 function frameAncestorsForPath(pathname: string): "'none'" | "*" {
   return pathname === "/embed" || pathname.startsWith("/embed/") ? "*" : "'none'"
 }
 
-/**
- * CSP sem nonce, de proposito.
- *
- * O nonce era gerado por request e injetado como `x-nonce`; para o Next aplicar
- * o nonce aos scripts do framework, o RootLayout precisava ler `headers()`, o
- * que tornava TODA rota dinamica. Custo medido em producao: 100% dos HTML
- * saindo `cache-control: private, no-store` com `x-vercel-cache: MISS`, e o
- * build marcando as 12 paginas com `export const revalidate` como `ƒ`.
- *
- * O que se perde e pequeno: a pagina nao emite nenhum script inline (os 55
- * scripts do HTML sao `<script src="/_next/static/chunks/...">`, de mesma
- * origem e gerados no build). `script-src 'self'` SEM `'unsafe-inline'` ja
- * bloqueia qualquer script inline injetado. O nonce mais `'strict-dynamic'`
- * so acrescentava defesa contra injecao de `<script src>` apontando para um
- * caminho da propria origem, e este site nao serve conteudo de terceiro no
- * proprio dominio.
- */
-function contentSecurityPolicyForRequest(request: NextRequest): string {
+function contentSecurityPolicyForRequest(request: NextRequest, nonce: string): string {
   return buildContentSecurityPolicy({
+    nonce,
     frameAncestors: frameAncestorsForPath(request.nextUrl.pathname),
     applyProductionHttpsHeaders,
   })
 }
 
 function withContentSecurityPolicy(request: NextRequest, response: Response): Response {
-  response.headers.set("Content-Security-Policy", contentSecurityPolicyForRequest(request))
+  const nonce = createCspNonce()
+  response.headers.set("Content-Security-Policy", contentSecurityPolicyForRequest(request, nonce))
   return response
 }
 
 function nextWithContentSecurityPolicy(request: NextRequest) {
-  const response = NextResponse.next()
-  response.headers.set("Content-Security-Policy", contentSecurityPolicyForRequest(request))
+  const nonce = createCspNonce()
+  const csp = contentSecurityPolicyForRequest(request, nonce)
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set("x-nonce", nonce)
+  requestHeaders.set("Content-Security-Policy", csp)
+
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
+  response.headers.set("Content-Security-Policy", csp)
   return response
 }
 
