@@ -7,6 +7,7 @@ import { buildTwitterMetadata } from "@/lib/metadata"
 const title = "Termos de Uso | Puxa Ficha"
 const description =
   "Termos de uso do Puxa Ficha: finalidade informativa, limites do quiz, uso de IA, correções e alertas por email."
+const image = "/opengraph-image"
 
 export const metadata: Metadata = {
   title,
@@ -19,8 +20,20 @@ export const metadata: Metadata = {
     description,
     url: "https://puxaficha.com.br/termos",
     type: "website",
+    images: [
+      {
+        url: image,
+        width: 1200,
+        height: 630,
+        alt: "Termos de Uso | Puxa Ficha",
+      },
+    ],
   },
-  twitter: buildTwitterMetadata({ title, description }),
+  twitter: buildTwitterMetadata({
+    title,
+    description,
+    image,
+  }),
 }
 
 function P({ children }: { children: React.ReactNode }) {
