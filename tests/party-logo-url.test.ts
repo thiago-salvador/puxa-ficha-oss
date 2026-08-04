@@ -9,23 +9,18 @@ describe("getPartyLogoUrl", () => {
     assert.equal(getPartyLogoUrl("AVANTE"), "/partidos/avante.png")
   })
 
-  it("returns explicit public logo assets for parties missing local PNGs", () => {
-    assert.equal(
-      getPartyLogoUrl("MOBILIZA"),
-      "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-    )
-    assert.equal(
-      getPartyLogoUrl("PMN"),
-      "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-    )
-    assert.equal(
-      getPartyLogoUrl("PCB"),
-      "https://upload.wikimedia.org/wikipedia/commons/d/d5/PCB_Logo.svg",
-    )
-    assert.equal(
-      getPartyLogoUrl("PODE"),
-      "https://upload.wikimedia.org/wikipedia/commons/2/2d/Podemos_%28Brasil%29_logo.svg",
-    )
+  it("serve local os logos que antes vinham da Wikimedia (G5-09)", () => {
+    assert.equal(getPartyLogoUrl("MOBILIZA"), "/partidos/mobiliza.png")
+    assert.equal(getPartyLogoUrl("PMN"), "/partidos/mobiliza.png")
+    assert.equal(getPartyLogoUrl("PCB"), "/partidos/pcb.png")
+    assert.equal(getPartyLogoUrl("PODE"), "/partidos/pode.png")
+  })
+
+  it("nenhum logo de partido depende de host de terceiro", () => {
+    for (const sigla of ["MOBILIZA", "PMN", "PCB", "PODE", "PT", "NOVO", "PSTU"]) {
+      const url = getPartyLogoUrl(sigla)
+      assert.ok(url && url.startsWith("/partidos/"), `${sigla} -> ${url}`)
+    }
   })
 
   it("keeps unknown parties logo-less instead of inventing an asset", () => {

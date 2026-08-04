@@ -133,14 +133,11 @@ const KNOWN_PARTIES = [
   "uniao",
 ]
 
-const REMOTE_PARTY_LOGOS: Record<string, string> = {
-  mobiliza:
-    "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-  pmn: "https://upload.wikimedia.org/wikipedia/commons/7/7f/Logomarca_Partido_Mobiliza.png",
-  pcb: "https://upload.wikimedia.org/wikipedia/commons/d/d5/PCB_Logo.svg",
-  pode: "https://upload.wikimedia.org/wikipedia/commons/2/2d/Podemos_%28Brasil%29_logo.svg",
-  podemos:
-    "https://upload.wikimedia.org/wikipedia/commons/2/2d/Podemos_%28Brasil%29_logo.svg",
+/** Siglas que compartilham o arquivo local de outra sigla (G5-09: logos remotos
+ * da Wikimedia foram trazidos para /partidos/ e normalizados como os demais). */
+const PARTY_LOGO_ALIASES: Record<string, string> = {
+  pmn: "mobiliza",
+  podemos: "pode",
 }
 
 /** Returns the URL only if it uses http or https protocol. Blocks javascript: and other schemes. */
@@ -157,9 +154,8 @@ export function safeHref(url: string | null | undefined): string | null {
 
 export function getPartyLogoUrl(sigla: string): string | null {
   const normalized = sigla.toLowerCase().replace(/\s/g, "")
-  const remoteLogo = REMOTE_PARTY_LOGOS[normalized]
-  if (remoteLogo) return remoteLogo
-  if (KNOWN_PARTIES.includes(normalized)) return `/partidos/${normalized}.png`
+  const resolved = PARTY_LOGO_ALIASES[normalized] ?? normalized
+  if (KNOWN_PARTIES.includes(resolved)) return `/partidos/${resolved}.png`
   return null
 }
 
