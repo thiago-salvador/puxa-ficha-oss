@@ -22,13 +22,13 @@ export const metadata: Metadata = {
   robots: getPreviewMetadataRobots(),
 }
 
-// Sem `await headers()` aqui de proposito. Este layout embrulha TODA rota do
-// site, entao ler headers() tornava cada pagina dinamica e anulava os
-// `export const revalidate` das 12 paginas publicas: o build marcava tudo como
-// `ƒ` e a producao respondia `cache-control: private, no-store` com
+// Sem `await headers()` aqui de propósito. Este layout embrulha TODA rota do
+// site, então ler headers() tornava cada página dinâmica e anulava os
+// `export const revalidate` das 12 páginas públicas: o build marcava tudo como
+// `ƒ` e a produção respondia `cache-control: private, no-store` com
 // `x-vercel-cache: MISS` em 100% dos HTML. O nonce de CSP que justificava a
-// leitura saiu do middleware (ver middleware.ts): a pagina nao tem script
-// inline, entao `script-src 'self'` ja barra injecao sem precisar de nonce.
+// leitura saiu do middleware (ver middleware.ts): a página não tem script
+// inline, então `script-src 'self'` já barra injeção sem precisar de nonce.
 export default function RootLayout({
   children,
 }: Readonly<{

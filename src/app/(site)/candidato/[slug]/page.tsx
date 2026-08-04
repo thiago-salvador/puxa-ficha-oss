@@ -9,31 +9,31 @@ import { CandidatoFichaView } from "./CandidatoFichaView"
 
 // Bloco 7 do review 2026-04-24 exigia `force-dynamic` porque o RootLayout lia
 // `headers()` para o nonce de CSP, e sem isso o pre-render disparava
-// DYNAMIC_SERVER_USAGE. O nonce saiu (ver middleware.ts) e o layout nao le mais
-// headers(), entao a ficha volta a ser ISR: o HTML passa a ser servido pelo CDN
-// e cada view deixa de custar um render de funcao. Essa e a rota que um video
-// viral concentra, entao e a que mais paga por estar em cache.
-// `searchParams.tab` nao e lido no servidor; a aba inicial vinda de `?tab=` e
+// DYNAMIC_SERVER_USAGE. O nonce saiu (ver middleware.ts) e o layout não lê mais
+// headers(), então a ficha volta a ser ISR: o HTML passa a ser servido pelo CDN
+// e cada view deixa de custar um render de servidor. Essa é a rota que um vídeo
+// viral concentra, então é a que mais paga por estar em cache.
+// `searchParams.tab` não é lido no servidor; a aba inicial vinda de `?tab=` é
 // resolvida no client por `CandidatoProfile`.
 // O caminho de bypass do release-verify (`PF_ALLOW_RELEASE_VERIFY_CACHE_BYPASS_IN_PRODUCTION`
 // + header `x-pf-release-verify-cache-bypass`) continua transformando o request em
-// no-store so quando ativado, sem afetar o build.
+// no-store só quando ativado, sem afetar o build.
 export const revalidate = 3600
 
 /**
- * Medido nesta sessao: sem `generateStaticParams` o Next 16 marca a rota como
+ * Medido nesta sessão: sem `generateStaticParams` o Next 16 marca a rota como
  * `ƒ` e serve `cache-control: private, no-store`, mesmo com `revalidate`
- * declarado acima. Ou seja, a exportacao abaixo nao e enfeite: e ela que torna
- * a ficha cacheavel.
+ * declarado acima. Ou seja, o export abaixo não é enfeite: é ele que torna
+ * a ficha passível de cache.
  *
- * A lista devolvida e PROPOSITALMENTE vazia. Prerenderizar os 253 slugs no
- * build custaria ~13 queries por ficha (`fetchCandidatoCompleto`), mais de 3 mil
+ * A lista devolvida é PROPOSITALMENTE vazia. Gerar no build os 253 slugs
+ * custaria ~13 queries por ficha (`fetchCandidatoCompleto`), mais de 3 mil
  * queries a cada deploy contra a cota de egress do plano Free do Supabase, e
- * ameacaria o teto de 180s de `staticPageGenerationTimeout`. Com a lista vazia e
- * `dynamicParams` no default (true), nenhuma ficha e gerada no build e todas
+ * ameaçaria o teto de 180s de `staticPageGenerationTimeout`. Com a lista vazia e
+ * `dynamicParams` no default (true), nenhuma ficha é gerada no build e todas
  * passam a ser geradas sob demanda na primeira visita e servidas do cache pela
  * hora seguinte. O custo por ficha vira 1 render por hora em vez de 1 render por
- * visita, que e exatamente o que um pico de video precisa.
+ * visita, que é exatamente o que um pico de vídeo precisa.
  */
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   return []
