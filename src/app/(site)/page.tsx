@@ -185,14 +185,14 @@ export default async function Home() {
 
       {/* Section header */}
       <section className="mx-auto max-w-7xl px-5 pt-12 sm:pt-16 md:px-12 lg:pt-20">
-        <div className="section-reveal flex items-end justify-between">
+        <div className="section-reveal flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
           <div>
             <p className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-foreground">
               01 Presidência
             </p>
             <h2
               className="mt-1 font-heading uppercase leading-[0.95] text-foreground"
-              style={{ fontSize: "clamp(28px, 5vw, 48px)" }}
+              style={{ fontSize: "clamp(22px, 5vw, 48px)" }}
             >
               Presidenciáveis
             </h2>
@@ -200,7 +200,7 @@ export default async function Home() {
           <Link
             href="/governadores"
             className="font-heading uppercase leading-[0.95] text-muted-foreground transition-colors hover:text-foreground"
-            style={{ fontSize: "clamp(28px, 5vw, 48px)" }}
+            style={{ fontSize: "clamp(22px, 5vw, 48px)" }}
           >
             Governadores
           </Link>
