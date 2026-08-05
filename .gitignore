@@ -73,3 +73,7 @@ AGENTS.md
 
 # Saida temporaria do browser tooling (Playwright MCP)
 .playwright-mcp/
+
+# Cache local de pesquisa web (Firecrawl)
+.firecrawl/
+.playwright-cli/
