@@ -295,6 +295,8 @@ h2 { font-size:18px; margin:44px 0 10px; }
 h2 .count { font-size:13px; color:var(--muted); font-weight:600; margin-left:6px; }
 .legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:12.5px; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
+.legend b.tot { font-variant-numeric:tabular-nums; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:1px 7px; font-size:11.5px; font-weight:600; }
+.legend .soma { color:var(--muted); font-size:12px; }
 .sw { width:14px; height:14px; border-radius:4px; display:inline-block; }
 .sw.prov { width:16px; height:4px; border-radius:2px; }
 .notes { font-size:12.5px; color:var(--muted); max-width:980px; margin:10px 0 4px; }
@@ -376,6 +378,25 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
 
   const data = new Date().toLocaleDateString("pt-BR")
 
+  // Totais da legenda. Sem eles, quem abre o relatório vê as cores e não sabe o
+  // tamanho de cada balde, que é a primeira pergunta que todo mundo faz.
+  const totalEstado = new Map<string, number>()
+  const totalProveniencia = new Map<string, number>()
+  for (const cand of coorte) {
+    for (const cel of Object.values(calcularCelulas(cand))) {
+      totalEstado.set(cel.state, (totalEstado.get(cel.state) ?? 0) + 1)
+      if (cel.proveniencia) {
+        totalProveniencia.set(
+          cel.proveniencia,
+          (totalProveniencia.get(cel.proveniencia) ?? 0) + 1
+        )
+      }
+    }
+  }
+  const nm = (n: number) => n.toLocaleString("pt-BR")
+  const pill = (n: number) => `<b class="tot">${nm(n)}</b>`
+  const totalCelulas = [...totalEstado.values()].reduce((a, b) => a + b, 0)
+
   // A legenda de procedência só aparece quando há procedência para explicar.
   const temProveniencia = coorte.some((c) => c.coletas !== undefined)
   const legendaProveniencia = temProveniencia
@@ -391,7 +412,7 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
           ([p, cor]) =>
             `<span><span class="sw prov" style="background:${cor}"></span>Zero: ${esc(
               ROTULO_PROVENIENCIA[p]
-            )}</span>`
+            )} ${pill(totalProveniencia.get(p) ?? 0)}</span>`
         )
         .join("")
     : `<span class="notes" style="margin:0">Procedência do zero indisponível: este relatório não leu <code>coleta_log</code>, então nenhum zero distingue "verificado e vazio" de "nunca coletado".</span>`
@@ -413,11 +434,12 @@ ${presidentes.length} pré-candidatos a Presidente, ${governadores.length} a Gov
 Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
 
 <div class="legend">
-  <span><span class="sw" style="background:var(--ok-bg)"></span>Preenchido (número = volume)</span>
-  <span><span class="sw" style="background:var(--partial-bg)"></span>Parcial</span>
-  <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio</span>
-  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero</span>
-  <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica</span>
+  <span><span class="sw" style="background:var(--ok-bg)"></span>Preenchido (número = volume) ${pill(totalEstado.get("ok") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--partial-bg)"></span>Parcial ${pill(totalEstado.get("partial") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio ${pill(totalEstado.get("missing") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero ${pill(totalEstado.get("zero") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica ${pill(totalEstado.get("na") ?? 0)}</span>
+  <span class="soma">${nm(totalCelulas)} células no total, ${coorte.length} candidatos x ${COLUNAS.length} frentes de dado</span>
 </div>
 <div class="legend">${legendaProveniencia}</div>
 <ul class="notes">
