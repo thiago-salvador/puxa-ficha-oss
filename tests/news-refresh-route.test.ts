@@ -33,6 +33,16 @@ function makeCandidatos(total: number): FakeCandidato[] {
   }))
 }
 
+interface ColetaTentativaFake {
+  alvo: string
+  candidato_id: string
+  resultado: "encontrado" | "vazio_confirmado" | "erro"
+  volume: number
+  detalhe: string
+  url: string
+  duracao_ms: number
+}
+
 interface Captured {
   afterCallbacks: Array<() => Promise<void> | void>
   revalidatedTags: string[]
@@ -40,6 +50,20 @@ interface Captured {
   pageCalls: Array<{ cursor: number; limit: number }>
   refreshedBatches: FakeCandidato[][]
   logCalls: Array<{ event: string; detail: Record<string, unknown> }>
+  coletaBatches: ColetaTentativaFake[][]
+  sleepCalls: number[]
+}
+
+function coletaDe(cand: FakeCandidato): ColetaTentativaFake {
+  return {
+    alvo: cand.slug,
+    candidato_id: cand.id,
+    resultado: "encontrado",
+    volume: 20,
+    detalhe: "rss respondeu 20 item(ns)",
+    url: `https://news.google.com/rss/search?q=${cand.slug}`,
+    duracao_ms: 10,
+  }
 }
 
 function createDeps(allCandidatos: FakeCandidato[]) {
@@ -50,6 +74,8 @@ function createDeps(allCandidatos: FakeCandidato[]) {
     pageCalls: [],
     refreshedBatches: [],
     logCalls: [],
+    coletaBatches: [],
+    sleepCalls: [],
   }
 
   const deps = {
@@ -68,7 +94,11 @@ function createDeps(allCandidatos: FakeCandidato[]) {
         rowsUpserted: candidatos.length * 20,
         discardedByName: 0,
         errors: [] as Array<{ slug: string; error: string }>,
+        coletas: candidatos.map(coletaDe),
       }
+    },
+    registrarColetas: async (tentativas: ColetaTentativaFake[]) => {
+      captured.coletaBatches.push(tentativas)
     },
     revalidate: (tag: string) => {
       captured.revalidatedTags.push(tag)
@@ -80,9 +110,15 @@ function createDeps(allCandidatos: FakeCandidato[]) {
       captured.fetchCalls.push({ url: String(url), init })
       return new Response(null, { status: 200 })
     }) as unknown as typeof fetch,
+    sleep: async (ms: number) => {
+      captured.sleepCalls.push(ms)
+    },
     log: (event: string, detail: Record<string, unknown>) => {
       captured.logCalls.push({ event, detail })
     },
+    // 0 força uma página por invocação: é o modo que exercita o encadeamento
+    // nos testes. O orçamento real (240s) é coberto pelos testes de orçamento.
+    invocationBudgetMs: 0,
   }
 
   return { deps, captured }
@@ -321,6 +357,133 @@ describe("news refresh route", () => {
     assert.equal(captured.logCalls.filter((c) => c.event === "chain_fetch_failed").length, 0)
   })
 
+  it("processes the whole universe in one invocation when the budget allows, without chaining", async () => {
+    // O motivo de existir do orçamento: a proteção anti-recursão da Vercel
+    // devolve 508 no ~5º fetch encadeado (medido em produção em 2026-08-05),
+    // então cobrir 194 candidatos com 39 hops nunca fecha. Com orçamento, a
+    // invocação processa várias páginas e o chain quase não é usado.
+    const { deps, captured } = createDeps(makeCandidatos(13))
+    deps.invocationBudgetMs = 60_000
+    const handler = createNewsRefreshHandler(deps)
+
+    const res = await handler(makeRequest({ limit: "5" }))
+    const body = await readJson(res)
+
+    assert.equal(res.status, 200)
+    assert.equal(body.processed, 13)
+    assert.equal(body.paginas, 3)
+    assert.equal(body.nextCursor, null)
+    assert.equal(body.chainScheduled, false)
+    assert.deepEqual(
+      captured.pageCalls.map((p) => p.cursor),
+      [0, 5, 10],
+    )
+    // Pausa entre páginas, mas nenhuma após a última.
+    assert.deepEqual(captured.sleepCalls, [1500, 1500])
+    // Uma escrita de coleta_log por página, cobrindo todos os candidatos.
+    assert.equal(captured.coletaBatches.flat().length, 13)
+    assert.equal(captured.afterCallbacks.length, 0)
+  })
+
+  it("chains from the right cursor when the budget runs out mid-universe", async () => {
+    const { deps } = createDeps(makeCandidatos(13))
+    // Orçamento 0: esgota após a primeira página, o resto vai pelo chain.
+    deps.invocationBudgetMs = 0
+    const handler = createNewsRefreshHandler(deps)
+
+    const res = await handler(makeRequest({ limit: "5" }))
+    const body = await readJson(res)
+
+    assert.equal(res.status, 200)
+    assert.equal(body.processed, 5)
+    assert.equal(body.paginas, 1)
+    assert.equal(body.nextCursor, 5)
+    assert.equal(body.chainScheduled, true)
+  })
+
+  it("keeps the processed head and chains the tail when a mid-run page query fails", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(13))
+    deps.invocationBudgetMs = 60_000
+    const original = deps.fetchCandidatoPage
+    let calls = 0
+    deps.fetchCandidatoPage = async (args: { cursor: number; limit: number }) => {
+      calls += 1
+      if (calls === 2) throw new Error("db flake")
+      return original(args)
+    }
+    const handler = createNewsRefreshHandler(deps)
+
+    const res = await handler(makeRequest({ limit: "5" }))
+    const body = await readJson(res)
+
+    // A cabeça processada não é perdida num 503: a resposta é 200 e a cauda
+    // fica com o encadeamento, que retoma do cursor onde a consulta falhou.
+    assert.equal(res.status, 200)
+    assert.equal(body.processed, 5)
+    assert.equal(body.nextCursor, 5)
+    assert.equal(body.chainScheduled, true)
+    const failure = captured.logCalls.find((c) => c.event === "candidato_page_failed")
+    assert.ok(failure, "esperava log candidato_page_failed")
+    assert.equal(failure.detail.cursor, 5)
+  })
+
+  it("records one coleta_log tentativa per processed candidate", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(4))
+    const handler = createNewsRefreshHandler(deps)
+
+    const res = await handler(makeRequest({ limit: "5" }))
+    const body = await readJson(res)
+
+    assert.equal(res.status, 200)
+    assert.equal(body.coletaLinhas, 4)
+    assert.equal(body.coletaLogOk, true)
+    assert.equal(captured.coletaBatches.length, 1)
+    assert.equal(captured.coletaBatches[0].length, 4)
+    assert.deepEqual(
+      captured.coletaBatches[0].map((t) => t.alvo),
+      ["cand-0", "cand-1", "cand-2", "cand-3"],
+    )
+  })
+
+  it("keeps the batch alive when coleta_log write fails, logging coleta_log_failed", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(4))
+    deps.registrarColetas = async () => {
+      throw new Error("insert denied")
+    }
+    const handler = createNewsRefreshHandler(deps)
+
+    const res = await handler(makeRequest({ limit: "5" }))
+    const body = await readJson(res)
+
+    // Telemetria nunca derruba o lote: resposta segue 200, com a falha visivel.
+    assert.equal(res.status, 200)
+    assert.equal(body.coletaLogOk, false)
+    const failure = captured.logCalls.find((c) => c.event === "coleta_log_failed")
+    assert.ok(failure, "esperava log coleta_log_failed")
+    assert.equal(failure.detail.linhas, 4)
+  })
+
+  it("retries the chained fetch once before declaring chain_fetch_failed", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(13))
+    let calls = 0
+    deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      captured.fetchCalls.push({ url: String(url), init })
+      calls += 1
+      if (calls === 1) throw new Error("socket hang up")
+      return new Response(null, { status: 200 })
+    }) as unknown as typeof fetch
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    await captured.afterCallbacks[0]()
+
+    // Primeiro elo falhou, o retry salvou a fila do dia.
+    assert.equal(captured.fetchCalls.length, 2)
+    assert.equal(captured.logCalls.filter((c) => c.event === "chain_fetch_retry").length, 1)
+    assert.equal(captured.logCalls.filter((c) => c.event === "chain_fetch_failed").length, 0)
+    assert.deepEqual(captured.sleepCalls, [3000])
+  })
+
   it("stops chaining when MAX_CHAIN_DEPTH is reached even if more remain", async () => {
     const { deps, captured } = createDeps(makeCandidatos(100))
     const handler = createNewsRefreshHandler(deps)
@@ -333,5 +496,97 @@ describe("news refresh route", () => {
     assert.equal(captured.afterCallbacks.length, 0)
     // hasMore segue true, entao NAO revalida (lote nao-final).
     assert.deepEqual(captured.revalidatedTags, [])
+  })
+})
+
+describe("news refresh route: prazo e origem do encadeamento", () => {
+  const savedSecret = process.env.CRON_SECRET
+  const savedVercelEnv = process.env.VERCEL_ENV
+  const savedChainOrigin = process.env.PF_CRON_CHAIN_ORIGIN
+
+  beforeEach(() => {
+    process.env.CRON_SECRET = CRON_SECRET
+    delete process.env.VERCEL_ENV
+    delete process.env.PF_CRON_CHAIN_ORIGIN
+  })
+
+  afterEach(() => {
+    if (savedSecret === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = savedSecret
+    if (savedVercelEnv === undefined) delete process.env.VERCEL_ENV
+    else process.env.VERCEL_ENV = savedVercelEnv
+    if (savedChainOrigin === undefined) delete process.env.PF_CRON_CHAIN_ORIGIN
+    else process.env.PF_CRON_CHAIN_ORIGIN = savedChainOrigin
+  })
+
+  it("o fetch de encadeamento leva signal com prazo", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    // Sem signal, um POST interno travado nunca voltava: sem retry, sem
+    // chain_fetch_failed e sem nova invocação para o resto da fila.
+    assert.ok(captured.fetchCalls[0].init?.signal instanceof AbortSignal)
+  })
+
+  it("abort do prazo é registrado como timeout e ainda tenta de novo", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      captured.fetchCalls.push({ url: String(url), init })
+      throw Object.assign(new Error("aborted"), { name: "AbortError" })
+    }) as unknown as typeof fetch
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    const eventos = captured.logCalls.filter((l) => l.event.startsWith("chain_fetch_"))
+    assert.deepEqual(
+      eventos.map((e) => e.event),
+      ["chain_fetch_retry", "chain_fetch_failed"],
+    )
+    for (const e of eventos) assert.equal(e.detail.message, "timeout")
+  })
+
+  it("origem http fora de loopback não recebe o CRON_SECRET", async () => {
+    process.env.PF_CRON_CHAIN_ORIGIN = "http://puxaficha.com.br"
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    // Falha alta: nenhum fetch, e o motivo fica no log.
+    assert.equal(captured.fetchCalls.length, 0)
+    const rejeicao = captured.logCalls.find((l) => l.event === "chain_origin_rejected")
+    assert.ok(rejeicao, "esperado chain_origin_rejected")
+    assert.equal(rejeicao.detail.motivo, "sem_https")
+  })
+
+  it("origem https configurada continua encadeando normalmente", async () => {
+    process.env.PF_CRON_CHAIN_ORIGIN = "https://staging.puxaficha.com.br"
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    assert.ok(captured.fetchCalls[0].url.startsWith("https://staging.puxaficha.com.br/"))
+    assert.equal(captured.logCalls.filter((l) => l.event === "chain_origin_rejected").length, 0)
+  })
+
+  it("loopback em http segue liberado, para o desenvolvimento local", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }, { origin: "http://localhost:3000" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    assert.ok(captured.fetchCalls[0].url.startsWith("http://localhost:3000/"))
   })
 })
