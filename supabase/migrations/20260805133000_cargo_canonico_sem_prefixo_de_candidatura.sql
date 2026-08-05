@@ -1,9 +1,7 @@
 -- `cargo_canonico` deixa de carregar "Candidatura a", que é tipo_evento, não cargo.
 --
--- ⚠ NÃO APLICADA. Mesma razão da 20260805132000: a sessão editorial do
--- mantenedor estava lendo `historico_politico` para conferir contagem de
--- mandato por amostragem, e 183 UPDATEs nessa tabela no meio da conferência
--- invalidariam a amostra. Aplicar depois que aquela sessão fechar.
+-- Aplicada em 05/08/2026 depois do encerramento da sessão editorial que lia
+-- `historico_politico`. O ensaio transacional e o readback remoto passaram.
 --
 -- ORIGEM
 --
@@ -115,7 +113,9 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO duplicatas_despublicadas FROM public.historico_politico
-   WHERE cargo_canonico LIKE 'Candidatura a %' AND despublicado_em IS NOT NULL;
+   WHERE cargo_canonico LIKE 'Candidatura a %'
+     AND despublicado_em IS NOT NULL
+     AND despublicacao_motivo LIKE 'Duplicata da mesma candidatura%';
   IF duplicatas_despublicadas <> 2 THEN
     RAISE EXCEPTION 'prefixo_candidatura: esperado 2 duplicatas despublicadas, encontrado %',
       duplicatas_despublicadas;

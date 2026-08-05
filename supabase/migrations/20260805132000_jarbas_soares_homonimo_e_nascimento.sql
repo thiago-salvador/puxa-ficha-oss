@@ -1,11 +1,7 @@
 -- jarbas-soares: sai a candidatura do homônimo, entra a data de nascimento certa.
 --
--- ⚠ NÃO APLICADA. Escrita em 05/08/2026 e deixada pendente de propósito: uma
--- sessão editorial do mantenedor estava lendo `historico_politico` no mesmo
--- momento, conferindo por amostragem se os cards "Carreira política: N
--- mandatos" batem com o histórico. Escrever nesta tabela durante aquela
--- conferência corromperia a amostra dela. Aplicar depois que aquela sessão
--- fechar, e conferir os dois blocos DO $$ antes de commitar.
+-- Aplicada em 05/08/2026 depois do encerramento da sessão editorial que lia
+-- `historico_politico`. Os dois blocos DO $$ e o readback remoto passaram.
 --
 -- ORIGEM
 --

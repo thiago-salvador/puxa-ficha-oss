@@ -1450,3 +1450,47 @@ nenhuma migration. Preparou a pauta de decisão do Thiago.
   (61 linhas: título, classe, gravidade, fonte clicável, efeito de
   aprovar/rejeitar, recomendação; + pauta de PRs #93/#94/#95 e gaps). Nada foi
   servido/aberto: entrega final é da sessão principal.
+
+---
+
+## Varredura sistemática de homônimos e correções (2026-08-05)
+
+**Estado:** migrations `20260805132000` a `20260805136000` aplicadas no
+Supabase e preparadas no mesmo PR; readback concluído. A PR #103 é a base. A
+rota `nome+nascimento` continua apenas como sugestão para revisão humana e não
+persiste CPF.
+
+### Correções confirmadas
+
+| Ficha | Dado de terceiro | Evidência que separa as pessoas | Ação |
+|---|---|---|---|
+| `renato-gomes` | 2 patrimônios, 1 financiamento, 2 candidaturas, nome civil, naturalidade, profissão e formação de Renato da Silveira Gomes | O SQ 120000886590 é vereador 2020/MDB e declara empresário com ensino médio completo; a pessoa da ficha é Renato Wanderley Gomes, economista e pré-candidato do DC. Nome de urna e UF não provam identidade | Remover 5 linhas; naturalidade, profissão e formação ficam nulas. `nome_completo`, que é `NOT NULL`, recua para o `nome_urna` já exibido, sem adotar o nome civil da imprensa. CPF, nascimento e idade já estavam nulos |
+| `jarbas-soares` | 2 candidaturas de homônimo e nascimento antigo | MPMG oficial: Jarbas Soares Júnior nasceu em 06/09/1964 e foi procurador-geral em 2004-2008 e 2020-2022 | Despublicar as candidaturas e reapurar o nascimento pela fonte oficial |
+| `cadu-xavier` | CPF, nascimento, 7 outros campos pessoais, patrimônio, financiamento e candidatura a vereador de um estudante de 2020 | TSE: estudante nascido em 1999, vereador Mossoró/DEM, SQ 200000998862. DOE-RN registra o Cadu da ficha como secretário em 2019; Itatiaia registra 2026 como primeira disputa | Zerar campos pessoais, remover dinheiro, despublicar histórico e invalidar vazios de sanções feitos com CPF do homônimo |
+| `juliana-brizola` | Candidatura a vereadora em Ronda Alta/PSL | TSE 2020 separa Juliana Daudt Brizola, prefeita Porto Alegre/PDT, SQ 210001189949, de Juliana Maria Mittelstaedt Brizola, vereadora Ronda Alta/PSL, SQ 210001233500 | Despublicar só a linha de vereadora; preservar candidatura, patrimônio e financiamento da pessoa correta |
+
+### Sinais varridos e descartados
+
+- `nome+nascimento` em `coleta_log`: um único match recente, `jarbas-soares`,
+  já bloqueado para revisão; nenhum outro CPF foi persistido por essa rota.
+- SQ do histórico divergente do SQ do seed no mesmo ano: zero caso visível.
+- idade abaixo do mínimo constitucional no pleito: zero caso real; o único
+  sinal bruto, `samara-martins`, completa 35 anos antes da eleição de 2022.
+- nome civil TSE divergente do nome que abre a biografia: apenas
+  `renato-gomes` depois de eliminar abreviações e nomes de urna.
+- duas candidaturas a cargos diferentes no mesmo pleito: `juliana-brizola` é
+  o caso novo de homônimo; `henrique-areas` e `indira-xavier` são duplicatas
+  tratadas pela migration `20260805133000`; `huggo-leonardo` é troca de
+  pré-candidatura, e as linhas de filiação de `garotinho` não são outra pessoa.
+- trajetória de Ministério Público: `ismar-marques` foi sinalizado pela bio,
+  mas os arquivos oficiais TSE 2014 e 2018 repetem nome civil e nascimento da
+  ficha; não há evidência de homônimo e nada foi alterado.
+- cargo não eleitoral antes dos 21 anos: só `cadu-xavier`, confirmado como
+  contaminação pelo conjunto TSE + DOE-RN + primeira candidatura em 2026.
+
+Fontes principais: [TSE Candidatos 2020](https://dadosabertos.tse.jus.br/dataset/candidatos-2020-subtemas),
+[DOE-RN de 08/08/2019](https://webdisk.diariooficial.rn.gov.br/Jornal/12019-08-08.pdf),
+[perfil de Cadu Xavier](https://www.itatiaia.com.br/politica/eleicoes/conheca-a-carreira-politica-de-cadu-xavier-pre-candidato-ao-governo-do-rn/)
+e [galeria oficial do MPMG](https://www.mpmg.mp.br/lumis/portal/file/fileDownload.jsp?fileId=8A9480678602D08F018636EF49986C71).
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
