@@ -11,45 +11,85 @@ fonte fica aqui, com o caminho de volta escrito.
 
 ---
 
-## Cadastro de Sancoes da CGU (CEIS, CNEP, CEPIM)
+## Cadastro de Sancoes da CGU (CEIS, CNEP, CEAF) - RELIGADA em 2026-08-05
 
-Removida de `src/data/methodology-sources.ts` na etapa 2C.
+Removida de `src/data/methodology-sources.ts` na etapa 2C (2026-07-25) e
+reinserida em 2026-08-05, quando as duas condicoes da regra do cabecalho
+passaram a valer ao mesmo tempo. O CEPIM saiu do pipeline na PR #85: o cadastro
+so filtra por CNPJ e so devolve pessoa juridica, entao o CPF de um candidato
+jamais poderia casar.
 
-### Situacao verificada em 2026-07-25
+### Situacao verificada em 2026-08-05
 
 | Item | Estado |
 |---|---|
-| Ingest | existe: `scripts/lib/ingest-transparencia-sanctions.ts`, ja registrado em `scripts/ingest-all.ts` |
-| Tabela `public.sancoes_administrativas` | 0 linhas (`select count(*)` no projeto `wskpzsobvqwhnbsdsmok`) |
-| Tipo no app | existe: `sancoes_administrativas[]` e `total_sancoes` em `src/lib/types.ts` |
-| Leitura no servidor | existe: `withSupabaseRetry("sancoes_administrativas(...)")` em `src/lib/api.ts` |
-| DTO publico | existe: `publicSancao` em `src/lib/public-profile-dto.ts` |
-| Componente que renderiza | **nao existe**: `grep -rn "sancoes_administrativas\|total_sancoes" src/components/ "src/app/(site)/"` volta vazio |
-| Credencial | **nao configurada**: `TRANSPARENCIA_API_KEY` (o ingest apenas avisa e pula) |
+| Ingest | corrigido na PR #85: parametros `codigoSancionado`/`cpfSancionado` (o `cpfCnpj` antigo era ignorado em silencio pela API) + conferencia de identidade de cada registro retornado |
+| Credencial | `TRANSPARENCIA_API_KEY` definida como secret do GitHub em 2026-08-05 (o `ingest.yml` ja a le) |
+| Tabela `public.sancoes_administrativas` | 0 linhas, e isso agora e achado, nao lacuna: a varredura corrigida consultou os candidatos com CPF valido e nao achou sancao |
+| Proveniencia | `coleta_log_ultima` (fonte `transparencia-sanctions`) registra o desfecho por candidato: `vazio_confirmado` para quem foi consultado nos tres cadastros, `erro` para quem nao tem CPF valido |
+| Componente que renderiza | existe: `src/components/SancoesSection.tsx`, na aba Justica da ficha |
+| Prova negativa na tela | o bloco mostra "Nada encontrado nos cadastros CEIS, CNEP e CEAF (verificado em DD/MM/AAAA)" quando a ultima coleta e `vazio_confirmado`, e estado neutro sem afirmacao de limpeza quando nunca verificado |
+| Leitura da proveniencia | `coleta_log_ultima` nao tem grant para `anon` de proposito; a ficha le via service role no server (`fetchSancoesVerificacao` em `src/lib/api.ts`), e falha degrada para o estado neutro |
+| Card em /metodologia | reinserido: id `transparencia-sancoes`, `updateFrequency: "sob demanda"` (lote manual via `workflow_dispatch`, sem cron) |
 
-Ou seja, o dado atravessa o backend inteiro e morre antes da tela.
+### O que continua pendente
 
-### O que falta para a fonte voltar
+1. **Ponto de atencao de sancao com fonte publica.** O guard
+   `motivoRecusaDeFonte` continua recusando o ponto de atencao gerado pelo
+   ingest, porque a rota consultada e API autenticada e a migration
+   `20260725160000` exige fonte com URL publica para gravidade alta ou critica.
+   Quando existir sancao real, anexar em `fontes` a URL publica do Portal da
+   Transparencia que mostra a sancao.
+2. **Os candidatos sem CPF valido continuam inverificaveis** (desfecho `erro`
+   na `coleta_log`). So o CPF do TSE fecha essa lacuna; a ficha deles mostra o
+   estado neutro, que e o correto.
 
-1. **Credencial.** Definir `TRANSPARENCIA_API_KEY` no ambiente do ingest (chave
-   da API de Dados do Portal da Transparencia). Sem ela,
-   `ingestTransparenciaSanctions` registra `TRANSPARENCIA_API_KEY nao definida,
-   pulando` e retorna sem tocar no banco.
-2. **Rodar o ingest e conferir volume.** `sancoes_administrativas` precisa sair
-   de zero. Enquanto der zero, nao ha o que publicar.
-3. **Fonte utilizavel em cada ponto de atencao gerado.** O ingest tambem cria
-   linhas em `pontos_atencao`, e desde a migration
-   `20260725160000_gate_gravidade_fonte_pontos_atencao.sql` gravidade `alta` ou
-   `critica` sem fonte com caminho e recusada no INSERT. O guard ja esta no
-   proprio ingest (`motivoRecusaDeFonte`). Para religar, anexar em `fontes` a
-   URL publica do Portal da Transparencia que mostra a sancao, e nao a rota
-   autenticada da API.
-4. **Superficie de exibicao.** Criar o bloco que renderiza
-   `ficha.sancoes_administrativas` na ficha, com o mesmo padrao de rotulo de
-   fonte e data usado nas outras secoes.
-5. **So entao** reinserir o card em `src/data/methodology-sources.ts`, com
-   `updateFrequency` refletindo a cadencia real de execucao (ver regra de
-   cadencia no cabecalho daquele arquivo).
+---
+
+## DECISAO de 2026-08-05 sobre as duas fontes mortas
+
+O dono aprovou resolver a ambiguidade "o ingest roda, nao da erro e devolve sem
+dados". A decisao NAO foi a mesma para as duas, porque a situacao delas nao e a
+mesma, e o criterio que separou foi um so: **a fonte ja pos dado no ar?**
+
+| | Jarbas / Serenata | CEAPS Senado |
+|---|---|---|
+| Endpoint hoje | **HTTP 522** (Cloudflare de pe, origem fora) | **HTTP 404** na rota de despesas |
+| Linhas publicadas por ela | **0** em `pontos_atencao` | **102** em `gastos_parlamentares` (65 em fichas publicaveis) |
+| Tentativas em `coleta_log` | **0** | 10 |
+| Card em `/metodologia` | **REMOVIDO** | **MANTIDO** |
+| Ingest | mantido, agora grava `erro` | mantido, agora grava `erro` / `indeterminado` |
+
+**Por que o card do Jarbas saiu.** E exatamente o achado A0.3 que criou este
+arquivo: a pagina anunciava ao publico uma fonte que nunca produziu uma linha.
+Somado ao endpoint fora do ar, o card prometia ao leitor uma verificacao de
+gasto suspeito que nunca aconteceu para ninguem. `tests/ui-claims-copy-contract.test.ts`
+passou a travar a volta dele sem dado junto.
+
+**Por que o card do CEAPS ficou.** Aqui removeria a procedencia de numero que
+esta no ar agora: 102 linhas de gasto parlamentar que a ficha e o comparador
+mostram. A rota de ATUALIZACAO caiu; o dado publicado nao sumiu. Tirar o card
+deixaria o leitor sem saber de onde veio o valor que ele esta lendo, que e o
+oposto do que este arquivo existe para evitar.
+
+**Por que nenhum dos dois ingests foi removido.** Remover apaga junto as guardas
+de identidade escritas em 05/08 e os testes que as cobrem, e 522 e 404 nao provam
+descontinuacao definitiva. O que muda e o silencio: os dois passam a declarar o
+desfecho em `coleta_log`, entao "fonte morta" para de ser indistinguivel de
+"procuramos e nao achamos".
+
+**Criterio objetivo para remover o ingest do Jarbas depois** (antes nao havia
+nenhum, e por isso a pergunta ficou aberta): agora que cada rodada grava `erro`,
+se `coleta_log` mostrar `fonte = 'jarbas'` com `resultado = 'erro'` em **8
+rodadas semanais consecutivas** sem nenhuma `encontrado` no meio, a API esta
+descontinuada de fato e o ingest sai junto com o tipo, o teste e a entrada aqui.
+Consulta que responde isso:
+
+```sql
+select date_trunc('week', executado_em) semana, resultado, count(*)
+  from coleta_log where fonte = 'jarbas'
+ group by 1, 2 order by 1 desc;
+```
 
 ---
 
