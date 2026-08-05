@@ -285,6 +285,29 @@ export interface SancaoAdministrativa {
   cnpj_empresa: string | null;
 }
 
+/**
+ * Desfechos possíveis de uma tentativa de coleta, como registrados em
+ * `public.coleta_log` (migration 20260804160000). A ausência de linha é o sexto
+ * estado, "nunca verificado", e se lê pela negativa.
+ */
+export type ColetaResultado =
+  | 'encontrado'
+  | 'vazio_confirmado'
+  | 'nao_aplicavel'
+  | 'erro'
+  | 'indeterminado';
+
+/**
+ * Última verificação dos cadastros de sanções (CEIS, CNEP e CEAF) para o
+ * candidato, lida da view `public.coleta_log_ultima`. Só `vazio_confirmado`
+ * autoriza a ficha a dizer "nada encontrado": os demais desfechos (e a ausência
+ * deste campo) rendem estado neutro, sem afirmação de limpeza.
+ */
+export interface SancoesVerificacao {
+  resultado: ColetaResultado;
+  executado_em: string;
+}
+
 // --- Indicadores Estaduais ---
 export interface IndicadorEstadual {
   id: string;
@@ -386,6 +409,13 @@ export interface FichaCandidato extends Candidato {
   legislacao_mandato_executivo_truncados?: boolean;
   gastos_parlamentares: GastoParlamentar[];
   sancoes_administrativas: SancaoAdministrativa[];
+  /**
+   * Proveniência do zero de sanções: última tentativa de coleta registrada em
+   * `coleta_log_ultima` para a fonte `transparencia-sanctions`. `null` quando o
+   * candidato nunca foi verificado (ou quando a leitura da view falhou, o que
+   * degrada para o mesmo estado neutro em vez de inventar limpeza).
+   */
+  sancoes_verificacao?: SancoesVerificacao | null;
   noticias: NoticiaCandidato[];
   indicadores_estaduais?: IndicadorEstadual[];
 

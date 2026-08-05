@@ -8,6 +8,7 @@ import { formatCompact, formatDate, safeHref } from "@/lib/utils"
 import { ProfileTabs, type Tab } from "./ProfileTabs"
 import { GravityBadge } from "./GravityBadge"
 import { NewsSection } from "./NewsSection"
+import { SancoesSection } from "./SancoesSection"
 import { DataFreshnessNotice } from "./DataFreshnessNotice"
 import { SectionLabel, SectionTitle } from "./SectionHeader"
 import { ProfileOverview } from "./ProfileOverview"
@@ -248,6 +249,7 @@ export function CandidatoProfile({
   const patrimonio = ficha.patrimonio ?? []
   const financiamento = ficha.financiamento ?? []
   const processos = ficha.processos ?? []
+  const sancoes = ficha.sancoes_administrativas ?? []
   const votos = ficha.votos ?? []
   const historico = ficha.historico ?? []
   const mudancas = ficha.mudancas_partido ?? []
@@ -290,7 +292,7 @@ export function CandidatoProfile({
   const tabDefsById: Record<CandidatoProfileNavTabId, { label: string; dataCount: number }> = {
     geral: { label: fixedCopy.generalOverview, dataCount: 0 },
     dinheiro: { label: "Dinheiro", dataCount: patrimonio.length + financiamento.length + gastos.length },
-    justica: { label: "Justiça", dataCount: processos.length },
+    justica: { label: "Justiça", dataCount: processos.length + sancoes.length },
     votos: { label: "Votos", dataCount: votos.length },
     trajetoria: { label: "Trajetória", dataCount: profileTrajetoriaTabBadgeCount(historico, mudancas) },
     legislacao: {
@@ -652,6 +654,13 @@ export function CandidatoProfile({
                     </div>
                   )
                 })}
+                {/* Sanções administrativas: bloco com proveniência do zero.
+                    Só a coleta com desfecho vazio_confirmado autoriza dizer
+                    "nada encontrado"; sem verificação o bloco fica neutro. */}
+                <SancoesSection
+                  sancoes={sancoes}
+                  verificacao={ficha.sancoes_verificacao ?? null}
+                />
               </div>
             )}
 
