@@ -7,6 +7,22 @@ candidatos de 03/08 que já têm biografia (alessandra-campelo, baba,
 ismar-marques, larissa-rosado, luciana-gurgel, luis-cesar-bueno, ze-coca)
 vieram de verbete de Wikipédia e ficam fora daqui.
 
+## Decisão editorial e aplicação
+
+Em 05/08/2026, Thiago Salvador aprovou as 20 biografias desta página sem
+edições e sem rejeições, em decisão item a item. A migration
+`20260805135540_approve_editorial_biographies_20.sql` gravou os textos em
+`candidatos.biografia`, acrescentou a referência deste documento a
+`fonte_dados` e registrou uma tentativa `encontrado` por candidato em
+`coleta_log`, com a execução `editorial:biografias-20260805`.
+
+A leitura de volta confirmou 20 textos idênticos aos aprovados, 20 referências
+de fonte e 20 rastros. Continuaram sem biografia apenas coronel-busnello,
+jeremias-cosmo, marcus-sodre, patrus-ananias e witer-naves, que já estavam no
+seed de 30/07 e não pertenciam ao lote de 27 fichas novas de 03/08.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
 ## Método e vocabulário de fontes
 
 Toda frase carrega a fonte entre colchetes. Nenhuma frase sem fonte. Vocabulário:
