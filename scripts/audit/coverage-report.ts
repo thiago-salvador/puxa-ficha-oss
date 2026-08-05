@@ -16,15 +16,22 @@
  * (com `--json`) e as páginas de revisão em `<dir do HTML>/revisao/`.
  *
  * A entrada é sempre o snapshot JSON de `coverage-snapshot.sql`, rodado contra o
- * banco em modo somente leitura (psql, SQL editor do Supabase ou MCP) e salvo em
- * arquivo. Ver `--from-snapshot`.
+ * banco em modo somente leitura. Sem `--from-snapshot`, o próprio script executa
+ * o .sql pela Management API do Supabase (`lib/snapshot-fetch.ts`, sempre com
+ * `read_only: true`) e guarda o resultado em disco. Isso não reabre o caminho
+ * removido em 02/08: o SQL continua sendo a única descrição dos fatos, o script
+ * só o transporta. Com `--from-snapshot` nada de rede acontece, que é o modo
+ * usado por teste e por quem não tem credencial.
  *
  * Uso:
+ *   npm run audit:cobertura                    # busca o snapshot e desenha
  *   tsx scripts/audit/coverage-report.ts --from-snapshot=snapshot.json --json
  *   tsx scripts/audit/coverage-report.ts --from-snapshot=snapshot.json --com-migrations-pendentes
  *
  * Flags:
- *   --from-snapshot=PATH        OBRIGATÓRIA. JSON produzido por `coverage-snapshot.sql`
+ *   --from-snapshot=PATH        pula a leitura do banco e usa este JSON
+ *   --snapshot-out=PATH         onde gravar o snapshot buscado
+ *                               (default: <out sem .html>-snapshot.json)
  *   --out=PATH                  caminho do HTML (default: ~/.disposable-html/AAAA-MM-DD-puxa-ficha-cobertura-dados.descartavel.html)
  *   --json[=PATH]               grava também o JSON de estados por célula
  *   --review-post=URL           endpoint para onde as páginas de revisão enviam
@@ -35,7 +42,7 @@
  *   --slugs=a,b,c               limita o relatório a esses slugs
  */
 
-import { mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { homedir } from "node:os"
 
@@ -44,13 +51,16 @@ import { readFileSync } from "node:fs"
 import {
   COLUNAS,
   ROTULO_CLASSE,
+  ROTULO_PROVENIENCIA,
   calcularCelulas,
   calcularIndice,
   type CandidatoCoverage,
   type Cell,
   type ItemRevisar,
+  type ResultadoColeta,
 } from "./lib/coverage-model"
 import { lerPendingWrites, type PendingWrite } from "./lib/pending-writes"
+import { obterColetas, obterSnapshot } from "./lib/snapshot-fetch"
 
 const RAIZ = resolve(import.meta.dirname, "..", "..")
 
@@ -73,11 +83,20 @@ interface Opcoes {
   migrationsDesde?: string
   slugs?: Set<string>
   fromSnapshot?: string
+  snapshotOut: string
   reviewPost: string
 }
 
+/**
+ * Data local, não UTC. Rodando de madrugada em São Paulo, `toISOString` já
+ * virou o dia e o arquivo saía com data de amanhã enquanto o corpo do relatório
+ * (que usa `toLocaleDateString`) dizia hoje. Nome e conteúdo têm que combinar:
+ * o nome do arquivo é a única coisa que sobrevive na pasta de descartáveis.
+ */
 function hoje(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const p = (n: number): string => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 export function parseArgs(argv: string[]): Opcoes {
@@ -101,6 +120,7 @@ export function parseArgs(argv: string[]): Opcoes {
     migrationsDesde: get("migrations-desde") || undefined,
     slugs: slugs ? new Set(slugs.split(",").map((s) => s.trim()).filter(Boolean)) : undefined,
     fromSnapshot: get("from-snapshot") || undefined,
+    snapshotOut: get("snapshot-out") || out.replace(/\.html$/, "") + "-snapshot.json",
     reviewPost: get("review-post") || "/revisao",
   }
 }
@@ -142,6 +162,38 @@ export function lerSnapshot(path: string, slugs?: Set<string>): CandidatoCoverag
     .map((c) => ({ ...c, temSqNoSeed: comSq.has(c.slug) }))
 }
 
+
+// ── Procedência do zero (log de coleta) ─────────────────────────────
+//
+// Fica ao lado do snapshot, num arquivo irmão, pelo mesmo motivo que o
+// snapshot fica em arquivo: para o desenho poder ser refeito sem rede, e para
+// a entrada do relatório ser inspecionável. Ausente = procedência não lida, que
+// é o estado de todo banco antes da migration `coleta_log`.
+
+/** Arquivo irmão do snapshot com as tentativas de coleta. */
+export function caminhoColetas(caminhoSnapshot: string): string {
+  return caminhoSnapshot.replace(/\.json$/, "") + "-coleta.json"
+}
+
+export function lerColetas(
+  caminhoSnapshot: string
+): Record<string, Record<string, ResultadoColeta>> | undefined {
+  const p = caminhoColetas(caminhoSnapshot)
+  if (!existsSync(p)) return undefined
+  return JSON.parse(readFileSync(p, "utf8")) as Record<string, Record<string, ResultadoColeta>>
+}
+
+export function aplicarColetas(
+  coorte: CandidatoCoverage[],
+  coletas: Record<string, Record<string, ResultadoColeta>> | undefined
+): CandidatoCoverage[] {
+  if (!coletas) return coorte
+  // Candidato sem chave no log recebe `{}`, não `undefined`: ele FOI olhado e
+  // não tem nenhuma tentativa, o que é "nunca verificado" em todas as fontes.
+  // `undefined` significa outra coisa (o log não foi lido) e não pode vazar
+  // para cá, senão os dois casos voltam a se confundir.
+  return coorte.map((c) => ({ ...c, coletas: coletas[c.slug] ?? {} }))
+}
 
 // ── Overlay das migrations pendentes ────────────────────────────────
 
@@ -218,7 +270,10 @@ function renderTabela(coorte: CandidatoCoverage[], id: string): string {
         key === "revisar" && cand.itensRevisar.length > 0
           ? `<a class="rev" href="revisao/${esc(cand.slug)}.html">${esc(cel.text)}</a>`
           : esc(cel.text)
-      return `<td class="c-${cel.state}" data-slug="${esc(cand.slug)}" data-col="${esc(key)}"${tip}>${conteudo}</td>`
+      // Zero com procedência conhecida ganha um traço embaixo: contínuo quando
+      // a fonte respondeu vazio, pontilhado quando ninguém foi verificar.
+      const prov = cel.proveniencia ? ` data-prov="${esc(cel.proveniencia)}"` : ""
+      return `<td class="c-${cel.state}" data-slug="${esc(cand.slug)}" data-col="${esc(key)}"${prov}${tip}>${conteudo}</td>`
     }).join("")
 
     const classeIndice = indice >= 80 ? "s-hi" : indice >= 50 ? "s-mid" : "s-lo"
@@ -263,6 +318,7 @@ h2 .count { font-size:13px; color:var(--muted); font-weight:600; margin-left:6px
 .legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:12.5px; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
 .sw { width:14px; height:14px; border-radius:4px; display:inline-block; }
+.sw.prov { width:16px; height:4px; border-radius:2px; }
 .notes { font-size:12.5px; color:var(--muted); max-width:980px; margin:10px 0 4px; }
 .notes li { margin-bottom:3px; }
 .toc { display:flex; flex-wrap:wrap; gap:6px; margin:18px 0 8px; }
@@ -287,6 +343,11 @@ td.c-ok { background:var(--ok-bg); color:var(--ok-fg); font-weight:600; }
 td.c-partial { background:var(--partial-bg); color:var(--partial-fg); font-weight:600; }
 td.c-missing { background:var(--miss-bg); color:var(--miss-fg); font-weight:700; }
 td.c-zero { background:var(--zero-bg); color:var(--zero-fg); }
+/* Procedência do zero: o traço diz de onde vem o silêncio. */
+td[data-prov="vazio_confirmado"] { box-shadow:inset 0 -3px 0 var(--prov-ok, #1c6b2d); color:var(--fg); }
+td[data-prov="nunca_verificado"] { box-shadow:inset 0 -3px 0 var(--prov-nunca, #b98a00); }
+td[data-prov="erro"], td[data-prov="indeterminado"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
+td[data-prov="sem_fonte"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
 td.c-na { background:var(--na-bg); color:var(--na-fg); font-size:11px; }
 td.scr { font-weight:700; border-right:1px solid var(--line); }
 a.rev { color:var(--warn-link, #1f4fd8); font-weight:700; text-decoration:none; }
@@ -337,6 +398,26 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
 
   const data = new Date().toLocaleDateString("pt-BR")
 
+  // A legenda de procedência só aparece quando há procedência para explicar.
+  const temProveniencia = coorte.some((c) => c.coletas !== undefined)
+  const legendaProveniencia = temProveniencia
+    ? (
+        [
+          ["vazio_confirmado", "#1c6b2d"],
+          ["nunca_verificado", "#b98a00"],
+          ["erro", "#a12622"],
+          ["sem_fonte", "#c9c7c0"],
+        ] as const
+      )
+        .map(
+          ([p, cor]) =>
+            `<span><span class="sw prov" style="background:${cor}"></span>Zero: ${esc(
+              ROTULO_PROVENIENCIA[p]
+            )}</span>`
+        )
+        .join("")
+    : `<span class="notes" style="margin:0">Procedência do zero indisponível: este relatório não leu <code>coleta_log</code>, então nenhum zero distingue "verificado e vazio" de "nunca coletado".</span>`
+
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -357,12 +438,13 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
   <span><span class="sw" style="background:var(--ok-bg)"></span>Preenchido (número = volume)</span>
   <span><span class="sw" style="background:var(--partial-bg)"></span>Parcial</span>
   <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio</span>
-  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero (nada encontrado ou não coletado)</span>
+  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero</span>
   <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica</span>
 </div>
+<div class="legend">${legendaProveniencia}</div>
 <ul class="notes">
   <li><b>Não se aplica</b> é inferido do histórico político registrado no próprio site: cota parlamentar exige mandato de deputado federal ou senador com fim a partir de 2009 (quando começa a cota digital do CEAP); votações-chave, mandato federal com fim a partir de 2012 (janela das votações carregadas no banco); projetos de lei, mandato parlamentar em qualquer esfera; legislação do Executivo, chefia de Executivo; patrimônio e financiamento, já ter declarado ao TSE, isto é, SQ_CANDIDATO conhecido no seed do projeto ou candidatura / mandato eletivo no histórico com início até 2024. A pré-candidatura de 2026 não conta, e cargo por nomeação (ministro, secretário, presidência de partido) também não. Histórico incompleto pode gerar falso "não se aplica".</li>
-  <li><b>Zero</b> (cargos ocupados, trocas de partido, contradições, processos, alertas, sanções): pode significar "verificado e nada encontrado" ou "ainda não coletado", o banco não distingue os dois casos.</li>
+  <li><b>Zero</b> (cargos ocupados, trocas de partido, contradições, processos, alertas, sanções): o traço embaixo da célula diz por que ela está zerada, lido da última tentativa de coleta em <code>coleta_log</code>. Verde, a fonte foi consultada e respondeu vazio, e só aí o zero afirma alguma coisa. Âmbar, nenhuma coleta registrou tentativa: o zero não quer dizer nada. Vermelho, a coleta falhou ou terminou sem veredito, e o zero é ainda menos confiável que o silêncio. Cinza, nenhum ingest alimenta a coluna e o dado só entra por curadoria manual. Sem traço, este relatório não leu o log de coleta.</li>
   <li><b>Preenchimento</b>: entram no índice exatamente 15 colunas: foto, bio, redes sociais, dados pessoais (cheio com 3 de 4 ou mais), patrimônio, evolução patrimonial, bens ano a ano, financiamento, doadores detalhados, votações-chave, projetos de lei, cota parlamentar, legislação do Executivo, notícias e posições (quiz). Só contam as aplicáveis ao candidato; parcial vale meio ponto. Ficam fora as seis colunas de zero acima e "proj. em destaque" (curadoria editorial), por isso pode haver 100% com célula amarela de destaque.</li>
   <li>Alertas contam pontos de atenção visíveis que não sejam "feito positivo". Dados pessoais = idade (da view pública <code>candidatos_publico</code>, derivada da data de nascimento), naturalidade, formação e profissão. Posições (quiz) é x/3, um por tema do quiz presidencial.</li>
 </ul>
@@ -735,19 +817,42 @@ filtrar();
 
 async function main(): Promise<void> {
   const opcoes = parseArgs(process.argv.slice(2))
-  if (!opcoes.fromSnapshot) {
-    throw new Error(
-      "--from-snapshot=PATH é obrigatório. Rode scripts/audit/coverage-snapshot.sql contra o banco " +
-        "(somente leitura) e salve a coluna `snapshot` num arquivo .json."
-    )
-  }
   NOME_INDEX = basename(opcoes.out)
+
+  // Sem snapshot em disco, roda o .sql no banco (somente leitura) e grava. O
+  // arquivo fica para inspeção e para reexecutar o desenho sem tocar a rede.
+  let caminhoSnapshot = opcoes.fromSnapshot
+  if (!caminhoSnapshot) {
+    const sql = join(RAIZ, "scripts", "audit", "coverage-snapshot.sql")
+    const linhas = await obterSnapshot(sql)
+    mkdirSync(dirname(opcoes.snapshotOut), { recursive: true })
+    writeFileSync(opcoes.snapshotOut, JSON.stringify(linhas, null, 2), "utf8")
+    console.error(
+      `[cobertura] snapshot: ${linhas.length} candidato(s) publicável(is) → ${opcoes.snapshotOut}`
+    )
+    caminhoSnapshot = opcoes.snapshotOut
+
+    // Procedência do zero. Opcional por construção: em banco sem `coleta_log`
+    // o relatório continua saindo, com a procedência marcada como não lida.
+    const coletas = await obterColetas(join(RAIZ, "scripts", "audit", "coverage-coleta.sql"))
+    if (coletas) {
+      writeFileSync(caminhoColetas(opcoes.snapshotOut), JSON.stringify(coletas, null, 2), "utf8")
+      console.error(
+        `[cobertura] log de coleta: tentativas registradas para ${Object.keys(coletas).length} candidato(s)`
+      )
+    } else {
+      console.error(
+        "[cobertura] log de coleta: tabela coleta_log ainda não existe neste banco; " +
+          "todo zero sai com procedência não lida"
+      )
+    }
+  }
 
   const pendentes = opcoes.comPendentes
     ? lerPendingWrites(join(RAIZ, "supabase", "migrations"), opcoes.migrationsDesde)
     : []
 
-  let coorte = lerSnapshot(opcoes.fromSnapshot, opcoes.slugs)
+  let coorte = aplicarColetas(lerSnapshot(caminhoSnapshot, opcoes.slugs), lerColetas(caminhoSnapshot))
   if (pendentes.length) {
     const r = aplicarPendentes(coorte, pendentes)
     coorte = r.coorte

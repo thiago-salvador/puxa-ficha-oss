@@ -31,10 +31,46 @@
 
 export type CellState = "ok" | "partial" | "missing" | "zero" | "na"
 
+/**
+ * Por que a célula está zerada, quando dá para saber.
+ *
+ * Até 2026-08-04 o relatório dizia, na própria legenda, que `zero` podia ser
+ * "verificado e nada encontrado" ou "nunca coletado", e que o banco não
+ * distinguia os dois. `coleta_log` (2026-08-04) passa a registrar a TENTATIVA,
+ * e é dela que estes valores saem — sempre da última tentativa por fonte.
+ *
+ *   vazio_confirmado : a fonte respondeu e veio vazia. Único caso em que "zero"
+ *                      é afirmação, não silêncio.
+ *   nunca_verificado : nenhuma tentativa registrada. O zero não quer dizer nada.
+ *   erro             : a busca falhou (credencial, HTTP, pré-requisito). Não é zero.
+ *   indeterminado    : o ingest terminou sem saber dizer se veio vazio ou falhou.
+ *   sem_fonte        : nenhum ingest alimenta esta coluna, então não há o que
+ *                      registrar. O dado só entra por curadoria manual.
+ *   desconhecida     : o log de coleta não foi lido nesta execução.
+ */
+export type Proveniencia =
+  | "vazio_confirmado"
+  | "nunca_verificado"
+  | "erro"
+  | "indeterminado"
+  | "sem_fonte"
+  | "desconhecida"
+
 export interface Cell {
   state: CellState
   text: string
   tip?: string
+  /** Só nas colunas cujo zero era ambíguo. Ver `COLUNAS_COM_PROVENIENCIA`. */
+  proveniencia?: Proveniencia
+}
+
+export const ROTULO_PROVENIENCIA: Record<Proveniencia, string> = {
+  vazio_confirmado: "verificado e vazio",
+  nunca_verificado: "nunca coletado",
+  erro: "a coleta falhou",
+  indeterminado: "coleta sem veredito",
+  sem_fonte: "sem coleta automática",
+  desconhecida: "procedência não lida",
 }
 
 /** Último ano de registro no TSE considerado para "já declarou". */
@@ -124,6 +160,72 @@ export interface CandidatoCoverage {
   sancoes: number
   /** Itens que dependem de decisão humana para mudar o que está publicado. */
   itensRevisar: ItemRevisar[]
+  /**
+   * Última tentativa de coleta por fonte, de `coleta_log_ultima`. Ausente
+   * quando o log não foi lido (ou ainda não existe no banco): aí toda
+   * procedência vira `desconhecida` e o relatório volta a dizer só "zero".
+   */
+  coletas?: Record<string, ResultadoColeta>
+}
+
+/** Desfechos de `coleta_log.resultado`. Fonte: a migration da tabela. */
+export type ResultadoColeta =
+  | "encontrado"
+  | "vazio_confirmado"
+  | "nao_aplicavel"
+  | "erro"
+  | "indeterminado"
+
+/**
+ * Quais ingests alimentam cada coluna cujo zero era ambíguo.
+ *
+ * Derivado de quem escreve em cada tabela (`scripts/ingest-*.ts`), não de
+ * suposição. Scripts de correção pontual (`fix-*`, `apply-*`) ficam fora: eles
+ * são intervenção humana, não coleta recorrente, e não registram tentativa.
+ *
+ * Lista vazia é informação, não lacuna do mapa: significa que nenhum ingest
+ * alimenta a coluna, e que o zero dela nunca vai poder ser confirmado por
+ * coleta. Hoje é o caso de processos judiciais e das colunas de curadoria.
+ */
+export const FONTES_POR_COLUNA: Record<string, readonly string[]> = {
+  cargos: ["tse-historico", "senado", "wiki-historico", "wikidata-politico"],
+  partidos: ["tse-historico", "filiacao", "wikidata-politico"],
+  sancoes: ["transparencia-sanctions"],
+  alertas: ["jarbas", "tcu", "transparencia-sanctions"],
+  contradicoes: [],
+  processos: [],
+}
+
+/** Colunas que ganham procedência. São exatamente as de zero ambíguo. */
+export const COLUNAS_COM_PROVENIENCIA = Object.keys(FONTES_POR_COLUNA)
+
+/**
+ * Procedência de um zero, a partir das tentativas das fontes daquela coluna.
+ *
+ * A ordem é deliberada e vai do pior para o melhor: basta uma fonte ter
+ * falhado para o zero deixar de ser confiável, e só quando toda a informação
+ * disponível é "consultei e não havia" é que o zero vira afirmação. Um zero que
+ * depende de três fontes e só tem duas verificadas continua `nunca_verificado`,
+ * porque a terceira pode ser justamente a que tinha o dado.
+ */
+export function provenienciaDoZero(
+  coluna: string,
+  coletas: Record<string, ResultadoColeta> | undefined
+): Proveniencia {
+  const fontes = FONTES_POR_COLUNA[coluna]
+  if (!fontes) return "desconhecida"
+  if (fontes.length === 0) return "sem_fonte"
+  if (!coletas) return "desconhecida"
+
+  const tentativas = fontes.map((f) => coletas[f])
+  if (tentativas.some((t) => t === "erro")) return "erro"
+  if (tentativas.some((t) => t === "indeterminado")) return "indeterminado"
+  if (tentativas.some((t) => t === undefined)) return "nunca_verificado"
+  // Sobrou só vazio_confirmado, nao_aplicavel e encontrado. `encontrado` aqui é
+  // contradição (a célula está zerada), e vale tratá-la como não verificada:
+  // ou a coleta gravou em outro candidato, ou o dado foi removido depois.
+  if (tentativas.some((t) => t === "encontrado")) return "nunca_verificado"
+  return "vazio_confirmado"
 }
 
 /** Classes de item que entram na fila de revisão. */
@@ -249,6 +351,23 @@ function cell(state: CellState, text: string, tip?: string): Cell {
   return tip ? { state, text, tip } : { state, text }
 }
 
+/**
+ * Célula zerada de uma coluna com procedência: o "0" passa a vir acompanhado do
+ * motivo, e a dica diz o que aquele zero autoriza afirmar.
+ */
+function cellZero(coluna: string, c: CandidatoCoverage, semDado: string): Cell {
+  const prov = provenienciaDoZero(coluna, c.coletas)
+  const explicacao: Record<Proveniencia, string> = {
+    vazio_confirmado: `${semDado}: a fonte foi consultada e respondeu vazio`,
+    nunca_verificado: `${semDado}, e nenhuma coleta registrou tentativa: este zero não afirma nada`,
+    erro: `${semDado}, mas a última coleta falhou: o zero não vale como resposta`,
+    indeterminado: `${semDado}, e a coleta terminou sem saber dizer se a fonte veio vazia`,
+    sem_fonte: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
+    desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`,
+  }
+  return { state: "zero", text: "0", tip: explicacao[prov], proveniencia: prov }
+}
+
 function anos(n: number): string {
   return `${n} ano${n > 1 ? "s" : ""}`
 }
@@ -271,9 +390,9 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
 
   const mandatos = c.historico.filter((h) => h.tipo_evento === "mandato").length
   out.cargos =
-    mandatos > 0 ? cell("ok", String(mandatos)) : cell("zero", "0", "nenhum mandato registrado")
+    mandatos > 0 ? cell("ok", String(mandatos)) : cellZero("cargos", c, "nenhum mandato registrado")
   out.partidos =
-    c.mudancas > 0 ? cell("ok", String(c.mudancas)) : cell("zero", "0", "sem troca registrada")
+    c.mudancas > 0 ? cell("ok", String(c.mudancas)) : cellZero("partidos", c, "sem troca registrada")
 
   const pat = c.patrimonioAnos.length
   if (pat > 0) {
@@ -328,11 +447,15 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   out.contradicoes =
     c.contradicoes > 0
       ? cell("ok", String(c.contradicoes))
-      : cell("zero", "0", "nenhuma contradição registrada")
+      : cellZero("contradicoes", c, "nenhuma contradição registrada")
   out.processos =
-    c.processos > 0 ? cell("ok", String(c.processos)) : cell("zero", "0", "nenhum processo registrado")
+    c.processos > 0
+      ? cell("ok", String(c.processos))
+      : cellZero("processos", c, "nenhum processo registrado")
   out.alertas =
-    c.alertas > 0 ? cell("ok", String(c.alertas)) : cell("zero", "0", "nenhum ponto de atenção público")
+    c.alertas > 0
+      ? cell("ok", String(c.alertas))
+      : cellZero("alertas", c, "nenhum ponto de atenção público")
 
   if (c.projetos > 0) {
     out.projetos = cell("ok", String(c.projetos))
@@ -414,7 +537,7 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   }
 
   out.sancoes =
-    c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cell("zero", "0", "nenhuma sanção registrada")
+    c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cellZero("sancoes", c, "nenhuma sanção registrada")
 
   const nRevisar = c.itensRevisar.length
   out.revisar =
