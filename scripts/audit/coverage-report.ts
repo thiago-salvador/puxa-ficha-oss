@@ -54,17 +54,18 @@ import {
   ROTULO_CLASSE,
   ROTULO_PROVENIENCIA,
   calcularCelulas,
+  calcularFontesNaoAplicaveis,
   calcularIndice,
   type CandidatoCoverage,
   type Cell,
   type ColetaPorFonte,
-  type ItemRevisar,
+  type ItemRevisar
 } from "./lib/coverage-model"
 import {
   FONTES_POR_CANDIDATO,
   ROTULO_RESULTADO_FONTE,
   linhasPorFonte,
-  type ResultadoFonte,
+  type ResultadoFonte
 } from "./lib/coleta-proveniencia"
 import { lerPendingWrites, type PendingWrite } from "./lib/pending-writes"
 import { obterSnapshot } from "./lib/snapshot-fetch"
@@ -72,13 +73,33 @@ import { obterSnapshot } from "./lib/snapshot-fetch"
 const RAIZ = resolve(import.meta.dirname, "..", "..")
 
 const UF_NOME: Record<string, string> = {
-  AC: "Acre", AL: "Alagoas", AM: "Amazonas", AP: "Amapá", BA: "Bahia",
-  CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás",
-  MA: "Maranhão", MG: "Minas Gerais", MS: "Mato Grosso do Sul", MT: "Mato Grosso",
-  PA: "Pará", PB: "Paraíba", PE: "Pernambuco", PI: "Piauí", PR: "Paraná",
-  RJ: "Rio de Janeiro", RN: "Rio Grande do Norte", RO: "Rondônia", RR: "Roraima",
-  RS: "Rio Grande do Sul", SC: "Santa Catarina", SE: "Sergipe", SP: "São Paulo",
-  TO: "Tocantins",
+  AC: "Acre",
+  AL: "Alagoas",
+  AM: "Amazonas",
+  AP: "Amapá",
+  BA: "Bahia",
+  CE: "Ceará",
+  DF: "Distrito Federal",
+  ES: "Espírito Santo",
+  GO: "Goiás",
+  MA: "Maranhão",
+  MG: "Minas Gerais",
+  MS: "Mato Grosso do Sul",
+  MT: "Mato Grosso",
+  PA: "Pará",
+  PB: "Paraíba",
+  PE: "Pernambuco",
+  PI: "Piauí",
+  PR: "Paraná",
+  RJ: "Rio de Janeiro",
+  RN: "Rio Grande do Norte",
+  RO: "Rondônia",
+  RR: "Roraima",
+  RS: "Rio Grande do Sul",
+  SC: "Santa Catarina",
+  SE: "Sergipe",
+  SP: "São Paulo",
+  TO: "Tocantins"
 }
 
 // ── CLI ────────────────────────────────────────────────────────────
@@ -158,11 +179,18 @@ export function parseArgs(argv: string[]): Opcoes {
     json: jsonFlag === undefined ? null : jsonFlag || out.replace(/\.html$/, "") + ".json",
     comPendentes: get("com-migrations-pendentes") !== undefined,
     migrationsDesde: get("migrations-desde") || undefined,
-    slugs: slugs ? new Set(slugs.split(",").map((s) => s.trim()).filter(Boolean)) : undefined,
+    slugs: slugs
+      ? new Set(
+          slugs
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        )
+      : undefined,
     fromSnapshot: get("from-snapshot") || undefined,
     snapshotOut: get("snapshot-out") || out.replace(/\.html$/, "") + "-snapshot.json",
     reviewPost: get("review-post") || "/revisao",
-    evidence: get("evidence") || undefined,
+    evidence: get("evidence") || undefined
   }
 }
 
@@ -175,25 +203,32 @@ export function parseArgs(argv: string[]): Opcoes {
 // revisão) são janelas e uniões que ficavam ilegíveis reimplementadas em JS, e
 // manter as duas versões em sincronia era convite a duas verdades.
 
-/** Slugs com SQ_CANDIDATO conhecido no seed `data/candidatos.json`. */
-function slugsComSqNoSeed(): Set<string> {
+/** IDs oficiais conhecidos no seed `data/candidatos.json`, por slug. */
+function idsOficiaisNoSeed(): Map<
+  string,
+  { temSq: boolean; temCamara: boolean; temSenado: boolean }
+> {
   const seed: CandidatoConfig[] = JSON.parse(
     readFileSync(join(RAIZ, "data", "candidatos.json"), "utf8")
   )
-  return new Set(
-    seed
-      .filter((c) => {
-        const sq = (c.ids as { tse_sq_candidato?: Record<string, string> } | undefined)
-          ?.tse_sq_candidato
-        return Boolean(sq && Object.values(sq).some(Boolean))
-      })
-      .map((c) => c.slug)
+  return new Map(
+    seed.map((c) => {
+      const sq = c.ids?.tse_sq_candidato
+      return [
+        c.slug,
+        {
+          temSq: Boolean(sq && Object.values(sq).some(Boolean)),
+          temCamara: c.ids?.camara !== null && c.ids?.camara !== undefined,
+          temSenado: c.ids?.senado !== null && c.ids?.senado !== undefined
+        }
+      ]
+    })
   )
 }
 
 /**
  * Lê o snapshot gerado por `coverage-snapshot.sql`. O SQL não conhece o seed do
- * repo, então `temSqNoSeed` é resolvido aqui.
+ * repo, então os IDs de TSE, Câmara e Senado são resolvidos aqui.
  *
  * O campo `coleta` do SQL vira `coletas` no modelo. Ele pode não existir, e a
  * diferença importa: snapshot antigo (gravado antes da migration `coleta_log`,
@@ -205,14 +240,22 @@ function slugsComSqNoSeed(): Set<string> {
 export function lerSnapshot(path: string, slugs?: Set<string>): CandidatoCoverage[] {
   const bruto = JSON.parse(readFileSync(path, "utf8")) as (Omit<
     CandidatoCoverage,
-    "temSqNoSeed" | "coletas"
+    "temSqNoSeed" | "temIdCamaraNoSeed" | "temIdSenadoNoSeed" | "coletas"
   > & { coleta?: ColetaPorFonte })[]
-  const comSq = slugsComSqNoSeed()
+  const idsNoSeed = idsOficiaisNoSeed()
   return bruto
     .filter((c) => (slugs ? slugs.has(c.slug) : true))
-    .map(({ coleta, ...c }) => ({ ...c, temSqNoSeed: comSq.has(c.slug), coletas: coleta }))
+    .map(({ coleta, ...c }) => {
+      const ids = idsNoSeed.get(c.slug)
+      return {
+        ...c,
+        temSqNoSeed: ids?.temSq ?? false,
+        temIdCamaraNoSeed: ids?.temCamara ?? false,
+        temIdSenadoNoSeed: ids?.temSenado ?? false,
+        coletas: coleta
+      }
+    })
 }
-
 
 // ── Overlay das migrations pendentes ────────────────────────────────
 
@@ -330,7 +373,7 @@ const ORDEM_RESULTADO_FONTE: Record<ResultadoFonte, number> = {
   indeterminado: 2,
   vazio_confirmado: 3,
   nao_aplicavel: 4,
-  encontrado: 5,
+  encontrado: 5
 }
 
 function dataHoraColeta(valor: string | undefined): string {
@@ -340,7 +383,7 @@ function dataHoraColeta(valor: string | undefined): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
-    timeZone: "America/Sao_Paulo",
+    timeZone: "America/Sao_Paulo"
   }).format(data)
 }
 
@@ -351,9 +394,7 @@ function dataHoraColeta(valor: string | undefined): string {
  */
 function renderTabelaFontes(coorte: CandidatoCoverage[], id: string): string {
   const linhas: string[] = []
-  const candidatos = [...coorte].sort((a, b) =>
-    a.nome_urna.localeCompare(b.nome_urna, "pt-BR")
-  )
+  const candidatos = [...coorte].sort((a, b) => a.nome_urna.localeCompare(b.nome_urna, "pt-BR"))
 
   for (const cand of candidatos) {
     if (cand.coletas === undefined) {
@@ -366,7 +407,7 @@ function renderTabelaFontes(coorte: CandidatoCoverage[], id: string): string {
       continue
     }
 
-    const fontes = linhasPorFonte(cand.coletas).sort(
+    const fontes = linhasPorFonte(cand.coletas, calcularFontesNaoAplicaveis(cand)).sort(
       (a, b) =>
         ORDEM_RESULTADO_FONTE[a.resultado] - ORDEM_RESULTADO_FONTE[b.resultado] ||
         a.fonte.localeCompare(b.fonte, "pt-BR")
@@ -593,9 +634,9 @@ export function renderHtml(
       ? [
           `<h2 id="outros">Outros cargos <span class="count">${outros.length}</span></h2>` +
             renderTabela(outros, "t-outros", matriz) +
-            renderTabelaFontes(outros, "f-outros"),
+            renderTabelaFontes(outros, "f-outros")
         ]
-      : []),
+      : [])
   ]
 
   const blocoPendentes = pendentes.length
@@ -612,10 +653,7 @@ export function renderHtml(
     for (const cel of Object.values(matriz.get(cand.slug)!)) {
       totalEstado.set(cel.state, (totalEstado.get(cel.state) ?? 0) + 1)
       if (cel.proveniencia) {
-        totalProveniencia.set(
-          cel.proveniencia,
-          (totalProveniencia.get(cel.proveniencia) ?? 0) + 1
-        )
+        totalProveniencia.set(cel.proveniencia, (totalProveniencia.get(cel.proveniencia) ?? 0) + 1)
       }
     }
   }
@@ -631,7 +669,7 @@ export function renderHtml(
           ["zero_provado", "#1c6b2d"],
           ["nunca_verificado", "#b98a00"],
           ["nao_sabemos", "#a12622"],
-          ["sem_ingest", "#c9c7c0"],
+          ["sem_ingest", "#c9c7c0"]
         ] as const
       )
         .map(
@@ -668,7 +706,7 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
   <span class="soma">${nm(totalCelulas)} células no total, ${coorte.length} candidatos x ${COLUNAS.length} frentes de dado</span>
 </div>
 <div class="legend">${legendaProveniencia}</div>
-<p class="notes"><b>Novo eixo por fonte:</b> ${FONTES_POR_CANDIDATO.length} fontes canônicas de escopo candidato, com uma linha por fonte e candidato, mais fontes adicionais que já tenham tentativa registrada. Fontes territoriais não entram, porque seu alvo é a UF ou um agregado, não a pessoa.</p>
+<p class="notes"><b>Novo eixo por fonte:</b> ${FONTES_POR_CANDIDATO.length} fontes canônicas de escopo candidato, com uma linha por fonte e candidato, mais fontes adicionais que já tenham tentativa registrada. “Nunca verificado” é reservado a fonte aplicável sem tentativa; Câmara e Jarbas, ou Senado e CEAPS, saem como “N/A” quando não há ID oficial nem mandato correspondente no histórico. Uma tentativa registrada sempre mostra seu desfecho real. Fontes territoriais não entram, porque seu alvo é a UF ou um agregado, não a pessoa.</p>
 <ul class="notes">
   <li><b>Não se aplica</b> é inferido do histórico político registrado no próprio site: cota parlamentar exige mandato de deputado federal ou senador com fim a partir de 2009 (quando começa a cota digital do CEAP); votações-chave, mandato federal com fim a partir de 2012 (janela das votações carregadas no banco); projetos de lei, mandato parlamentar em qualquer esfera; legislação do Executivo, chefia de Executivo; patrimônio e financiamento, já ter declarado ao TSE, isto é, SQ_CANDIDATO conhecido no seed do projeto ou candidatura / mandato eletivo no histórico com início até 2024. A pré-candidatura de 2026 não conta, e cargo por nomeação (ministro, secretário, presidência de partido) também não. Histórico incompleto pode gerar falso "não se aplica".</li>
   <li><b>Zero</b> (cargos ocupados, trocas de partido, contradições, processos, alertas, sanções): o traço embaixo da célula diz por que ela está zerada, lido da última tentativa de coleta em <code>coleta_log</code>. Verde, a fonte foi consultada e respondeu vazio, e só aí o zero afirma alguma coisa. Âmbar, nenhuma coleta registrou tentativa: o zero não quer dizer nada. Vermelho, a coleta falhou ou terminou sem veredito, e o zero é ainda menos confiável que o silêncio. Cinza, nenhum ingest alimenta a coluna e o dado só entra por curadoria manual. Sem traço, este relatório não leu o log de coleta.</li>
@@ -910,7 +948,7 @@ export function renderPaginaLote(coorte: CandidatoCoverage[], postUrl: string): 
     slug: cand.slug,
     id: item.id,
     classe: item.classe,
-    titulo: item.titulo,
+    titulo: item.titulo
   }))
 
   return `<!doctype html>
@@ -1119,10 +1157,8 @@ async function main(): Promise<void> {
       nome_urna: c.nome_urna,
       cargo_disputado: c.cargo_disputado,
       estado: c.estado,
-      celulas: Object.fromEntries(
-        Object.entries(calcularCelulas(c)).map(([k, v]) => [k, v.state])
-      ),
-      indice: calcularIndice(calcularCelulas(c)),
+      celulas: Object.fromEntries(Object.entries(calcularCelulas(c)).map(([k, v]) => [k, v.state])),
+      indice: calcularIndice(calcularCelulas(c))
     }))
     mkdirSync(dirname(opcoes.json), { recursive: true })
     writeFileSync(opcoes.json, JSON.stringify(dump, null, 2), "utf8")

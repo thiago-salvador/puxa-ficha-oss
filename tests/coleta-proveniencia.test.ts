@@ -8,7 +8,7 @@ import {
   FONTES_POR_COLUNA,
   linhasPorFonte,
   provenienciaDaColuna,
-  type ColetaPorFonte,
+  type ColetaPorFonte
 } from "../scripts/audit/lib/coleta-proveniencia"
 import { COLUNAS } from "../scripts/audit/lib/coverage-model"
 import { FONTES } from "../scripts/lib/coleta-log"
@@ -22,13 +22,18 @@ describe("provenienciaDaColuna separa o zero provado do zero presumido", () => {
   })
 
   it("zero_provado exige que a fonte tenha respondido vazio", () => {
-    const coleta: ColetaPorFonte = { "transparencia-sanctions": { resultado: "vazio_confirmado" } }
+    const coleta: ColetaPorFonte = {
+      "transparencia-sanctions": { resultado: "vazio_confirmado" }
+    }
     assert.equal(provenienciaDaColuna("sancoes", coleta).veredito, "zero_provado")
   })
 
   it("credencial ausente nao vira zero: vira nao_sabemos", () => {
     const coleta: ColetaPorFonte = {
-      "transparencia-sanctions": { resultado: "erro", detalhe: "TRANSPARENCIA_API_KEY ausente" },
+      "transparencia-sanctions": {
+        resultado: "erro",
+        detalhe: "TRANSPARENCIA_API_KEY ausente"
+      }
     }
     const p = provenienciaDaColuna("sancoes", coleta)
     assert.equal(p.veredito, "nao_sabemos")
@@ -36,14 +41,18 @@ describe("provenienciaDaColuna separa o zero provado do zero presumido", () => {
   })
 
   it("indeterminado tambem nao vira zero", () => {
-    const coleta: ColetaPorFonte = { "google-news": { resultado: "indeterminado" } }
+    const coleta: ColetaPorFonte = {
+      "google-news": { resultado: "indeterminado" }
+    }
     assert.equal(provenienciaDaColuna("noticias", coleta).veredito, "nao_sabemos")
   })
 
   it("uma fonte de duas sem tentativa ja impede o zero_provado", () => {
     // Cota parlamentar depende da Camara E do CEAPS do Senado. Confirmar so uma
     // e afirmar sobre metade da vida parlamentar da pessoa.
-    const coleta: ColetaPorFonte = { camara: { resultado: "vazio_confirmado" } }
+    const coleta: ColetaPorFonte = {
+      camara: { resultado: "vazio_confirmado" }
+    }
     const p = provenienciaDaColuna("gastos", coleta)
     assert.equal(p.veredito, "nunca_verificado")
     assert.deepEqual(p.faltando, ["ceaps-senado"])
@@ -60,7 +69,9 @@ describe("provenienciaDaColuna separa o zero provado do zero presumido", () => {
   })
 
   it("dado encontrado em qualquer fonte ganha de tudo", () => {
-    const coleta: ColetaPorFonte = { camara: { resultado: "encontrado", volume: 12 } }
+    const coleta: ColetaPorFonte = {
+      camara: { resultado: "encontrado", volume: 12 }
+    }
     assert.equal(provenienciaDaColuna("projetos", coleta).veredito, "coletado")
   })
 
@@ -83,13 +94,13 @@ describe("o mapa coluna -> fontes fica em dia com o resto do sistema", () => {
     assert.deepEqual(
       faltando,
       [],
-      `coluna sem procedencia declarada em coleta-proveniencia.ts: ${faltando.join(", ")}`,
+      `coluna sem procedencia declarada em coleta-proveniencia.ts: ${faltando.join(", ")}`
     )
   })
 
   it("nenhuma entrada aponta para fonte que nao existe", () => {
     const invalidas = Object.entries(FONTES_POR_COLUNA).flatMap(([coluna, fontes]) =>
-      fontes.filter((f) => !(f in FONTES)).map((f) => `${coluna} -> ${f}`),
+      fontes.filter((f) => !(f in FONTES)).map((f) => `${coluna} -> ${f}`)
     )
     assert.deepEqual(invalidas, [], `fonte inexistente: ${invalidas.join(", ")}`)
   })
@@ -107,45 +118,78 @@ describe("o mapa coluna -> fontes fica em dia com o resto do sistema", () => {
 
   it("a ausência de linha vira nunca verificado sem apagar o último desfecho", () => {
     const linhas = linhasPorFonte({
-      tse: { resultado: "encontrado", volume: 3, executado_em: "2026-08-05T12:00:00Z" },
-      "busca-redes-manual": { resultado: "encontrado", volume: 1 },
+      tse: {
+        resultado: "encontrado",
+        volume: 3,
+        executado_em: "2026-08-05T12:00:00Z"
+      },
+      "busca-redes-manual": { resultado: "encontrado", volume: 1 }
     })
-    assert.deepEqual(linhas.find((linha) => linha.fonte === "tse"), {
-      fonte: "tse",
-      resultado: "encontrado",
-      volume: 3,
-      executado_em: "2026-08-05T12:00:00Z",
-    })
-    assert.deepEqual(linhas.find((linha) => linha.fonte === "tse-cpf"), {
-      fonte: "tse-cpf",
-      resultado: "nunca_verificado",
-    })
-    assert.deepEqual(linhas.find((linha) => linha.fonte === "busca-redes-manual"), {
-      fonte: "busca-redes-manual",
-      resultado: "encontrado",
-      volume: 1,
-    })
+    assert.deepEqual(
+      linhas.find((linha) => linha.fonte === "tse"),
+      {
+        fonte: "tse",
+        resultado: "encontrado",
+        volume: 3,
+        executado_em: "2026-08-05T12:00:00Z"
+      }
+    )
+    assert.deepEqual(
+      linhas.find((linha) => linha.fonte === "tse-cpf"),
+      {
+        fonte: "tse-cpf",
+        resultado: "nunca_verificado"
+      }
+    )
+    assert.deepEqual(
+      linhas.find((linha) => linha.fonte === "busca-redes-manual"),
+      {
+        fonte: "busca-redes-manual",
+        resultado: "encontrado",
+        volume: 1
+      }
+    )
+  })
+
+  it("fonte não aplicável sem tentativa vira N/A, mas tentativa real prevalece", () => {
+    const motivo = "N/A pelo histórico e pelo seed: sem mandato ou ID da Câmara"
+    const semTentativa = linhasPorFonte({}, { camara: motivo })
+    assert.deepEqual(
+      semTentativa.find((linha) => linha.fonte === "camara"),
+      {
+        fonte: "camara",
+        resultado: "nao_aplicavel",
+        detalhe: motivo
+      }
+    )
+
+    const comTentativa = linhasPorFonte(
+      { camara: { resultado: "encontrado", volume: 2 } },
+      { camara: motivo }
+    )
+    assert.deepEqual(
+      comTentativa.find((linha) => linha.fonte === "camara"),
+      {
+        fonte: "camara",
+        resultado: "encontrado",
+        volume: 2
+      }
+    )
   })
 
   it("o snapshot que alimenta o relatorio traz o campo coleta", () => {
     // Sem esta linha no SQL, o relatorio le `coleta` como undefined e TODA
     // celula vira nunca_verificado, o que parece funcionar e esta errado.
-    const sql = readFileSync(
-      join(process.cwd(), "scripts/audit/coverage-snapshot.sql"),
-      "utf8",
-    )
+    const sql = readFileSync(join(process.cwd(), "scripts/audit/coverage-snapshot.sql"), "utf8")
     assert.match(sql, /'coleta',\s*coalesce\(/)
     assert.match(sql, /from coleta_log_ultima u/)
   })
 
   it("o histórico do snapshot exclui o que a ficha despublicou", () => {
-    const sql = readFileSync(
-      join(process.cwd(), "scripts/audit/coverage-snapshot.sql"),
-      "utf8",
-    )
+    const sql = readFileSync(join(process.cwd(), "scripts/audit/coverage-snapshot.sql"), "utf8")
     assert.match(
       sql,
-      /from historico_politico h\s+where h\.candidato_id = c\.id and h\.despublicado_em is null/,
+      /from historico_politico h\s+where h\.candidato_id = c\.id and h\.despublicado_em is null/
     )
   })
 })

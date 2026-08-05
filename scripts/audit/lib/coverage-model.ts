@@ -34,7 +34,7 @@ import {
   FONTES_POR_COLUNA,
   ROTULO_PROVENIENCIA as ROTULOS_DO_MODULO,
   type ColetaPorFonte,
-  type VeredictoProveniencia,
+  type VeredictoProveniencia
 } from "./coleta-proveniencia"
 
 export type { ColetaPorFonte } from "./coleta-proveniencia"
@@ -75,7 +75,7 @@ export interface Cell {
 
 export const ROTULO_PROVENIENCIA: Record<Proveniencia, string> = {
   ...ROTULOS_DO_MODULO,
-  desconhecida: "procedência não lida",
+  desconhecida: "procedência não lida"
 }
 
 /** Último ano de registro no TSE considerado para "já declarou". */
@@ -93,7 +93,7 @@ const CARGOS_PARLAMENTAR = new Set([
   "Senador",
   "Deputado Estadual",
   "Deputado Distrital",
-  "Vereador",
+  "Vereador"
 ])
 const CARGOS_CHEFIA_EXECUTIVO = new Set(["Presidente", "Governador", "Prefeito"])
 /** Cargos eletivos: disputá-los exige registro de candidatura e declaração de bens ao TSE. */
@@ -102,7 +102,7 @@ const CARGOS_ELETIVOS = new Set([
   ...CARGOS_CHEFIA_EXECUTIVO,
   "Vice-Presidente",
   "Vice-Governador",
-  "Vice-Prefeito",
+  "Vice-Prefeito"
 ])
 
 export interface HistoricoEvento {
@@ -132,6 +132,9 @@ export interface CandidatoCoverage {
   historico: HistoricoEvento[]
   /** SQ_CANDIDATO conhecido no seed `data/candidatos.json`. */
   temSqNoSeed: boolean
+  /** IDs oficiais usados pelos ingests federais, resolvidos do seed pelo relatório. */
+  temIdCamaraNoSeed: boolean
+  temIdSenadoNoSeed: boolean
 
   mudancas: number
   patrimonioAnos: number[]
@@ -201,9 +204,7 @@ export function provenienciaDoZero(
 
 /** Classes de item que entram na fila de revisão. */
 export type ClasseRevisar =
-  | "posicao_nao_verificada"
-  | "ponto_atencao_pendente"
-  | "ponto_atencao_ia_no_ar_sem_revisao"
+  "posicao_nao_verificada" | "ponto_atencao_pendente" | "ponto_atencao_ia_no_ar_sem_revisao"
 
 export interface ItemRevisar {
   id: string
@@ -219,7 +220,7 @@ export interface ItemRevisar {
 export const ROTULO_CLASSE: Record<ClasseRevisar, string> = {
   posicao_nao_verificada: "Posição declarada aguardando revisão",
   ponto_atencao_pendente: "Ponto de atenção fora do ar, aguardando revisão",
-  ponto_atencao_ia_no_ar_sem_revisao: "Ponto de atenção de IA no ar sem revisão humana",
+  ponto_atencao_ia_no_ar_sem_revisao: "Ponto de atenção de IA no ar sem revisão humana"
 }
 
 export interface Aplicabilidade {
@@ -263,8 +264,43 @@ export function calcularAplicabilidade(c: CandidatoCoverage): Aplicabilidade {
     projetosLei: mandatos.some((h) => CARGOS_PARLAMENTAR.has(h.cargo_canonico ?? "")),
     legislacaoExecutivo: mandatos.some((h) => CARGOS_CHEFIA_EXECUTIVO.has(h.cargo_canonico ?? "")),
     declarouAoTse: c.temSqNoSeed || declarouPorHistorico,
-    parlamentarFederalQualquerEpoca: mandatosFederais.length > 0,
+    parlamentarFederalQualquerEpoca: mandatosFederais.length > 0
   }
+}
+
+/**
+ * Fontes que não deveriam ser consultadas para este candidato.
+ *
+ * `nunca_verificado` só pode representar trabalho realmente pendente. Câmara,
+ * Jarbas, Senado e CEAPS são diferentes das fontes de busca por nome: os próprios
+ * ingests pulam quem não tem o ID oficial correspondente. O histórico entra
+ * como segunda prova para não esconder um ID ausente no seed: se há mandato de
+ * deputado federal ou senador registrado, a fonte continua aplicável e a falta
+ * de tentativa continua visível.
+ *
+ * Uma tentativa já registrada sempre prevalece sobre esta inferência no eixo
+ * por fonte. A função só classifica a ausência de tentativa.
+ */
+export function calcularFontesNaoAplicaveis(
+  c: CandidatoCoverage
+): Readonly<Record<string, string>> {
+  const mandatos = c.historico.filter((h) => h.tipo_evento === "mandato")
+  const foiDeputadoFederal = mandatos.some((h) => h.cargo_canonico === "Deputado Federal")
+  const foiSenador = mandatos.some((h) => h.cargo_canonico === "Senador")
+  const naoAplicaveis: Record<string, string> = {}
+
+  if (!c.temIdCamaraNoSeed && !foiDeputadoFederal) {
+    const motivo = "N/A pelo histórico e pelo seed: sem mandato ou ID da Câmara"
+    naoAplicaveis.camara = motivo
+    naoAplicaveis.jarbas = motivo
+  }
+  if (!c.temIdSenadoNoSeed && !foiSenador) {
+    const motivo = "N/A pelo histórico e pelo seed: sem mandato ou ID do Senado"
+    naoAplicaveis.senado = motivo
+    naoAplicaveis["ceaps-senado"] = motivo
+  }
+
+  return naoAplicaveis
 }
 
 export interface ColunaDef {
@@ -296,7 +332,7 @@ export const COLUNAS: ColunaDef[] = [
   { key: "noticias", label: "Notícias" },
   { key: "posicoes", label: "Posições (quiz)" },
   { key: "sancoes", label: "Sanções" },
-  { key: "revisar", label: "Itens a revisar" },
+  { key: "revisar", label: "Itens a revisar" }
 ]
 
 /** As 15 colunas que entram no índice de preenchimento. */
@@ -315,7 +351,7 @@ export const COLUNAS_DO_INDICE = [
   "gastos",
   "legexec",
   "noticias",
-  "posicoes",
+  "posicoes"
 ] as const
 
 function cell(state: CellState, text: string, tip?: string): Cell {
@@ -334,9 +370,14 @@ function cellZero(coluna: string, c: CandidatoCoverage, semDado: string): Cell {
     nunca_verificado: `${semDado}, e alguma fonte nunca registrou tentativa: este zero não afirma nada`,
     nao_sabemos: `${semDado}, mas alguma coleta falhou ou não soube dizer: o zero não vale como resposta`,
     sem_ingest: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
-    desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`,
+    desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`
   }
-  return { state: "zero", text: "0", tip: explicacao[prov], proveniencia: prov }
+  return {
+    state: "zero",
+    text: "0",
+    tip: explicacao[prov],
+    proveniencia: prov
+  }
 }
 
 function anos(n: number): string {
@@ -351,8 +392,12 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   out.bio = c.bio ? cell("ok", "✓") : cell("missing", "—")
   out.redes = c.redes ? cell("ok", "✓") : cell("missing", "—")
 
-  const dp = [c.idade !== null, Boolean(c.naturalidade), Boolean(c.formacao), Boolean(c.profissao)]
-    .filter(Boolean).length
+  const dp = [
+    c.idade !== null,
+    Boolean(c.naturalidade),
+    Boolean(c.formacao),
+    Boolean(c.profissao)
+  ].filter(Boolean).length
   out.dados = cell(
     dp >= 3 ? "ok" : dp >= 1 ? "partial" : "missing",
     `${dp}/4`,
@@ -363,7 +408,9 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   out.cargos =
     mandatos > 0 ? cell("ok", String(mandatos)) : cellZero("cargos", c, "nenhum mandato registrado")
   out.partidos =
-    c.mudancas > 0 ? cell("ok", String(c.mudancas)) : cellZero("partidos", c, "sem troca registrada")
+    c.mudancas > 0
+      ? cell("ok", String(c.mudancas))
+      : cellZero("partidos", c, "sem troca registrada")
 
   const pat = c.patrimonioAnos.length
   if (pat > 0) {
@@ -412,7 +459,11 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
       `mandato federal encerrado antes de ${ANO_INICIO_VOTACOES_CHAVE}, fora da janela das votações-chave`
     )
   } else {
-    out.votos = cell("na", "n/a", "nunca foi deputado federal ou senador (pelo histórico registrado)")
+    out.votos = cell(
+      "na",
+      "n/a",
+      "nunca foi deputado federal ou senador (pelo histórico registrado)"
+    )
   }
 
   out.contradicoes =
@@ -476,11 +527,7 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   } else if (ap.legislacaoExecutivo) {
     out.legexec = cell("missing", "—", "chefiou Executivo, sem norma registrada")
   } else {
-    out.legexec = cell(
-      "na",
-      "n/a",
-      "nunca chefiou Executivo (presidente, governador ou prefeito)"
-    )
+    out.legexec = cell("na", "n/a", "nunca chefiou Executivo (presidente, governador ou prefeito)")
   }
 
   out.noticias = c.noticias > 0 ? cell("ok", String(c.noticias)) : cell("missing", "—")
@@ -494,7 +541,7 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
     ).length
     const dica = [
       n >= total ? null : "tema do quiz sem posição no ar",
-      pendentes > 0 ? `${pendentes} posição(ões) curada(s) aguardando sua revisão` : null,
+      pendentes > 0 ? `${pendentes} posição(ões) curada(s) aguardando sua revisão` : null
     ]
       .filter(Boolean)
       .join("; ")
@@ -508,12 +555,18 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   }
 
   out.sancoes =
-    c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cellZero("sancoes", c, "nenhuma sanção registrada")
+    c.sancoes > 0
+      ? cell("ok", String(c.sancoes))
+      : cellZero("sancoes", c, "nenhuma sanção registrada")
 
   const nRevisar = c.itensRevisar.length
   out.revisar =
     nRevisar > 0
-      ? cell("partial", String(nRevisar), "itens esperando sua aprovação para mudar o que está no ar")
+      ? cell(
+          "partial",
+          String(nRevisar),
+          "itens esperando sua aprovação para mudar o que está no ar"
+        )
       : cell("zero", "0", "nada esperando revisão")
 
   return out

@@ -21,9 +21,10 @@ import {
   COLUNAS,
   FONTES_POR_COLUNA,
   calcularCelulas,
+  calcularFontesNaoAplicaveis,
   provenienciaDoZero,
   type CandidatoCoverage,
-  type ColetaPorFonte,
+  type ColetaPorFonte
 } from "../scripts/audit/lib/coverage-model"
 import type { UltimaColeta } from "../scripts/audit/lib/coleta-proveniencia"
 import { removerBlocoDeColeta } from "../scripts/audit/lib/snapshot-fetch"
@@ -45,6 +46,8 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
     profissao: null,
     historico: [],
     temSqNoSeed: false,
+    temIdCamaraNoSeed: false,
+    temIdSenadoNoSeed: false,
     mudancas: 0,
     patrimonioAnos: [],
     patrimonioAnosComBens: [],
@@ -64,7 +67,7 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
     posicoesTemasPendentes: [],
     sancoes: 0,
     itensRevisar: [],
-    ...over,
+    ...over
   }
 }
 
@@ -99,12 +102,15 @@ test("só vira zero provado quando toda fonte da coluna respondeu vazio", () => 
 })
 
 test("uma falha rebaixa o veredito mesmo com as outras fontes confirmadas", () => {
-  const comErro: ColetaPorFonte = { ...todas("alertas", "vazio_confirmado"), tcu: { resultado: "erro" } }
+  const comErro: ColetaPorFonte = {
+    ...todas("alertas", "vazio_confirmado"),
+    tcu: { resultado: "erro" }
+  }
   assert.equal(provenienciaDoZero("alertas", comErro), "nao_sabemos")
 
   const semVeredito: ColetaPorFonte = {
     ...todas("alertas", "vazio_confirmado"),
-    tcu: { resultado: "indeterminado" },
+    tcu: { resultado: "indeterminado" }
   }
   assert.equal(provenienciaDoZero("alertas", semVeredito), "nao_sabemos")
 })
@@ -114,7 +120,7 @@ test("'nao_aplicavel' não impede o zero de ser confirmado", () => {
   // não silêncio, então não pode rebaixar o veredito das outras.
   const misto: ColetaPorFonte = {
     ...todas("partidos", "vazio_confirmado"),
-    filiacao: { resultado: "nao_aplicavel" },
+    filiacao: { resultado: "nao_aplicavel" }
   }
   assert.equal(provenienciaDoZero("partidos", misto), "zero_provado")
 })
@@ -143,13 +149,52 @@ test("célula com dado não recebe procedência", () => {
 
 test("candidato sem tentativa e log não lido não se confundem na célula", () => {
   const comTentativa = candidato({
-    coletas: { "transparencia-sanctions": { resultado: "vazio_confirmado" } },
+    coletas: { "transparencia-sanctions": { resultado: "vazio_confirmado" } }
   })
   const olhadoSemTentativa = candidato({ coletas: {} })
 
   assert.equal(calcularCelulas(comTentativa).sancoes.proveniencia, "zero_provado")
   assert.equal(calcularCelulas(olhadoSemTentativa).sancoes.proveniencia, "nunca_verificado")
   assert.equal(calcularCelulas(candidato()).sancoes.proveniencia, "desconhecida")
+})
+
+test("fontes federais sem ID nem mandato são N/A, não trabalho pendente", () => {
+  assert.deepEqual(calcularFontesNaoAplicaveis(candidato()), {
+    camara: "N/A pelo histórico e pelo seed: sem mandato ou ID da Câmara",
+    jarbas: "N/A pelo histórico e pelo seed: sem mandato ou ID da Câmara",
+    senado: "N/A pelo histórico e pelo seed: sem mandato ou ID do Senado",
+    "ceaps-senado": "N/A pelo histórico e pelo seed: sem mandato ou ID do Senado"
+  })
+})
+
+test("mandato registrado mantém a fonte aplicável mesmo se o ID faltar no seed", () => {
+  const deputado = candidato({
+    historico: [
+      {
+        cargo_canonico: "Deputado Federal",
+        tipo_evento: "mandato",
+        periodo_inicio: 2019,
+        periodo_fim: 2023
+      }
+    ]
+  })
+  const senador = candidato({
+    historico: [
+      {
+        cargo_canonico: "Senador",
+        tipo_evento: "mandato",
+        periodo_inicio: 2019,
+        periodo_fim: 2027
+      }
+    ]
+  })
+
+  assert.equal(calcularFontesNaoAplicaveis(deputado).camara, undefined)
+  assert.equal(calcularFontesNaoAplicaveis(deputado).jarbas, undefined)
+  assert.ok(calcularFontesNaoAplicaveis(deputado).senado)
+  assert.equal(calcularFontesNaoAplicaveis(senador).senado, undefined)
+  assert.equal(calcularFontesNaoAplicaveis(senador)["ceaps-senado"], undefined)
+  assert.ok(calcularFontesNaoAplicaveis(senador).camara)
 })
 
 test("o bloco de coleta do SQL é removível, para banco sem a migration", () => {

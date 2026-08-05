@@ -1120,4 +1120,23 @@ Verificação no relatório servido em `http://127.0.0.1:8899/`:
   as 58 tabelas rolam dentro do próprio container;
 - gates do job `verify`: 9/9 PASS, incluindo 1.821 testes.
 
+### Follow-up: aplicabilidade das fontes (05/08/2026)
+
+"Nunca verificado" agora significa somente fonte aplicável sem tentativa. Sem
+tentativa registrada, Câmara e Jarbas viram `N/A` quando não há ID da Câmara nem
+mandato de deputado federal; Senado e CEAPS viram `N/A` quando não há ID do
+Senado nem mandato de senador. Uma tentativa real sempre prevalece e mantém seu
+desfecho.
+
+No relatório completo, 659 linhas antes marcadas como pendentes viraram `N/A`:
+158 da Câmara, 159 do Jarbas, 171 do Senado e 171 do CEAPS. Augusto Cury caiu de
+15 para 11 fontes nunca verificadas; as quatro fontes parlamentares agora
+aparecem como `N/A`. A tabela de 23 frentes e o índice de preenchimento não
+mudaram.
+
+O relatório foi regenerado em modo somente leitura e verificado em navegador
+real. O DOM tem 4.462 células de cobertura, 3.698 linhas por fonte e 659 `N/A`;
+em 375 px, o documento mede 360/360 px e as tabelas continuam rolando dentro do
+container. Os nove gates passaram, incluindo 1.824 testes.
+
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

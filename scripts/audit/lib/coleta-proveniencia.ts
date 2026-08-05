@@ -121,7 +121,7 @@ export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Ob
   legexec: [],
   // Derivadas de outras colunas, não de fonte externa.
   contradicoes: [],
-  revisar: [],
+  revisar: []
 })
 
 /**
@@ -136,34 +136,42 @@ export const FONTES_POR_CANDIDATO: readonly string[] = Object.freeze(
       .map(([fonte]) => fonte),
     // Já existe em coleta_log_ultima e foi pedido como eixo obrigatório, mas o
     // ingest correspondente ainda não integra esta base de código.
-    "tse-cpf",
-  ]
-    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    "tse-cpf"
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"))
 )
 
 /**
  * Uma linha por fonte canônica e por fonte adicional já observada no log.
- * Ausência de uma fonte canônica significa literalmente nunca verificado. Uma
- * fonte fora do catálogo só aparece onde há tentativa registrada: projetá-la
- * nos demais candidatos fabricaria uma obrigação que `FONTES` não declarou.
+ * Ausência de uma fonte canônica aplicável significa literalmente nunca
+ * verificado. A régua pode declarar fontes não aplicáveis ao candidato; elas
+ * viram `nao_aplicavel`, nunca uma pendência. Uma fonte fora do catálogo só
+ * aparece onde há tentativa registrada: projetá-la nos demais candidatos
+ * fabricaria uma obrigação que `FONTES` não declarou.
  */
-export function linhasPorFonte(coleta: ColetaPorFonte): LinhaFonte[] {
+export function linhasPorFonte(
+  coleta: ColetaPorFonte,
+  naoAplicaveis: Readonly<Record<string, string>> = {}
+): LinhaFonte[] {
   const fontes = [...new Set([...FONTES_POR_CANDIDATO, ...Object.keys(coleta)])].sort((a, b) =>
     a.localeCompare(b, "pt-BR")
   )
   return fontes.map((fonte) => {
     const ultima = coleta[fonte]
-    return ultima ? { fonte, ...ultima } : { fonte, resultado: "nunca_verificado" }
+    if (ultima) return { fonte, ...ultima }
+    const detalhe = naoAplicaveis[fonte]
+    return detalhe
+      ? { fonte, resultado: "nao_aplicavel", detalhe }
+      : { fonte, resultado: "nunca_verificado" }
   })
 }
 
 export const ROTULO_RESULTADO_FONTE: Readonly<Record<ResultadoFonte, string>> = Object.freeze({
   encontrado: "encontrado",
   vazio_confirmado: "vazio confirmado",
-  nao_aplicavel: "não se aplica",
+  nao_aplicavel: "N/A",
   erro: "erro",
   indeterminado: "indeterminado",
-  nunca_verificado: "nunca verificado",
+  nunca_verificado: "nunca verificado"
 })
 
 /**
@@ -224,5 +232,5 @@ export const ROTULO_PROVENIENCIA: Readonly<Record<VeredictoProveniencia, string>
   zero_provado: "verificado, não há",
   nunca_verificado: "nunca verificado",
   nao_sabemos: "tentado, sem resposta",
-  sem_ingest: "só por curadoria",
+  sem_ingest: "só por curadoria"
 })

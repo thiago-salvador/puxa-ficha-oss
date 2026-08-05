@@ -77,13 +77,17 @@ justamente a que tinha o dado. O mapa coluna → fonte está em `FONTES_POR_COLU
 (`scripts/audit/lib/coleta-proveniencia.ts`) e sai de quem escreve em cada tabela, não
 de suposição.
 
-A ausência de linha no log é o dado mais importante. Na tabela das 23 frentes,
-a falta é lida como "nunca verificado" e aparece no traço da célula. No eixo por
-fonte, ela é materializada como uma linha "nunca verificado" para que a fila de
-consulta de cada candidato fique visível. Há uma diferença deliberada entre *o
-log não foi lido* (procedência desconhecida, o relatório diz isso) e *o log foi
-lido e este candidato não tem tentativa* (nunca verificado). Colapsar as duas
-repõe exatamente o bug que a tabela veio corrigir.
+A ausência de linha no log é o dado mais importante, mas só representa "nunca
+verificado" quando a fonte é aplicável ao candidato. No eixo por fonte, Câmara e
+Jarbas viram `N/A` sem ID oficial nem mandato de deputado federal; Senado e CEAPS
+viram `N/A` sem ID oficial nem mandato de senador. O histórico funciona como
+segunda prova para não esconder um ID ausente no seed. Se houver tentativa
+registrada, o desfecho real sempre prevalece sobre essa inferência.
+
+Há uma diferença deliberada entre *o log não foi lido* (procedência
+desconhecida), *a fonte não se aplica* (`N/A`) e *o log foi lido, a fonte se
+aplica e este candidato não tem tentativa* (nunca verificado). Colapsar esses
+casos repõe exatamente o bug que a tabela veio corrigir.
 
 O relatório funciona em banco **sem** `coleta_log`: a leitura é opcional e, sem a
 tabela, todo zero sai com procedência não lida. Detalhe do vocabulário de
