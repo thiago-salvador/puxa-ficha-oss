@@ -18,7 +18,12 @@ import {
 
 import { CandidatePhoto } from "@/components/CandidatePhoto"
 import { formatCompact } from "@/lib/utils"
-import { processosOverviewDisplay } from "@/lib/processos-display"
+import {
+  processosMaiorVerificadoNaComparacao,
+  processosNaoVerificado,
+  processosOverviewDisplay,
+  processosResumoLabel,
+} from "@/lib/processos-display"
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import type { CandidatoComparavel } from "@/lib/types"
@@ -251,11 +256,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   ? `Remover ${candidato.nome_urna} da comparação`
                   : `Adicionar ${candidato.nome_urna} à comparação`}. ${
                   candidato.idade ? `${candidato.idade} anos, ` : ""
-                }${
-                  candidato.total_processos > 0
-                    ? `${candidato.total_processos} processos`
-                    : "processos não verificados"
-                }, ${candidato.total_votos_mapeados} votações mapeadas`}
+                }${processosResumoLabel(candidato.total_processos)}, ${candidato.total_votos_mapeados} votações mapeadas`}
                 className={`flex w-full items-center gap-3 rounded-[12px] border px-4 py-3.5 text-left transition-all ${
                   selected
                     ? "border-foreground bg-foreground/[0.03]"
@@ -296,11 +297,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   className="flex shrink-0 flex-col items-end gap-0.5 text-right text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
                 >
                   {candidato.idade && <span>{candidato.idade} anos</span>}
-                  <span>
-                    {candidato.total_processos > 0
-                      ? `${candidato.total_processos} processos`
-                      : "processos não verificados"}
-                  </span>
+                  <span>{processosResumoLabel(candidato.total_processos)}</span>
                   <span>{candidato.total_votos_mapeados} votações</span>
                 </div>
               </button>
@@ -438,8 +435,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                         )}
                       </td>
                       <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
-                        {/* Zero aqui é ausência de busca ativa, não ficha limpa. */}
-                        {processosOverviewDisplay(candidato.total_processos).value}
+                        {processosNaoVerificado(candidato.total_processos) ? (
+                          <span className="font-medium text-muted-foreground">não verificado</span>
+                        ) : (
+                          candidato.total_processos
+                        )}
                       </td>
                       <td className="py-3 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.alertas_graves}
@@ -689,12 +689,10 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   <CompRow label="Processos" icon={<Scale className="size-3.5" />} highlight={false}>
                     {selectedCandidatos.map((candidato) => {
                       const values = selectedCandidatos.map((item) => item.total_processos)
-                      const max = Math.max(...values)
-                      const allEqual = values.every((item) => item === max)
-                      const isMax =
-                        candidato.total_processos === max &&
-                        candidato.total_processos > 0 &&
-                        !allEqual
+                      const isMax = processosMaiorVerificadoNaComparacao(
+                        candidato.total_processos,
+                        values,
+                      )
 
                       const display = processosOverviewDisplay(candidato.total_processos)
 
