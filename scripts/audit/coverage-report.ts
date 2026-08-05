@@ -540,10 +540,12 @@ td.c-partial { background:var(--partial-bg); color:var(--partial-fg); font-weigh
 td.c-missing { background:var(--miss-bg); color:var(--miss-fg); font-weight:700; }
 td.c-zero { background:var(--zero-bg); color:var(--zero-fg); }
 /* Procedência do zero: o traço diz de onde vem o silêncio. */
-td[data-prov="vazio_confirmado"] { box-shadow:inset 0 -3px 0 var(--prov-ok, #1c6b2d); color:var(--fg); }
+td[data-prov="zero_provado"] { box-shadow:inset 0 -3px 0 var(--prov-ok, #1c6b2d); color:var(--fg); }
+td[data-prov="coletado"] { box-shadow:inset 0 -3px 0 var(--prov-coletado, #0f766e); color:var(--fg); }
 td[data-prov="nunca_verificado"] { box-shadow:inset 0 -3px 0 var(--prov-nunca, #b98a00); }
-td[data-prov="erro"], td[data-prov="indeterminado"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
-td[data-prov="sem_fonte"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
+td[data-prov="nao_sabemos"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
+td[data-prov="sem_ingest"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
+td[data-prov="desconhecida"] { box-shadow:inset 0 -3px 0 var(--prov-desconhecida, #7d7a72); }
 td.c-na { background:var(--na-bg); color:var(--na-fg); font-size:11px; }
 td.scr { font-weight:700; border-right:1px solid var(--line); }
 a.rev { color:var(--warn-link, #1f4fd8); font-weight:700; text-decoration:none; }
@@ -666,10 +668,12 @@ export function renderHtml(
   const legendaProveniencia = temProveniencia
     ? (
         [
+          ["coletado", "#0f766e"],
           ["zero_provado", "#1c6b2d"],
           ["nunca_verificado", "#b98a00"],
           ["nao_sabemos", "#a12622"],
-          ["sem_ingest", "#c9c7c0"]
+          ["sem_ingest", "#c9c7c0"],
+          ["desconhecida", "#7d7a72"]
         ] as const
       )
         .map(
@@ -703,7 +707,7 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
   <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio ${pill(totalEstado.get("missing") ?? 0)}</span>
   <span><span class="sw" style="background:var(--zero-bg)"></span>Zero ${pill(totalEstado.get("zero") ?? 0)}</span>
   <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica ${pill(totalEstado.get("na") ?? 0)}</span>
-  <span class="soma">${nm(totalCelulas)} células no total, ${coorte.length} candidatos x ${COLUNAS.length} frentes de dado</span>
+  <span class="soma">${nm(totalCelulas)} células no total, ${nm(coorte.length)} candidatos x ${nm(COLUNAS.length)} frentes de dado</span>
 </div>
 <div class="legend">${legendaProveniencia}</div>
 <p class="notes"><b>Novo eixo por fonte:</b> ${FONTES_POR_CANDIDATO.length} fontes canônicas de escopo candidato, com uma linha por fonte e candidato, mais fontes adicionais que já tenham tentativa registrada. “Nunca verificado” é reservado a fonte aplicável sem tentativa; Câmara e Jarbas, ou Senado e CEAPS, saem como “N/A” quando não há ID oficial nem mandato correspondente no histórico. Uma tentativa registrada sempre mostra seu desfecho real. Fontes territoriais não entram, porque seu alvo é a UF ou um agregado, não a pessoa.</p>

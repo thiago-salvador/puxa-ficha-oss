@@ -3,6 +3,7 @@
 import { useEffect, useState, type ComponentType } from "react"
 import type { CandidatoProfileTabId } from "@/lib/candidato-profile-tabs"
 import type { FichaCandidato } from "@/lib/types"
+import { processosOverviewDisplay } from "@/lib/processos-display"
 
 type CandidatoProfileProps = {
   ficha: FichaCandidato
@@ -50,20 +51,29 @@ function useDeferredBelowFoldLoad() {
 }
 
 function CandidatoProfileSkeleton({ overview }: { overview: DeferredProfileOverview }) {
+  // O skeleton é a primeira pintura da ficha. Sem a legenda, o "—" de zero não
+  // verificado aparece sozinho durante o carregamento e reintroduz justamente a
+  // afirmação de ficha limpa que este display existe para desfazer.
+  const processosDisplay = processosOverviewDisplay(overview.processos)
   return (
     <section className="mx-auto max-w-7xl px-5 py-8 md:px-12 lg:py-12">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5 [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1">
         <div className="flex flex-col gap-1.5 rounded-[12px] border border-border/50 bg-card px-4 py-3">
           <span
-            data-pf-overview-processos={overview.processos}
+            data-pf-overview-processos={String(processosDisplay.value)}
             data-pf-overview-raw={overview.processos}
             className="text-[24px] font-semibold leading-none text-foreground sm:text-[28px]"
           >
-            {overview.processos}
+            {processosDisplay.value}
           </span>
           <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px]">
             Processos
           </span>
+          {processosDisplay.sub && (
+            <span className="text-[10px] font-semibold text-muted-foreground sm:text-[11px]">
+              {processosDisplay.sub}
+            </span>
+          )}
         </div>
         <div className="flex flex-col gap-1.5 rounded-[12px] border border-border/50 bg-card px-4 py-3">
           <span

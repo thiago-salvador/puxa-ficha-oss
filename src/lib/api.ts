@@ -36,6 +36,7 @@ import type {
   MudancaPartido,
   Patrimonio,
   ProjetoLei,
+  SancoesVerificacao,
   SectionFreshnessInfo,
   SectionFreshnessKey,
   VotoCandidato,
@@ -992,6 +993,62 @@ export async function getCandidatoMetadataResource(
   }
 }
 
+const COLETA_RESULTADOS_VALIDOS = new Set<SancoesVerificacao["resultado"]>([
+  "encontrado",
+  "vazio_confirmado",
+  "nao_aplicavel",
+  "erro",
+  "indeterminado",
+])
+
+/**
+ * Lê em `coleta_log_ultima` a última tentativa de coleta de sanções para o
+ * slug. É o que permite à ficha separar o zero provado ("consultamos CEIS,
+ * CNEP e CEAF e veio vazio") do zero presumido ("nunca fomos lá").
+ *
+ * Caminho de acesso, decidido em 2026-08-05: a view não tem grant para `anon`
+ * nem `authenticated` de propósito (migration 20260804160000), então a leitura
+ * usa o client de service role, que só existe neste módulo server-only e roda
+ * no build/ISR junto com as demais consultas da ficha. A alternativa (grant de
+ * SELECT para `anon` na view) mudaria a postura de segurança do log inteiro
+ * por causa de um campo de exibição, e foi descartada.
+ *
+ * Falha aqui NUNCA degrada a ficha: sem credencial ou com erro de rede o campo
+ * vira `null`, que a UI renderiza como estado neutro (sem afirmação de
+ * limpeza). O único estado que esta função pode "perder" com isso é um selo de
+ * verificação, nunca um dado do candidato.
+ */
+async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  try {
+    const admin = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
+    const { data, error } = await withSupabaseRetry(
+      `coleta_log_ultima(${slug})`,
+      async (signal) =>
+        admin
+          .from("coleta_log_ultima")
+          .select("resultado, executado_em")
+          .eq("fonte", "transparencia-sanctions")
+          .eq("escopo", "candidato")
+          .eq("alvo", slug)
+          .abortSignal(signal)
+          .maybeSingle()
+    )
+
+    if (error || !data) return null
+    // O client não tem schema tipado para a view; validamos o shape em runtime.
+    const row = data as { resultado?: unknown; executado_em?: unknown }
+    const resultado = row.resultado as SancoesVerificacao["resultado"]
+    if (!COLETA_RESULTADOS_VALIDOS.has(resultado)) return null
+    if (typeof row.executado_em !== "string" || row.executado_em.length === 0) return null
+    return { resultado, executado_em: row.executado_em }
+  } catch {
+    // Sem SUPABASE_SERVICE_ROLE_KEY (dev local, fork) ou view ausente: estado
+    // neutro. Não entra em relatedErrors porque é metadado de proveniência, não
+    // seção da ficha.
+    return null
+  }
+}
+
 async function getCandidatoBySlugFromRelationResource(
   slug: string,
   relation: string,
@@ -1087,7 +1144,7 @@ async function getCandidatoBySlugFromRelationResource(
     }
   }
 
-  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores] =
+  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao] =
     await Promise.all([
       // `despublicado_em` filtra candidatura atribuida por homonimo (migration
       // 20260726160000). O CPF divergente no cadastro desliga o casamento por
@@ -1211,6 +1268,9 @@ async function getCandidatoBySlugFromRelationResource(
               .abortSignal(signal)
           )
         : Promise.resolve({ data: [] as IndicadorEstadual[] }),
+      // Proveniência do zero de sanções (coleta_log_ultima, service role).
+      // Nunca rejeita: degrada para null, que a UI lê como "não verificado".
+      fetchSancoesVerificacao(slug),
     ])
 
   const relatedErrors = [
@@ -1286,6 +1346,7 @@ async function getCandidatoBySlugFromRelationResource(
       (legislacaoExecutivo.count ?? 0) > legislacaoExecutivoOrdenado.length,
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
+    sancoes_verificacao: sancoesVerificacao,
     // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
     // 1C). A ingestao passou a descartar item cujo titulo nao cita o candidato,
     // mas as linhas ja gravadas continuam no banco: 3.984 de 17.498 (22,77%)
@@ -1503,7 +1564,7 @@ const getCachedCandidatoBySlugResource = unstable_cache(
   // do Vercel Data Cache (Build warning 25202862956 em /candidato/[slug] e
   // /embed/[slug] com slugs de inventario completo). Suffix invalida cache antigo
   // com o payload pre-trim.
-  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803", "density-bypass-clear-20260804"],
+  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803", "density-bypass-clear-20260804", "sancoes-proveniencia-20260805"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidato-ficha"],

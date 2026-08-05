@@ -166,10 +166,23 @@ interface GastoDestaque {
   data: string | null
 }
 
-async function fetchDespesasAno(
-  senadoId: number,
-  ano: number
-): Promise<DespesasAgregadas | null> {
+/**
+ * Desfecho de UMA tentativa (um senador, um ano).
+ *
+ * Ate 2026-08-05 esta funcao devolvia `null` tanto para "a rota caiu" quanto
+ * para "a API respondeu e o senador nao tem gasto neste ano", e o chamador
+ * logava "sem dados" nos dois casos. No `coleta_log` isso virava
+ * `vazio_confirmado`: o projeto afirmando ter procurado e nao achado nada,
+ * quando na verdade a rota inteira esta 404 desde antes da pergunta. Separar os
+ * dois e o unico jeito de o relatorio de cobertura parar de contar fonte morta
+ * como zero verificado.
+ */
+type TentativaDespesas =
+  | { tipo: "ok"; dados: DespesasAgregadas }
+  | { tipo: "vazio" }
+  | { tipo: "erro"; motivo: string }
+
+async function fetchDespesasAno(senadoId: number, ano: number): Promise<TentativaDespesas> {
   const url = `${BASE_URL}/${senadoId}/despesas?ano=${ano}`
 
   let data: DespesasResponse
@@ -180,28 +193,35 @@ async function fetchDespesasAno(
   } catch (err) {
     // Em 2026-08-05 esta rota responde 404 ("No static resource
     // dadosabertos/senador/{id}/despesas") para todo id testado, enquanto
-    // /senador/{id} segue 200: a rota de despesas saiu do ar. O aviso e a unica
-    // coisa que separa "fonte morta" de "senador sem gasto", porque o retorno
-    // null vira "sem dados" no chamador.
-    warn("ceaps-senado", `  HTTP erro para id=${senadoId} ano=${ano}: ${err}`)
-    return null
+    // /senador/{id} segue 200: a rota de despesas saiu do ar.
+    //
+    // `fetchJSON` tambem lanca em timeout, DNS, 5xx, 429 e JSON invalido, e
+    // aqui os cinco caem juntos em `erro`. Isso e proposital: nenhum deles
+    // autoriza afirmar que o senador nao tem gasto. Qual foi vai no motivo.
+    const motivo = err instanceof Error ? err.message : String(err)
+    warn("ceaps-senado", `  HTTP erro para id=${senadoId} ano=${ano}: ${motivo}`)
+    return { tipo: "erro", motivo }
   }
 
   const conferencia = agregarDespesasDoAno(data, senadoId, ano)
   if (!conferencia.ok) {
+    // Retorno recusado pela guarda de identidade tambem nao e vazio: a API
+    // respondeu com dado de outra pessoa ou de outro ano.
     warn("ceaps-senado", `  id=${senadoId} ano=${ano}: retorno recusado — ${conferencia.motivo}`)
-    return null
+    return { tipo: "erro", motivo: `retorno recusado: ${conferencia.motivo}` }
   }
 
   const dados = conferencia.dados
-  if (dados && dados.anosDescartados.length > 0) {
+  if (!dados) return { tipo: "vazio" }
+
+  if (dados.anosDescartados.length > 0) {
     warn(
       "ceaps-senado",
       `  id=${senadoId} ano=${ano}: a API tambem devolveu ${dados.anosDescartados.join(", ")}, descartado(s) para nao somar ano alheio nesta linha`
     )
   }
 
-  return dados
+  return { tipo: "ok", dados }
 }
 
 export async function ingestCeapsSenado(): Promise<IngestResult[]> {
@@ -223,6 +243,10 @@ export async function ingestCeapsSenado(): Promise<IngestResult[]> {
     }
 
     const start = Date.now()
+    // Desfecho por ano, para o candidato sair do log dizendo o que aconteceu de
+    // verdade em vez de um zero mudo.
+    const anosComErro: string[] = []
+    const anosVazios: number[] = []
     log("ceaps-senado", `Processando ${cand.slug} (senado id: ${cand.ids.senado})`)
 
     try {
@@ -236,15 +260,22 @@ export async function ingestCeapsSenado(): Promise<IngestResult[]> {
 
       for (const ano of ANOS) {
         try {
-          const dados = await fetchDespesasAno(cand.ids.senado!, ano)
+          const tentativa = await fetchDespesasAno(cand.ids.senado!, ano)
 
-          if (!dados) {
-            log("ceaps-senado", `  ${cand.slug} ${ano}: sem dados`)
+          if (tentativa.tipo === "erro") {
+            anosComErro.push(`${ano} (${tentativa.motivo})`)
             await sleep(800)
             continue
           }
 
-          const { total, porCategoria, destaques } = dados
+          if (tentativa.tipo === "vazio") {
+            anosVazios.push(ano)
+            log("ceaps-senado", `  ${cand.slug} ${ano}: sem gasto declarado`)
+            await sleep(800)
+            continue
+          }
+
+          const { total, porCategoria, destaques } = tentativa.dados
 
           // Detalhamento: objeto com categorias e valores
           const detalhamento: Record<string, number> = {}
@@ -319,6 +350,24 @@ export async function ingestCeapsSenado(): Promise<IngestResult[]> {
       }
     } catch (err) {
       result.errors.push(err instanceof Error ? err.message : String(err))
+    }
+
+    // Sem nada gravado, o desfecho depende de POR QUE nao gravou. Um ano que
+    // nem chegou a ser consultado nao autoriza dizer "verificado e vazio".
+    if (result.rows_upserted === 0 && result.errors.length === 0) {
+      if (anosComErro.length > 0 && anosVazios.length === 0) {
+        result.coleta_resultado = "erro"
+        result.coleta_detalhe =
+          `nenhum ano consultado com sucesso: ${anosComErro.join("; ")}`.slice(0, 500)
+      } else if (anosComErro.length > 0) {
+        // Parte respondeu, parte nao: nao da para afirmar vazio nem erro do alvo.
+        result.coleta_resultado = "indeterminado"
+        result.coleta_detalhe =
+          `sem gasto em ${anosVazios.join(", ")}; falhou em ${anosComErro.join("; ")}`.slice(0, 500)
+      } else if (anosVazios.length > 0) {
+        result.coleta_resultado = "vazio_confirmado"
+        result.coleta_detalhe = `API respondeu sem gasto declarado em ${anosVazios.join(", ")}`
+      }
     }
 
     result.duration_ms = Date.now() - start

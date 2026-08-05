@@ -223,9 +223,12 @@ describe("FONTES cobre todo source declarado pelos ingests", () => {
   it("nenhuma entrada de FONTES virou orfa", () => {
     // `wiki-historico` nao monta IngestResult (enrich-wiki-historico retorna
     // void), entao chama registrarColetas direto em vez de declarar `source:`.
-    // Esta e a unica excecao legitima; qualquer outra e fonte esquecida.
+    // `tse-cpf` e o backfill dedicado de CPF (scripts/backfill-cpf-tse.ts),
+    // fora de scripts/lib, que tambem chama registrarColetas direto.
+    // Essas sao as excecoes legitimas; qualquer outra e fonte esquecida.
+    const excecoes = new Set(["wiki-historico", "tse-cpf"])
     const orfas = Object.keys(FONTES).filter(
-      (f) => !declarados.has(f) && f !== "wiki-historico",
+      (f) => !declarados.has(f) && !excecoes.has(f),
     )
     assert.deepEqual(orfas, [], `fonte no mapa sem ingest correspondente: ${orfas.join(", ")}`)
   })

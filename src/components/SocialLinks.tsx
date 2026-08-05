@@ -7,6 +7,12 @@ const SOCIAL_ICONS: Record<string, { label: string; urlPrefix: string }> = {
   facebook: { label: "Facebook", urlPrefix: "https://facebook.com/" },
   youtube: { label: "YouTube", urlPrefix: "https://youtube.com/@" },
   tiktok: { label: "TikTok", urlPrefix: "https://tiktok.com/@" },
+  // Adicionado em 2026-08-05. O pacote `rede_social_candidato_2026` do TSE, que
+  // e a fonte oficial declarada pelo próprio candidato no registro, traz 170
+  // URLs de LinkedIn nas primeiras 5.382 candidaturas. Sem esta linha o dado
+  // era gravado e a ficha nao mostrava nada: `SOCIAL_ICONS[platform]` ausente
+  // faz o link ser descartado em silencio no map abaixo.
+  linkedin: { label: "LinkedIn", urlPrefix: "https://linkedin.com/in/" },
 }
 
 export function SocialLinks({
