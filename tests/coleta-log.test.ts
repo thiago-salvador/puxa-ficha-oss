@@ -1,0 +1,221 @@
+import assert from "node:assert/strict"
+import { readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import { describe, it } from "node:test"
+
+import {
+  FONTES,
+  entradaDeResultado,
+  escopoDaFonte,
+  montarLinhas,
+  normalizarEntrada,
+} from "../scripts/lib/coleta-log"
+import type { IngestResult } from "../scripts/lib/types"
+
+const root = process.cwd()
+const libDir = join(root, "scripts/lib")
+
+function resultado(over: Partial<IngestResult> = {}): IngestResult {
+  return {
+    source: "camara",
+    candidato: "lula",
+    tables_updated: [],
+    rows_upserted: 0,
+    errors: [],
+    duration_ms: 10,
+    ...over,
+  }
+}
+
+/**
+ * A regra que este arquivo protege e uma so: o log de coleta nunca pode inventar
+ * um veredito. Cada teste abaixo e um caminho pelo qual a inferencia poderia
+ * transformar "nao sei" em "e zero", que e exatamente o defeito que a tabela
+ * `coleta_log` foi criada para corrigir.
+ */
+describe("entradaDeResultado nao inventa veredito", () => {
+  it("zero linhas sem erro vira indeterminado, nunca vazio_confirmado", () => {
+    const entrada = entradaDeResultado(resultado())
+    assert.ok(entrada)
+    assert.equal(
+      entrada.resultado,
+      "indeterminado",
+      "varios ingests engolem falha de rede num catch que devolve lista vazia; " +
+        "chamar isso de zero e a mentira que o coleta_log existe para impedir",
+    )
+  })
+
+  it("vazio_confirmado so sai quando o ingest declara", () => {
+    const entrada = entradaDeResultado(
+      resultado({ coleta_resultado: "vazio_confirmado", coleta_detalhe: "4 cadastros vazios" }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "vazio_confirmado")
+    assert.equal(entrada.volume, 0)
+    assert.equal(entrada.detalhe, "4 cadastros vazios")
+  })
+
+  it("skipped nao vira linha nenhuma", () => {
+    // O skipped da Camara em modo incremental significa "o dado ja estava
+    // coberto". Gravar isso sobrescreveria, em coleta_log_ultima, a ultima
+    // tentativa real, trocando um encontrado por um vazio que nunca aconteceu.
+    assert.equal(
+      entradaDeResultado(resultado({ skipped: true, skip_reason: "ja coberto" })),
+      null,
+    )
+  })
+
+  it("erro continua erro mesmo com escrita parcial", () => {
+    const entrada = entradaDeResultado(
+      resultado({ rows_upserted: 3, errors: ["HTTP 500 na quarta pagina"] }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "erro")
+    assert.equal(entrada.volume, 3, "o volume parcial e informacao verdadeira e vai junto")
+  })
+
+  it("escrita sem erro vira encontrado com o volume", () => {
+    const entrada = entradaDeResultado(
+      resultado({ rows_upserted: 12, tables_updated: ["votos_candidato"] }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "encontrado")
+    assert.equal(entrada.volume, 12)
+  })
+
+  it("desfecho declarado ganha da inferencia", () => {
+    const entrada = entradaDeResultado(
+      resultado({ rows_upserted: 5, coleta_resultado: "nao_aplicavel" }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "nao_aplicavel")
+    assert.equal(entrada.volume, 0)
+  })
+})
+
+describe("normalizarEntrada respeita a constraint coleta_log_volume_coerente", () => {
+  it("encontrado com volume zero vira vazio_confirmado", () => {
+    const n = normalizarEntrada({ fonte: "camara", alvo: "lula", resultado: "encontrado" })
+    assert.equal(n.resultado, "vazio_confirmado")
+    assert.equal(n.volume, 0)
+  })
+
+  it("vazio_confirmado, nao_aplicavel e indeterminado zeram o volume", () => {
+    for (const r of ["vazio_confirmado", "nao_aplicavel", "indeterminado"] as const) {
+      const n = normalizarEntrada({ fonte: "camara", alvo: "lula", resultado: r, volume: 7 })
+      assert.equal(n.volume, 0, `${r} nao pode carregar volume`)
+    }
+  })
+
+  it("volume negativo ou fracionario nao chega ao banco", () => {
+    assert.equal(
+      normalizarEntrada({ fonte: "camara", alvo: "lula", resultado: "erro", volume: -3 }).volume,
+      0,
+    )
+    assert.equal(
+      normalizarEntrada({ fonte: "camara", alvo: "lula", resultado: "encontrado", volume: 2.9 })
+        .volume,
+      2,
+    )
+  })
+})
+
+/**
+ * As linhas montadas aqui foram inseridas na tabela real de producao em
+ * 2026-08-04 e aceitas pelas duas constraints (coleta_log_volume_coerente e
+ * coleta_log_candidato_id_so_em_escopo_candidato), depois apagadas. Este teste
+ * congela aquele formato: se o montarLinhas mudar de forma, o insert de verdade
+ * quebraria em runtime, longe de qualquer gate.
+ */
+describe("montarLinhas produz o payload que a tabela aceita", () => {
+  const ids = new Map([["lula", "00000000-0000-0000-0000-000000000001"]])
+
+  it("resolve candidato_id por slug em escopo candidato", () => {
+    const [linha] = montarLinhas(
+      [{ fonte: "camara", alvo: "lula", resultado: "encontrado", volume: 12 }],
+      ids,
+    )
+    assert.equal(linha.candidato_id, "00000000-0000-0000-0000-000000000001")
+    assert.equal(linha.escopo, "candidato")
+  })
+
+  it("deixa candidato_id nulo em fonte territorial, como a constraint exige", () => {
+    const [linha] = montarLinhas([{ fonte: "siconfi", alvo: "SP", resultado: "erro" }], ids)
+    assert.equal(linha.escopo, "territorio")
+    assert.equal(linha.candidato_id, null)
+  })
+
+  it("slug fora do banco nao impede a linha: alvo continua respondendo a consulta", () => {
+    const [linha] = montarLinhas(
+      [{ fonte: "camara", alvo: "candidato-novo", resultado: "erro", detalhe: "sem CPF" }],
+      ids,
+    )
+    assert.equal(linha.candidato_id, null)
+    assert.equal(linha.alvo, "candidato-novo")
+  })
+
+  it("campos ausentes viram null explicito, nunca undefined", () => {
+    const [linha] = montarLinhas([{ fonte: "camara", alvo: "lula", resultado: "erro" }], ids)
+    assert.equal(linha.detalhe, null)
+    assert.equal(linha.url, null)
+    assert.equal(linha.duracao_ms, null)
+    assert.ok(linha.execucao.length > 0, "execucao identifica a rodada e nunca e vazia")
+  })
+})
+
+/**
+ * Fonte nova que nao entrasse no mapa cairia no default `candidato` em silencio,
+ * e uma fonte territorial classificada como de candidato faz o relatorio acusar
+ * 194 lacunas que nao existem. O teste le os `source:` reais dos ingests em vez
+ * de confiar numa lista escrita a mao.
+ */
+describe("FONTES cobre todo source declarado pelos ingests", () => {
+  const arquivos = readdirSync(libDir).filter(
+    (f) => (f.startsWith("ingest-") || f.startsWith("enrich-")) && f.endsWith(".ts"),
+  )
+
+  const declarados = new Set<string>()
+  for (const arquivo of arquivos) {
+    const src = readFileSync(join(libDir, arquivo), "utf8")
+    // Casa `source: "x"` apenas dentro de literal de IngestResult, que e sempre
+    // seguido de `candidato:` na linha de baixo nos 20 ingests atuais.
+    for (const m of src.matchAll(/source:\s*"([^"]+)",\s*\n\s*candidato:/g)) {
+      declarados.add(m[1])
+    }
+  }
+
+  it("encontrou os sources no codigo (guarda contra regex que parou de casar)", () => {
+    assert.ok(
+      declarados.size >= 20,
+      `esperava 20+ sources, achei ${declarados.size}: ${[...declarados].join(", ")}`,
+    )
+  })
+
+  it("nenhum source ficou fora de FONTES", () => {
+    const faltando = [...declarados].filter((s) => !(s in FONTES))
+    assert.deepEqual(
+      faltando,
+      [],
+      `adicione em scripts/lib/coleta-log.ts, com o escopo certo: ${faltando.join(", ")}`,
+    )
+  })
+
+  it("nenhuma entrada de FONTES virou orfa", () => {
+    // `wiki-historico` nao monta IngestResult (enrich-wiki-historico retorna
+    // void) e por isso e instrumentado a mao; fica de fora da comparacao.
+    const orfas = Object.keys(FONTES).filter(
+      (f) => !declarados.has(f) && f !== "wiki-historico",
+    )
+    assert.deepEqual(orfas, [], `fonte no mapa sem ingest correspondente: ${orfas.join(", ")}`)
+  })
+
+  it("as fontes territoriais estao marcadas como territorio", () => {
+    for (const fonte of ["siconfi", "capag", "atlas_violencia", "ibge_sidra", "inep_ideb", "ipeadata"]) {
+      assert.equal(
+        escopoDaFonte(fonte),
+        "territorio",
+        `${fonte} tem UF/agregado como alvo, nao candidato`,
+      )
+    }
+  })
+})
