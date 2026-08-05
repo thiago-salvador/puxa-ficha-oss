@@ -350,6 +350,11 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     total_pontos_atencao: ficha.total_pontos_atencao,
     pontos_criticos: ficha.pontos_criticos,
     total_sancoes: ficha.total_sancoes,
+    // Proveniência do zero de sanções: quem consome a API precisa saber se o
+    // vazio foi verificado nos cadastros (vazio_confirmado + data) ou se a
+    // fonte nunca foi consultada (null). Zero provado e zero presumido não
+    // podem ter a mesma cara nem no JSON.
+    sancoes_verificacao: ficha.sancoes_verificacao ?? null,
     historico_descartado: ficha.historico_descartado ?? 0,
     historico_em_revisao: ficha.historico_em_revisao ?? false,
     timeline_partidaria_incompleta: ficha.timeline_partidaria_incompleta ?? false,
