@@ -67,6 +67,12 @@ SET despublicado_em = timestamptz '2026-08-05 12:00:00-03',
       'Duplicata da mesma candidatura (mesmo ano, partido e tipo_evento), que existia porque o prefixo "Candidatura a" no cargo_canonico escapava do UNIQUE (candidato_id, cargo_canonico, periodo_inicio). A linha sem prefixo continua publicada. cargo_canonico mantido com prefixo de proposito, para nao colidir no indice. Reversivel.'
 FROM public.candidatos c
 WHERE c.id = h.candidato_id
+  AND (
+    (c.slug = 'henrique-areas' AND h.periodo_inicio = 2016 AND h.partido = 'PCO')
+    OR
+    (c.slug = 'indira-xavier' AND h.periodo_inicio = 2022 AND h.partido = 'UP')
+  )
+  AND h.tipo_evento = 'candidatura'
   AND h.despublicado_em IS NULL
   AND h.cargo_canonico LIKE 'Candidatura a %'
   AND EXISTS (
@@ -76,6 +82,8 @@ WHERE c.id = h.candidato_id
       AND gemea.id <> h.id
       AND gemea.despublicado_em IS NULL
       AND gemea.cargo_canonico = regexp_replace(h.cargo_canonico, '^Candidatura a ', '')
+      AND gemea.partido = h.partido
+      AND gemea.tipo_evento = h.tipo_evento
   );
 
 -- ---------------------------------------------------------------------------
@@ -112,10 +120,18 @@ BEGIN
     RAISE EXCEPTION 'prefixo_candidatura: % linha(s) visiveis ainda com prefixo', com_prefixo_visivel;
   END IF;
 
-  SELECT COUNT(*) INTO duplicatas_despublicadas FROM public.historico_politico
-   WHERE cargo_canonico LIKE 'Candidatura a %'
-     AND despublicado_em IS NOT NULL
-     AND despublicacao_motivo LIKE 'Duplicata da mesma candidatura%';
+  SELECT COUNT(*) INTO duplicatas_despublicadas
+  FROM public.historico_politico h
+  JOIN public.candidatos c ON c.id = h.candidato_id
+  WHERE (
+      (c.slug = 'henrique-areas' AND h.periodo_inicio = 2016 AND h.partido = 'PCO')
+      OR
+      (c.slug = 'indira-xavier' AND h.periodo_inicio = 2022 AND h.partido = 'UP')
+    )
+    AND h.tipo_evento = 'candidatura'
+    AND h.cargo_canonico LIKE 'Candidatura a %'
+    AND h.despublicado_em IS NOT NULL
+    AND h.despublicacao_motivo LIKE 'Duplicata da mesma candidatura%';
   IF duplicatas_despublicadas <> 2 THEN
     RAISE EXCEPTION 'prefixo_candidatura: esperado 2 duplicatas despublicadas, encontrado %',
       duplicatas_despublicadas;

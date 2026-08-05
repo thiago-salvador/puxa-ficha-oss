@@ -18,6 +18,10 @@ const renatoFormation = readFileSync(
   "supabase/migrations/20260805136000_renato_gomes_formacao_homonimo.sql",
   "utf8",
 )
+const renatoAuditCorrection = readFileSync(
+  "supabase/migrations/20260805137000_renato_gomes_corrige_log_identidade.sql",
+  "utf8",
+)
 
 describe("correções de identidade por homônimo", () => {
   it("remove as cinco linhas filhas e zera os campos civis de renato-gomes", () => {
@@ -58,9 +62,22 @@ describe("correções de identidade por homônimo", () => {
     )
   })
 
+  it("restringe as duplicatas de cargo aos dois casos confirmados", () => {
+    assert.match(prefixNormalization, /c\.slug = 'henrique-areas'/)
+    assert.match(prefixNormalization, /c\.slug = 'indira-xavier'/)
+    assert.match(prefixNormalization, /gemea\.partido = h\.partido/)
+    assert.match(prefixNormalization, /gemea\.tipo_evento = h\.tipo_evento/)
+  })
+
   it("remove o resíduo de formação do mesmo SQ de Renato", () => {
     assert.match(renatoFormation, /formacao = 'Ensino médio completo'/)
     assert.match(renatoFormation, /SET formacao = NULL/)
     assert.match(renatoFormation, /nenhuma formacao foi inferida/)
+  })
+
+  it("corrige no banco o texto de auditoria de Renato", () => {
+    assert.match(renato, /Nome completo voltou ao nome_urna/)
+    assert.match(renatoAuditCorrection, /Nome completo voltou ao nome_urna/)
+    assert.match(renatoAuditCorrection, /GET DIAGNOSTICS linhas = ROW_COUNT/)
   })
 })

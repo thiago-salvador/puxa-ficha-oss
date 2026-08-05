@@ -1455,7 +1455,7 @@ nenhuma migration. Preparou a pauta de decisão do Thiago.
 
 ## Varredura sistemática de homônimos e correções (2026-08-05)
 
-**Estado:** migrations `20260805132000` a `20260805136000` aplicadas no
+**Estado:** migrations `20260805132000` a `20260805137000` aplicadas no
 Supabase e preparadas no mesmo PR; readback concluído. A PR #103 é a base. A
 rota `nome+nascimento` continua apenas como sugestão para revisão humana e não
 persiste CPF.
@@ -1492,5 +1492,10 @@ Fontes principais: [TSE Candidatos 2020](https://dadosabertos.tse.jus.br/dataset
 [DOE-RN de 08/08/2019](https://webdisk.diariooficial.rn.gov.br/Jornal/12019-08-08.pdf),
 [perfil de Cadu Xavier](https://www.itatiaia.com.br/politica/eleicoes/conheca-a-carreira-politica-de-cadu-xavier-pre-candidato-ao-governo-do-rn/)
 e [galeria oficial do MPMG](https://www.mpmg.mp.br/lumis/portal/file/fileDownload.jsp?fileId=8A9480678602D08F018636EF49986C71).
+
+Revisão da PR: o `UPDATE` das duplicatas foi restringido aos dois slugs,
+anos, partidos e tipos de evento confirmados. A migration `20260805137000`
+corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
+`nome_urna`; naturalidade e profissão voltaram a `NULL`.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

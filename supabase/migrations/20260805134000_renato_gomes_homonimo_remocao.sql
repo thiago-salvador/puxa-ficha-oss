@@ -99,7 +99,7 @@ WHERE slug = 'renato-gomes';
 INSERT INTO public.coleta_log
   (fonte, escopo, alvo, candidato_id, resultado, volume, detalhe, url, execucao)
 SELECT 'tse-identidade', 'candidato', 'renato-gomes', c.id, 'erro', 0,
-       'Removidos patrimonio 2008/2020, financiamento 2020 e historico 2008/2020 do homonimo Renato da Silveira Gomes. Nome completo, naturalidade e profissao voltaram a NULL. A ficha e de Renato Wanderley Gomes; nome de urna e UF nao provam identidade.',
+       'Removidos patrimonio 2008/2020, financiamento 2020 e historico 2008/2020 do homonimo Renato da Silveira Gomes. Nome completo voltou ao nome_urna; naturalidade e profissao voltaram a NULL. A ficha e de Renato Wanderley Gomes; nome de urna e UF nao provam identidade.',
        'https://dadosabertos.tse.jus.br/dataset/candidatos-2020-subtemas',
        'manual:homonimos-sistematico-20260805'
 FROM public.candidatos c WHERE c.slug = 'renato-gomes';
