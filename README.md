@@ -103,6 +103,19 @@ npx tsx scripts/ingest-all.ts tse             # CSV do TSE
 O pipeline é idempotente e respeita a hierarquia de proveniência das fontes
 (não sobrescreve dado de fonte de maior prioridade com uma de menor).
 
+## Cobertura de dados
+
+Quanto de cada ficha está preenchido, por candidato e por frente de dado:
+
+```bash
+npm run audit:cobertura
+```
+
+Um comando só: lê o banco de produção em modo somente leitura, monta o HTML e
+abre a fila de revisão ao lado. É a **única** medida de cobertura do projeto;
+número de cobertura que não saia daqui não vale. Credencial, régua e o que fazer
+quando dois relatórios discordam: [docs/cobertura-de-dados.md](docs/cobertura-de-dados.md).
+
 ## Estrutura
 
 ```

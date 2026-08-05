@@ -29,12 +29,53 @@
  * na própria página do relatório.
  */
 
+import {
+  provenienciaDaColuna,
+  FONTES_POR_COLUNA,
+  ROTULO_PROVENIENCIA as ROTULOS_DO_MODULO,
+  type ColetaPorFonte,
+  type VeredictoProveniencia,
+} from "./coleta-proveniencia"
+
+export type { ColetaPorFonte } from "./coleta-proveniencia"
+export { FONTES_POR_COLUNA } from "./coleta-proveniencia"
+
 export type CellState = "ok" | "partial" | "missing" | "zero" | "na"
+
+/**
+ * Por que a célula está zerada, quando dá para saber.
+ *
+ * Até 2026-08-04 o relatório dizia, na própria legenda, que `zero` podia ser
+ * "verificado e nada encontrado" ou "nunca coletado", e que o banco não
+ * distinguia os dois. `coleta_log` registra a TENTATIVA, e é dela que estes
+ * valores saem — sempre da última tentativa por fonte.
+ *
+ * **O cálculo NÃO mora aqui.** O mapa coluna → fontes e a precedência do
+ * veredito são de `lib/coleta-proveniencia.ts`, que cobre as 23 colunas. Este
+ * arquivo cuida do DESENHO da célula, que é outra coisa. Havia duas
+ * implementações do mesmo cálculo, escritas em paralelo em 04/08 por duas
+ * threads que não sabiam uma da outra, e manter as duas repunha em escala menor
+ * exatamente a duplicação que o relatório de régua única existiu para acabar.
+ *
+ * O único valor que este arquivo acrescenta é `desconhecida`, que o módulo não
+ * tem como conhecer: é o caso de o log não ter sido lido nesta execução (banco
+ * sem a migration, ou snapshot antigo em disco). Sem ele, "não perguntamos"
+ * viraria "nunca verificado", que é afirmação sobre o banco a partir de uma
+ * falha de leitura nossa.
+ */
+export type Proveniencia = VeredictoProveniencia | "desconhecida"
 
 export interface Cell {
   state: CellState
   text: string
   tip?: string
+  /** Só nas colunas cujo zero era ambíguo. Ver `COLUNAS_COM_PROVENIENCIA`. */
+  proveniencia?: Proveniencia
+}
+
+export const ROTULO_PROVENIENCIA: Record<Proveniencia, string> = {
+  ...ROTULOS_DO_MODULO,
+  desconhecida: "procedência não lida",
 }
 
 /** Último ano de registro no TSE considerado para "já declarou". */
@@ -124,6 +165,38 @@ export interface CandidatoCoverage {
   sancoes: number
   /** Itens que dependem de decisão humana para mudar o que está publicado. */
   itensRevisar: ItemRevisar[]
+  /**
+   * Última tentativa de coleta por fonte, do campo `coleta` do snapshot (que
+   * lê `coleta_log_ultima`). Ausente quando o log não foi lido — banco sem a
+   * migration, ou snapshot em disco anterior a ela. Aí toda procedência vira
+   * `desconhecida` e o relatório volta a dizer só "zero".
+   *
+   * Objeto vazio é OUTRA coisa: o log foi lido e este candidato não tem
+   * tentativa nenhuma registrada, que é `nunca_verificado`. A distinção entre
+   * "não perguntamos" e "perguntamos e não havia registro" é a razão de ser da
+   * tabela, então ela não pode se perder logo aqui.
+   */
+  coletas?: ColetaPorFonte
+}
+
+/** Colunas que ganham procedência. São todas as do mapa canônico. */
+export const COLUNAS_COM_PROVENIENCIA = Object.keys(FONTES_POR_COLUNA)
+
+/**
+ * Procedência de um zero. Delega o veredito a `lib/coleta-proveniencia.ts`.
+ *
+ * O único julgamento que sobra aqui é o `desconhecida`: log não lido não é
+ * fonte não verificada.
+ */
+export function provenienciaDoZero(
+  coluna: string,
+  coletas: ColetaPorFonte | undefined
+): Proveniencia {
+  if (!FONTES_POR_COLUNA[coluna]) return "desconhecida"
+  // Coluna sem ingest não depende do log: o veredito é o mesmo com ou sem ele.
+  if (FONTES_POR_COLUNA[coluna].length === 0) return "sem_ingest"
+  if (!coletas) return "desconhecida"
+  return provenienciaDaColuna(coluna, coletas).veredito
 }
 
 /** Classes de item que entram na fila de revisão. */
@@ -249,6 +322,23 @@ function cell(state: CellState, text: string, tip?: string): Cell {
   return tip ? { state, text, tip } : { state, text }
 }
 
+/**
+ * Célula zerada de uma coluna com procedência: o "0" passa a vir acompanhado do
+ * motivo, e a dica diz o que aquele zero autoriza afirmar.
+ */
+function cellZero(coluna: string, c: CandidatoCoverage, semDado: string): Cell {
+  const prov = provenienciaDoZero(coluna, c.coletas)
+  const explicacao: Record<Proveniencia, string> = {
+    zero_provado: `${semDado}: todas as fontes foram consultadas e responderam vazio`,
+    coletado: `${semDado} nesta régua, mas a coleta trouxe dado: o vazio é do recorte, não da fonte`,
+    nunca_verificado: `${semDado}, e alguma fonte nunca registrou tentativa: este zero não afirma nada`,
+    nao_sabemos: `${semDado}, mas alguma coleta falhou ou não soube dizer: o zero não vale como resposta`,
+    sem_ingest: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
+    desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`,
+  }
+  return { state: "zero", text: "0", tip: explicacao[prov], proveniencia: prov }
+}
+
 function anos(n: number): string {
   return `${n} ano${n > 1 ? "s" : ""}`
 }
@@ -271,9 +361,9 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
 
   const mandatos = c.historico.filter((h) => h.tipo_evento === "mandato").length
   out.cargos =
-    mandatos > 0 ? cell("ok", String(mandatos)) : cell("zero", "0", "nenhum mandato registrado")
+    mandatos > 0 ? cell("ok", String(mandatos)) : cellZero("cargos", c, "nenhum mandato registrado")
   out.partidos =
-    c.mudancas > 0 ? cell("ok", String(c.mudancas)) : cell("zero", "0", "sem troca registrada")
+    c.mudancas > 0 ? cell("ok", String(c.mudancas)) : cellZero("partidos", c, "sem troca registrada")
 
   const pat = c.patrimonioAnos.length
   if (pat > 0) {
@@ -328,11 +418,15 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   out.contradicoes =
     c.contradicoes > 0
       ? cell("ok", String(c.contradicoes))
-      : cell("zero", "0", "nenhuma contradição registrada")
+      : cellZero("contradicoes", c, "nenhuma contradição registrada")
   out.processos =
-    c.processos > 0 ? cell("ok", String(c.processos)) : cell("zero", "0", "nenhum processo registrado")
+    c.processos > 0
+      ? cell("ok", String(c.processos))
+      : cellZero("processos", c, "nenhum processo registrado")
   out.alertas =
-    c.alertas > 0 ? cell("ok", String(c.alertas)) : cell("zero", "0", "nenhum ponto de atenção público")
+    c.alertas > 0
+      ? cell("ok", String(c.alertas))
+      : cellZero("alertas", c, "nenhum ponto de atenção público")
 
   if (c.projetos > 0) {
     out.projetos = cell("ok", String(c.projetos))
@@ -414,7 +508,7 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   }
 
   out.sancoes =
-    c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cell("zero", "0", "nenhuma sanção registrada")
+    c.sancoes > 0 ? cell("ok", String(c.sancoes)) : cellZero("sancoes", c, "nenhuma sanção registrada")
 
   const nRevisar = c.itensRevisar.length
   out.revisar =
