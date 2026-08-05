@@ -1450,3 +1450,40 @@ nenhuma migration. Preparou a pauta de decisão do Thiago.
   (61 linhas: título, classe, gravidade, fonte clicável, efeito de
   aprovar/rejeitar, recomendação; + pauta de PRs #93/#94/#95 e gaps). Nada foi
   servido/aberto: entrega final é da sessão principal.
+
+---
+
+## Aplicação da revisão editorial item a item (2026-08-05)
+
+Thiago decidiu os 61 itens individualmente no HTML. O JSONL fechou com **52
+aprovações, 9 rejeições e 0 pendências**. A migration
+`20260805123929_aplicar_decisoes_editoriais_20260805.sql` congelou os 61 IDs e
+foi aplicada no projeto Supabase `wskpzsobvqwhnbsdsmok`.
+
+- **Readback remoto:** 61/61 decisões conformes, item a item. São 44 pontos
+  aprovados e publicados, 8 pontos rejeitados preservados invisíveis com motivo,
+  8 posições aprovadas e verificadas e 1 posição rejeitada removida. A fila
+  regenerada por `npm run audit:cobertura` caiu de 61 para **0 itens**.
+- **Itens sensíveis:** todos os pontos aprovados de gravidade alta/crítica
+  passaram por `ponto_atencao_fonte_conforme`; nenhuma acusação sem fonte foi
+  forçada pelo gate. Operação Ícaro, declaração sobre mortes pela PM e os dois
+  itens de Felício Ramuth ganharam fontes rastreáveis antes da publicação.
+- **Haddad:** o texto incorreto sobre condenação em segunda instância foi
+  rejeitado. Uma nova linha foi publicada com a condenação em primeira instância
+  e a absolvição unânime pelo TRE-SP já no título.
+- **Carreira política:** os cards aprovados foram reescritos sem equiparar
+  quantidade de cargos distintos a quantidade de mandatos. Um trigger bloqueia
+  futuras gravações de IA cujo título volte ao padrão `Carreira política: N
+  mandato(s)`, obrigando o gerador externo a descrever e contar corretamente.
+- **Orleans Brandão:** a invisibilidade vinha da migration
+  `20260725180000_urls_mortas_residuais_reauditoria.sql`: a URL do TSE continha
+  `{ano}` e retornava 404. O motivo havia sido guardado apenas dentro de
+  `dados_relacionados`, não em `despublicacao_motivo`. O card recebeu fonte e
+  texto válidos, perdeu o marcador residual e voltou a ficar visível.
+- **Entrega e prova:** a migration foi registrada como aplicada no histórico
+  remoto após a execução direta. Todos os passos bloqueantes do job `verify`, a
+  cobertura não bloqueante e o build passaram com Node 24.14.0.
+
+Permanece uma divergência histórica anterior entre migrations locais e remotas
+de 04–05/08; ela não afeta esta aplicação, mas deve ser reconciliada antes de um
+`supabase db push` amplo. [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
