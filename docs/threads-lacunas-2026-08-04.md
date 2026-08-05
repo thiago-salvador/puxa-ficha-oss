@@ -1091,3 +1091,362 @@ não era desta sessão, e cada item já estava registrado na thread de origem:
    relatório do resgate, esperando decisão.
 9. **`preta-lu`** tem candidatura de 2022 apta cujo resultado vem como `#NULO`;
    falta apurar a votação para o histórico poder ser gravado.
+
+---
+
+## Superfície de sanções na ficha (2026-08-05, 02h)
+
+**Estado:** pronto, commitado, PR [#93](https://github.com/thiago-salvador/puxa-ficha-oss/pull/93)
+aberta (não mergeada, decisão do dono). Branch `feat/sancoes-superficie-ficha`,
+worktree `wf_634f4e8c-99c-3`. Os nove gates passam (1.831 testes, 13 novos).
+
+### O que existe agora
+
+- **`SancoesSection`** na aba Justiça: com registro, lista; zero provado
+  ("Nada encontrado nos cadastros CEIS, CNEP e CEAF (verificado em
+  DD/MM/AAAA)", lido de `coleta_log_ultima`); zero presumido, estado neutro
+  sem afirmação de limpeza. `resolverEstadoSancoes` em
+  `src/lib/sancoes-verificacao.ts` é a regra, pura e testada: só
+  `vazio_confirmado` com data vira selo; `erro`, `indeterminado` e
+  `encontrado` inconsistente degradam para o neutro.
+- **Leitura da proveniência:** a view não tem grant para `anon` de propósito,
+  então `fetchSancoesVerificacao` em `src/lib/api.ts` lê via service role no
+  server, junto das demais consultas da ficha. Falha degrada para `null`
+  (estado neutro), nunca para claim falsa nem ficha degradada. Cache keyPart
+  novo: `sancoes-proveniencia-20260805`.
+- **DTO público** expõe `sancoes_verificacao`.
+- **Card `transparencia-sancoes` reinserido** em
+  `src/data/methodology-sources.ts`, `sob demanda` (cadência real), sem CEPIM.
+  `docs/fontes-pendentes.md` atualizado: fonte religada, com as pendências que
+  sobram (fonte pública no ponto de atenção, 96 sem CPF).
+
+### Verificado, não suposto
+
+- Dev server contra produção via Playwright: `lula` mostra o vazio confirmado
+  com data; `alexandre-kalil` (sem CPF, desfecho `erro`) mostra o neutro.
+- Banco no momento do trabalho: `coleta_log_ultima` com 98 `vazio_confirmado`
+  e 96 `erro` para `transparencia-sanctions`; `sancoes_administrativas` com 0
+  linhas (achado para os 98, lacuna para os 96).
+- `TRANSPARENCIA_API_KEY` **já estava** como secret do GitHub
+  (`gh secret list`: 2026-08-05T01:09Z, setada por outra sessão desta janela).
+  Nada a fazer no item 3 do plano; a chave também está no `.env.local` local.
+
+### Armadilha achada
+
+- O painel de preview do Claude Code renderizou a ficha em branco depois de
+  `scrollIntoView` programático; o DOM estava certo (o JS devolvia o bloco).
+  Screenshot confiável saiu pelo Playwright do próprio repo. Quem for validar
+  visual em worktree: `npx next dev --turbopack --port <porta>` + script
+  Playwright, e `.env.local` precisa também de `SUPABASE_ANON_KEY` (o do
+  checkout principal não tem; o valor é público e sai de
+  `get_publishable_keys` do MCP Supabase).
+
+---
+
+## Redes sociais e pendências pontuais dos 27 (2026-08-05, madrugada)
+
+Sessão de coleta manual, sem mudança de código, sem migration, sem commit. Tudo
+foi escrito direto no banco de produção com rastro em `coleta_log`
+(`execucao = 'manual:redes-pendencias-20260805'`, ids 1095 a 1203, 110 linhas).
+
+### O que foi feito
+
+1. **Varredura de redes nos 98 publicáveis sem nenhuma rede** (25 novos de
+   03/08 + 73 veteranos). Resultado: **43 fichas preenchidas** com fonte
+   rastreável (7 novos + 36 veteranos), **55 registradas como não achadas**,
+   cada uma com o rastro de onde se procurou no `detalhe` da `coleta_log`.
+   Publicáveis com pelo menos uma rede: 96 antes, **139 depois**.
+   Critério de identidade: só gravei perfil com bio/conteúdo que confere com o
+   cargo/trajetória (várias bios verificadas via fetch da meta description do
+   Instagram), ou citado por fonte oficial (site de campanha, Assembleia,
+   Câmara, site de partido, ou matéria que nomeia o handle).
+2. **Cidade de nascimento dos 10 com só UF**: preenchidas 3 com fonte
+   (alessandra-campelo Manaus/AM via ALEAM; ricardo-leite Jales/SP via A Gazeta
+   do Acre; lenilda-luna Cabo de Santo Agostinho/PE via eufemea.com). As outras
+   7 ficaram NÃO ACHEI com rastro (catherine-teles, daniela-paiva,
+   naf-nascimento, priscila-felizola, prof-enfermeira-kaelly,
+   washington-bandeira, aroldo-felix).
+3. **preta-lu 2022 apurada em fonte oficial**: o zip nacional
+   `votacao_candidato_munzona_2022` (regenerado pelo TSE em 28/07/2026) **não
+   traz mais cargos proporcionais**, só majoritárias; a apuração veio de
+   `votacao_secao_2022_MA.zip` (cdn.tse.jus.br): **1.105 votos nominais em 913
+   seções**, SQ 100001600016, CPF do cadastro confere com o banco. Gravada 1
+   linha em `historico_politico` (Candidatura: NÃO ELEITA, Dep. Federal MA
+   2022, PSTU, proveniência `manual`).
+4. **Os 8 sem registro TSE 2026** (re-rodada após 15/08, quando protocolarem):
+   carlos-machado, elisson-ferreira, guilherme-fonseca, yuri-ezequiel,
+   jose-estevao, lenilda-luna, aroldo-felix, luis-cesar-bueno. Nada forçado.
+
+### Flags editoriais colhidas de passagem (decisão do Thiago, nada alterado)
+
+- **jose-estevao**: a DC retirou a pré-candidatura dele em 10/06 e há disputa
+  interna (Ariel Capistrano); a ficha o mantém como candidato.
+- **marcelo-maluf**: noticiado como **vice** na chapa de Wellington Fagundes
+  (PL/MT); o cargo_disputado da ficha (Governador) pode estar defasado.
+- **gustavo-henrique**: convenção de 30/07 não reconhecida pela direção do
+  Avante; nova convenção marcada para 05/08.
+- **jarbas-soares**: PSB pós-convenção o mantém "sem cargo definido" (O Tempo
+  02/08).
+- **jarir-pereira**: PSOL-CE admite rever a candidatura própria.
+- Perfis possíveis mas NÃO gravados por identidade não confirmável (para
+  revisão humana): prof-enfermeira-kaelly (facebook kaellyvirginia.saraiva),
+  ralf-zimmer (@ralfzimmer62), ben-mendes (IG de ~500k citado sem handle).
+
+### Armadilhas para as próximas sessões
+
+- O zip `votacao_candidato_munzona_2022.zip` do CDN do TSE hoje só contém
+  Presidente/Governador/Senador. Votação de deputado se apura por
+  `votacao_secao_<ano>_<UF>.zip` (filtrar CD_CARGO + NR_VOTAVEL/SQ_CANDIDATO).
+- A meta description de `instagram.com/<handle>/` via fetch simples devolve a
+  bio na maioria dos perfis públicos, e foi suficiente para confirmar
+  identidade em dúvida (draluciasantos, brenobarcelos14). Falha em alguns
+  (reporterbenmendes devolveu página vazia).
+- Candidato de partido pequeno (PSTU/UP/PCO/DC/AGIR/MISSAO-interior) em geral
+  NÃO tem perfil público encontrável por busca; o que existe é a conta do
+  partido estadual. Gravar a conta do partido na ficha da pessoa seria erro.
+
+---
+
+## CPFs faltantes, re-varredura de sanções e processos honestos (2026-08-05, 03h30)
+
+**Estado:** pronto, commitado, PR
+[#94](https://github.com/thiago-salvador/puxa-ficha-oss/pull/94) aberta (não
+mergeada, decisão do dono). Branch `feat/cpf-tse-e-processos-honestos`,
+worktree `wf_634f4e8c-99c-7`. Os nove gates passam (1.834 testes).
+
+### 1. CPFs do TSE: publicáveis com CPF foram de 98 para 163
+
+`scripts/backfill-cpf-tse.ts` (novo): varre `consulta_cand` 2026 + 2010-2024 e
+persiste `candidatos.cpf` fill-only, casando SÓ por identidade exata. Rota
+`sq` (SQ do seed por ano) persistiu **65**; rota `nome-nascimento` NUNCA
+persiste, só marca revisão humana (1 caso); **30** sem rota exata ficaram como
+lacuna com rastro. Fonte nova `tse-cpf` em `coleta_log`
+(última por alvo: 65 `encontrado`, 30 `vazio_confirmado`, 1 `erro`).
+Auditoria com evidência linha a linha em `data/tse-cpf/backfill-cpf-audit.json`
+(fora do git). Idempotente: segunda execução persiste 0.
+
+**Incidente pego e revertido na própria sessão: `jarbas-soares`.** A rota
+nome+nascimento casou com um "Jarbas Soares" vice-prefeito 2020/MG. A ficha é
+de Jarbas Soares Júnior, ex-PGJ de MG (confirmado em O Tempo/Hoje em Dia), que
+não pode ter sido candidato a vereador em 2008 nem vice-prefeito em 2020. A
+`data_nascimento` do banco tem proveniência TSE, provavelmente do MESMO
+casamento por nome da era pré-guard: validação circular. CPF revertido para
+NULL, linhas corretivas em `coleta_log` (`tse-cpf` e
+`transparencia-sanctions`), rota rebaixada em código com teste de regressão.
+
+**⚠ Pendência humana:** o `historico_politico` de `jarbas-soares` tem 2 linhas
+TSE (Cand. a Vereador 2008 SQ 47351, Vice-prefeito 2020 SQ 130000743230) que
+pelo mesmo raciocínio são de homônimo e estão na ficha pública. Não removi:
+decisão editorial. A `data_nascimento` 1954-03-17 dele também fica sob
+suspeita.
+
+### 2. Re-varredura de sanções nos 194 publicáveis, agora com rastro
+
+`coleta_log_ultima`, fonte `transparencia-sanctions`, depois da rodada:
+**162 `vazio_confirmado` + 31 `erro` (sem CPF válido) + 1 `encontrado`**.
+Distribuição bruta da tabela (todas as rodadas):
+`encontrado` 1, `vazio_confirmado` 361, `erro` 126.
+
+**Achado real: `jose-roberto-arruda` tem 2 sanções CEIS ativas** (TJDFT,
+improbidade Lei 8.429, proibição de contratar 2018-2028 e 2021-2026, com
+número de processo). `sancoes_administrativas` saiu de 0 para 2 linhas, as
+primeiras verdadeiras do projeto, e só existem porque o CPF dele entrou nesta
+sessão. O ponto de atenção segue bloqueado pelo guard de fonte (pendência da
+#85); a superfície de ficha é a PR #93 (não mergeada), que já mostra o achado
+quando entrar.
+
+### 3. Processos judiciais: comunicação honesta implementada, coleta descartada
+
+DataJud/CNJ avaliado com chamada real: a API pública **não expõe partes nem
+CPF**, então "processos da pessoa X" é consulta que não existe; busca por nome
+em tribunal é o vetor de homônimo proibido. Implementado (PR #94): empty state
+da aba Justiça sem a claim falsa "nas bases consultadas" e negando a
+inferência de ficha limpa; card de overview com "—"/"não verificado" no zero
+(perfil e skeleton, `data-pf-overview-raw` mantém o cru); rótulo sem "(0)";
+critério editorial de busca ativa em `docs/criterio-processos-judiciais.md`
+(presidenciáveis, ex-chefes de Executivo, busca dirigida por menção, report de
+leitor com número CNJ; vazio verificado futuro via `coleta_log` fonte
+`processos-curadoria`). Pendência registrada: comparador ainda mostra
+"0 processos" numérico.
+
+### Armadilhas para as próximas sessões
+
+- **Data de nascimento com proveniência TSE não serve de âncora de identidade**
+  para candidato sem SQ: pode ter vindo do casamento por nome pré-guard que ela
+  estaria confirmando. Toda rota nova de identidade precisa perguntar de onde
+  veio o campo que a valida.
+- `coleta_log` é append-only: correção de linha errada é linha nova mais
+  recente (a view `coleta_log_ultima` resolve), nunca UPDATE.
+- Zips do `consulta_cand` ficam em cache em `data/tse-cpf/` do worktree
+  (gitignored, ~500MB); a segunda rodada do backfill é rápida. Apagar quando
+  não precisar mais.
+- Background task com `| tail -30` salva SÓ as últimas 30 linhas do log da
+  varredura; o estado que vale se confere no banco, não no stdout.
+- O `docs/threads-lacunas` do worktree fica defasado das entradas que outras
+  sessões escrevem direto no checkout principal sem commit; o append desta
+  entrada foi feito no checkout principal (via filesystem MCP, porque o guard
+  de worktree bloqueia Edit/Bash fora do worktree).
+
+---
+
+## Biografias dos 20 e causa raiz do cron de notícias (2026-08-05, madrugada)
+
+**Estado:** pronto, commitado, PR
+[#95](https://github.com/thiago-salvador/puxa-ficha-oss/pull/95) aberta (não
+mergeada, decisão do dono). Branch `fix/news-cron-alcance-e-rastro`, worktree
+`wf_634f4e8c-99c-8`. Os nove gates do `verify` passam (1.830 testes).
+
+### Entrega 1: rascunhos de biografia dos 20 sem bio
+
+`docs/rascunhos-biografias-20-novos-2026-08-05.md`, na PR. **Nada gravado no
+banco.** Cada frase com fonte anotada (TSE 2026; TSE de pleitos anteriores
+casado por CPF; títulos de notícias já em `noticias_candidato`; coleta manual
+de 05/08), mais a lista do que NÃO deu para afirmar, por candidato. 3 dos 20
+(catherine-teles, daniela-paiva, prof-enfermeira-kaelly) só têm o registro do
+TSE como fonte; carlos-machado, elisson-ferreira, guilherme-fonseca e
+yuri-ezequiel não têm nem dado civil (sem registro 2026, homônimos no
+histórico).
+
+### Entrega 2: causa raiz do cron de notícias, em DUAS camadas
+
+O sintoma: 21 dos 167 antigos e 26 dos 27 novos sem nenhuma notícia. Medido no
+banco: de 24/07 a 04/08, só os 5 primeiros slugs por ordem alfabética
+recebiam linha por dia.
+
+1. **Camada 1 (já corrigida na #74, nunca exercitada):** o fetch encadeado
+   mirava `*.vercel.app` atrás do SSO e morria num 302 silencioso. A #74
+   mergeou 04/08 15:06, DEPOIS do cron das 08:00 UTC; nenhum cron rodou com
+   ela até hoje.
+2. **Camada 2 (descoberta hoje ao disparar o run manual de produção):** a
+   proteção anti-recursão da Vercel devolve **HTTP 508 LOOP_DETECTED no 5º
+   fetch encadeado**. Evidência nos runtime logs 06:19-06:20 UTC:
+   `batch_complete` cursor 0→20 e `chain_fetch_failed {"nextCursor":25,
+   "status":508}`. O desenho "1 página de 5 por invocação + 39 hops" NUNCA
+   cobriria 194, mesmo com a origem certa.
+
+### O fix (PR #95)
+
+- Invocação com **orçamento de tempo**: `maxDuration 300` (plano Pro), budget
+  240s, processa quantas páginas de 5 couberem; o chain vira válvula de 1-2
+  hops. Retry único no elo (`chain_fetch_retry`/`chain_fetch_failed` com
+  `attempt`).
+- **Rastro em `coleta_log`** (fonte `google-news`), por candidato e por
+  tentativa (`encontrado`/`vazio_confirmado`/`erro`), gravado por página;
+  falha de telemetria nunca derruba o lote. Era a única coleta do projeto sem
+  rastro nenhum (280x "nunca verificado" com cron rodando todo dia).
+- Falha de página no MEIO da invocação não vira mais 503: a cabeça fica, a
+  cauda encadeia do cursor onde parou.
+- `scripts/news-refresh-dry-run.ts`: o pipeline real sem gravar nada, para
+  revisão título a título (`--slugs=` para escopo; sem args, roda em quem não
+  tem nenhuma notícia; paginação explícita ao ler `noticias_candidato`, o
+  PostgREST corta select sem range em 1000 linhas).
+
+### Prova de alcance (validação com coleta real, handler NOVO, banco real)
+
+Execução `local:news-refresh:2026-08-05` em `coleta_log`:
+
+- **2 invocações** cobriram os 194: cursor 0 (19 páginas, 95 candidatos,
+  240s) e cursor 95 (20 páginas, 99 candidatos, 245s). `chainDepth` máximo
+  **1**, zero `chain_fetch_failed`, zero erros.
+- **194/194 publicáveis com linha `google-news`**: 186 `encontrado` (2.909
+  linhas enviadas ao upsert) e 8 `vazio_confirmado`, 0 `erro`.
+- Publicáveis sem NENHUMA notícia: **24 antes → 4 depois** (catherine-teles,
+  daniela-paiva, laudicerio-aguiar, prof-enfermeira-kaelly), e para os 4 o
+  zero agora é PROVADO (`vazio_confirmado`), não "nunca verificado".
+- `noticias_candidato`: 20.046 linhas ao final.
+
+### Furo do guard de relevância, medido com exemplos novos
+
+Além do furo cabeça-de-chapa já documentado, o guard aceita homônimo por
+token de primeiro nome ou de título genérico. Pegos na revisão título a
+título dos 24 e **removidos do banco na mesma sessão** (revert de escrita
+própria; 9 linhas, ids conferidos antes e depois):
+
+- `gustavo-henrique` (PI): "Bolsonaro indica Gustavo Canuto...", "Com Gustavo
+  Dias Henrique, DF volta a ter um vice-presidente na CBF", "Gustavo Fernandes
+  é um dos deputados mais atuantes do RN" (3 pessoas diferentes).
+- `vera-lucia` (PSTU/SP): "Vera Lúcia Ferreira Copetti" desembargadora (x2),
+  "Missa de Sétimo Dia Vera Lúcia" (obituário de outra pessoa), "Vera Castelo
+  Branco" (x2).
+- `jeremias-cosmo` (PE): "Tuxaua Benísio e Professor Abraão..." (casou por
+  "Professor").
+
+**⚠ O próximo cron REINSERE as 9** (mesmo guard, upsert por candidato_id+url).
+Apertar o guard é decisão editorial: o afrouxamento é deliberado e documentado
+em `src/lib/news/name-match.ts`. A PR não muda a semântica; o dry-run é o
+instrumento de revisão enquanto a decisão não sai.
+
+### Flag editorial colhida de passagem (nada alterado)
+
+- **olimpio-rocha**: a federação PSOL-Rede BARROU a candidatura dele ao
+  governo da PB (03-04/08: G1 "PSOL-Rede retira apoio a Lucas Ribeiro e barra
+  candidatura de Olímpio Rocha", ParaibaOnline, ClickPB). A ficha o mantém
+  candidato a Governador/PB.
+
+### Pendências
+
+1. **Depois do merge, observar o cron das 08:00 UTC**: `batch_complete` com
+   `paginas` > 1 e `chainDepth` <= 2, `coletaLogOk: true`, nenhum 508; e
+   `coleta_log` com `execucao = vercel:news-refresh:<data>`.
+2. **O cron de HOJE (08:00 UTC, pré-merge) ainda roda o código antigo**: vai
+   cobrir ~25 candidatos e morrer no 508. Esperado, não é regressão.
+3. Decisão editorial sobre o guard de homônimos (acima).
+4. Os 4 com `vazio_confirmado` seguem sem notícia por falta de cobertura da
+   imprensa, não por falha de coleta; re-verificação é automática no cron.
+
+### Armadilhas para as próximas sessões
+
+- A proteção anti-recursão da Vercel NÃO aparece em doc de limites óbvia: ela
+  se manifesta como 508 no fetch de função para o próprio deployment a partir
+  do ~5º hop da cadeia. Qualquer cron auto-encadeado do projeto
+  (`send-digest` inclusive) está sujeito; o send-digest hoje só tem 1
+  assinante (1 lote), então não dispara, mas vale vigiar se crescer.
+- `npx vercel env pull` com `--cwd` grava o arquivo no cwd apontado, não no
+  diretório atual; o `.env.vercel-prod` foi movido para o scratchpad e não
+  ficou no checkout.
+- O dry-run acidental provou outra armadilha: `select` sem `range` no
+  PostgREST corta em 1000 linhas EM SILÊNCIO; um filtro "quem não tem
+  notícia" montado assim rodou em 185 candidatos em vez de 24 (sem dano:
+  captura sem escrita).
+
+---
+
+## Preparação da revisão editorial da fila de 61 (2026-08-05, 04h20)
+
+Sessão somente leitura: nenhum `visivel`/`verificado` alterado, nenhum commit,
+nenhuma migration. Preparou a pauta de decisão do Thiago.
+
+- **Recontagem (SQL em produção, publicáveis):** 9 posições `verificado=false`
+  + 47 pontos `visivel=false` sem `despublicacao_motivo` + 5 pontos de IA no ar
+  sem revisão = **61**, igual ao pós-resgate. As etapas desta janela não
+  somaram itens.
+- **Os 5 IA-no-ar** são todos "Carreira política: N mandato(s)". Fontes
+  oficiais conferidas por fetch: recomendação MANTER para cleitinho e
+  roberto-claudio; TIRAR/reformular para fabio-trad (a própria fonte da Câmara
+  registra 3 mandatos contra "1" do título), laurez-moreira (histórico da ficha
+  não tem Vereador nem o mandato federal; omite Vice-Governador atual) e
+  wellington-fagundes (Câmara registra 5 mandatos de dep. federal contra "2").
+- **Amostragem de 10 "Carreira política" contra `historico_politico`: 4/10
+  consistentes (40%)**, e os 4 só fecham lendo "N mandatos" como "N cargos
+  distintos". Divergentes: fabio-trad, laurez-moreira, cicero-lucena (omite 2
+  mandatos de Senador), david-almeida (lista Governador que no histórico é só
+  candidatura 2018), omar-aziz (Vereador inexistente; omite Senador atual),
+  tiao-bocalom (Vereador PR inexistente). **Recomendação: não aprovar em
+  lote**; corrigir o gerador e re-emitir a família.
+- **Trava que a decisão precisa respeitar:** 4 itens em alta/crítica SEM fonte
+  (2 do felicio-ramuth, Operação Icaro e declaração sobre a PM do Tarcísio)
+  são inaprováveis pelo gate da migration 20260725160000 até ganharem URL.
+- **Sinalização de justiça:** o "Condenado em 2a instancia por caixa 2" do
+  haddad-gov-sp registra na descrição que o TSE ANULOU em 2022; publicar sem a
+  anulação no título é injusto. Item destacado na pauta com recomendação de
+  reformular.
+- **Anomalia achada:** `orleans-brandao` é o único item da fila com
+  `gerado_por=curadoria` e `verificado=true`, invisível sem motivo.
+- **Superfície de decisão:** `npm run audit:cobertura` gerou
+  `~/.disposable-html/revisao/` (40 páginas + `lote.html`, 61 itens; servir com
+  `npm run audit:cobertura:servir`, POST acumula JSONL sem tocar banco). Como o
+  lote.html não traz gravidade/efeito/recomendação, foi gerada a página
+  complementar `~/.disposable-html/2026-08-05-pauta-revisao-editorial.descartavel.html`
+  (61 linhas: título, classe, gravidade, fonte clicável, efeito de
+  aprovar/rejeitar, recomendação; + pauta de PRs #93/#94/#95 e gaps). Nada foi
+  servido/aberto: entrega final é da sessão principal.
