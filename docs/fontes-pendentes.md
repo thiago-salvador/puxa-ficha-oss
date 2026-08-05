@@ -56,9 +56,9 @@ mesma, e o criterio que separou foi um so: **a fonte ja pos dado no ar?**
 |---|---|---|
 | Endpoint hoje | **HTTP 522** (Cloudflare de pe, origem fora) | **HTTP 404** na rota de despesas |
 | Linhas publicadas por ela | **0** em `pontos_atencao` | **102** em `gastos_parlamentares` (65 em fichas publicaveis) |
-| Tentativas em `coleta_log` | **0** | 10 |
+| Tentativas em `coleta_log` | **30 erros aplicáveis em 1 rodada semanal real** | 10 |
 | Card em `/metodologia` | **REMOVIDO** | **MANTIDO** |
-| Ingest | mantido, agora grava `erro` | mantido, agora grava `erro` / `indeterminado` |
+| Ingest | mantido; grava `erro` para aplicáveis e `nao_aplicavel` para quem não tem ID da Câmara | mantido, agora grava `erro` / `indeterminado` |
 
 **Por que o card do Jarbas saiu.** E exatamente o achado A0.3 que criou este
 arquivo: a pagina anunciava ao publico uma fonte que nunca produziu uma linha.
@@ -91,15 +91,19 @@ select date_trunc('week', executado_em) semana, resultado, count(*)
  group by 1, 2 order by 1 desc;
 ```
 
+Estado em 2026-08-05: **1 de 8 rodadas semanais reais**. A rodada consultou os
+30 candidatos públicos com ID da Câmara e recebeu HTTP 522 para todos. Não houve
+`encontrado` nem `vazio_confirmado`. Os outros 164 candidatos públicos ficaram
+como `nao_aplicavel`; eles não entram na contagem das oito rodadas.
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
 ---
 
 ## Fontes com endpoint morto (verificado em 2026-08-05)
 
-Estas duas nao sao lacuna de curadoria nem de credencial: o endpoint saiu do ar.
-O ingest continua no repositorio e registrado em `scripts/ingest-all.ts`, roda
-sem erro visivel e devolve "sem dados", que no relatorio de cobertura e
-indistinguivel de "procuramos e nao achou nada". Registrado aqui para o
-relatorio parar de tratar fonte morta como lacuna a preencher.
+Estas duas não são lacuna de curadoria nem de credencial: o endpoint saiu do ar.
+Os ingests continuam no repositório e registrados em `scripts/ingest-all.ts`.
+Falha de servidor precisa aparecer como `erro`, nunca como ausência de dado.
 
 Achado durante a auditoria que seguiu o falso positivo em massa do ingest de
 sancoes (2026-08-04): as duas foram checadas com chamada real ao tentar fechar o
@@ -110,9 +114,11 @@ mesmo tipo de guarda de identidade nelas.
 | Item | Estado |
 |---|---|
 | Endpoint | `https://jarbas.serenata.ai/api/chamber_of_deputies/reimbursement` |
-| Verificacao 2026-08-05 | **HTTP 404 em todas as rotas testadas, inclusive `https://jarbas.serenata.ai/`** |
-| Comportamento do ingest | `res.status === 404` cai no caminho "sem dados na API (404)" e segue para o proximo candidato, sem erro |
-| Guarda de identidade | adicionada em 2026-08-05 (`conferirReembolsos`), dormente enquanto a API estiver fora |
+| Verificação 2026-08-05 | **HTTP 522** na raiz, `healthcheck`, `/api/`, rota integrada e rota legada; Cloudflare responde, mas a origem não |
+| Domínios alternativos | `jarbas.serenatadeamor.org` e `api.serenata.ai` não resolvem; `serenata.ai/api/reimbursement/` responde 404 |
+| Conjunto atual | 194 candidatos públicos; **30 aplicáveis** por ID da Câmara e 164 não aplicáveis |
+| Comportamento do ingest | HTTP 404, 5xx, DNS, timeout e JSON inválido viram `erro`; candidato sem ID da Câmara vira `nao_aplicavel` |
+| Guarda de identidade | `conferirReembolsos` recusa a resposta inteira se algum `applicant_id` divergir do consultado |
 
 O que este ingest gravava quando funcionava: `pontos_atencao` com gravidade alta
 ou media e texto de acusacao nomeada ("a IA Rosie identificou reembolsos
@@ -121,9 +127,19 @@ vier com `applicant_id` de outro deputado, porque a URL filtra por parametro de
 query e nada comparava o retorno. Se a API voltar num formato diferente, e a
 guarda que impede o pior caso.
 
-Para religar: confirmar se o projeto Serenata publicou endpoint novo ou se a API
-foi descontinuada de vez. Se foi, remover o ingest e o card da fonte em vez de
-deixar codigo morto rodando semanalmente.
+Investigação de substituto em 2026-08-05: o repositório separado do Jarbas está
+arquivado desde 2018; o repositório integrado informa que Rosie, Jarbas e a
+infraestrutura recebem atualizações menos frequentes; não há release ou issue
+que anuncie migração de API. O próprio código documenta `reimbursements.xz` e
+`suspicions.xz` como arquivos gerados ao rodar Rosie, não como dataset público
+mantido. Os buckets públicos candidatos testados responderam 404. O snapshot
+CSV público encontrado no GitHub contém dados de 2017 e não serve como fonte
+atual para os candidatos de 2026. Portanto, nenhuma substituição preserva hoje
+a semântica, a identidade oficial e a citabilidade exigidas.
+
+Para religar: exigir endpoint ou dataset oficial atualizado que traga
+reembolsos, suspeições e `applicant_id`. Sem isso, manter o ingest apenas durante
+as oito rodadas semanais reais e depois aplicar o critério de remoção acima.
 
 ### CEAPS Senado (`scripts/lib/ingest-ceaps-senado.ts`)
 
