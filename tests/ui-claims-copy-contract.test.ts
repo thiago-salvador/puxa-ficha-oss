@@ -44,13 +44,34 @@ describe("UI claims copy contract", () => {
   })
 
   test("fontes complementares da metodologia nao sao classificadas como bases oficiais", () => {
-    for (const id of ["wikipedia", "google-news", "jarbas"]) {
+    // `jarbas` saiu da lista em 2026-08-05 (endpoint HTTP 522, zero linha
+    // publicada, zero tentativa em coleta_log). Ver docs/fontes-pendentes.md.
+    for (const id of ["wikipedia", "google-news"]) {
       assert.equal(sourceById(id).sourceKind, "fonte_publica_complementar")
     }
 
     for (const id of ["tse", "camara", "senado", "transparencia", "tcu"]) {
       assert.equal(sourceById(id).sourceKind, "base_oficial")
     }
+  })
+
+  test("fonte sem dado publicado nao volta para a metodologia sozinha", () => {
+    // Regra do achado A0.3: a pagina so anuncia fonte que produziu dado E tem
+    // superficie que o mostra. `jarbas` violava as duas pontas (endpoint 522,
+    // zero linha em pontos_atencao, zero tentativa em coleta_log). Se voltar,
+    // que volte junto com o dado, e este teste junto.
+    assert.equal(
+      METHODOLOGY_SOURCES.some((s) => s.id === "jarbas"),
+      false,
+      "jarbas so pode voltar a /metodologia com dado publicado (docs/fontes-pendentes.md)",
+    )
+    // CEAPS fica: a rota de atualizacao caiu, mas ha 102 linhas em
+    // gastos_parlamentares que o site mostra, e a pagina precisa dizer de onde
+    // aquele numero veio.
+    assert.equal(
+      METHODOLOGY_SOURCES.some((s) => s.id === "ceaps-senado"),
+      true,
+    )
   })
 
   test("TSE continua separado de processos judiciais/administrativos na metodologia", () => {
