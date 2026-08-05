@@ -13,16 +13,20 @@
  */
 
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { test } from "node:test"
 
 import {
+  COLUNAS,
   FONTES_POR_COLUNA,
   calcularCelulas,
   provenienciaDoZero,
   type CandidatoCoverage,
-  type ResultadoColeta,
+  type ColetaPorFonte,
 } from "../scripts/audit/lib/coverage-model"
-import { aplicarColetas } from "../scripts/audit/coverage-report"
+import type { UltimaColeta } from "../scripts/audit/lib/coleta-proveniencia"
+import { removerBlocoDeColeta } from "../scripts/audit/lib/snapshot-fetch"
 
 /** Candidato mínimo: tudo vazio, que é o cenário em que a procedência importa. */
 function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
@@ -64,9 +68,11 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
   }
 }
 
+type Desfecho = UltimaColeta["resultado"]
+
 /** Todas as fontes de uma coluna com o mesmo desfecho. */
-function todas(coluna: string, r: ResultadoColeta): Record<string, ResultadoColeta> {
-  return Object.fromEntries(FONTES_POR_COLUNA[coluna].map((f) => [f, r]))
+function todas(coluna: string, r: Desfecho): ColetaPorFonte {
+  return Object.fromEntries(FONTES_POR_COLUNA[coluna].map((f) => [f, { resultado: r }]))
 }
 
 test("sem log de coleta lido, nenhum zero afirma nada", () => {
@@ -83,8 +89,8 @@ test("candidato olhado mas sem nenhuma tentativa é 'nunca verificado', não 'va
   assert.equal(provenienciaDoZero("sancoes", {}), "nunca_verificado")
 })
 
-test("só vira 'verificado e vazio' quando toda fonte da coluna respondeu vazio", () => {
-  assert.equal(provenienciaDoZero("sancoes", todas("sancoes", "vazio_confirmado")), "vazio_confirmado")
+test("só vira zero provado quando toda fonte da coluna respondeu vazio", () => {
+  assert.equal(provenienciaDoZero("sancoes", todas("sancoes", "vazio_confirmado")), "zero_provado")
 
   // `cargos` depende de quatro fontes; três não bastam.
   const parcial = { ...todas("cargos", "vazio_confirmado") }
@@ -93,33 +99,31 @@ test("só vira 'verificado e vazio' quando toda fonte da coluna respondeu vazio"
 })
 
 test("uma falha rebaixa o veredito mesmo com as outras fontes confirmadas", () => {
-  const comErro = { ...todas("alertas", "vazio_confirmado"), tcu: "erro" as ResultadoColeta }
-  assert.equal(provenienciaDoZero("alertas", comErro), "erro")
+  const comErro: ColetaPorFonte = { ...todas("alertas", "vazio_confirmado"), tcu: { resultado: "erro" } }
+  assert.equal(provenienciaDoZero("alertas", comErro), "nao_sabemos")
 
-  const semVeredito = {
+  const semVeredito: ColetaPorFonte = {
     ...todas("alertas", "vazio_confirmado"),
-    tcu: "indeterminado" as ResultadoColeta,
+    tcu: { resultado: "indeterminado" },
   }
-  assert.equal(provenienciaDoZero("alertas", semVeredito), "indeterminado")
+  assert.equal(provenienciaDoZero("alertas", semVeredito), "nao_sabemos")
 })
 
 test("'nao_aplicavel' não impede o zero de ser confirmado", () => {
   // A fonte declarou que a pergunta não cabe para este alvo. Isso é resposta,
   // não silêncio, então não pode rebaixar o veredito das outras.
-  const misto = {
+  const misto: ColetaPorFonte = {
     ...todas("partidos", "vazio_confirmado"),
-    filiacao: "nao_aplicavel" as ResultadoColeta,
+    filiacao: { resultado: "nao_aplicavel" },
   }
-  assert.equal(provenienciaDoZero("partidos", misto), "vazio_confirmado")
+  assert.equal(provenienciaDoZero("partidos", misto), "zero_provado")
 })
 
-test("'encontrado' com célula zerada é contradição, e vale como não verificado", () => {
-  // A coleta disse que achou e a ficha está vazia: alguma das duas está errada,
-  // e não dá para vender esse zero como confirmado.
-  assert.equal(
-    provenienciaDoZero("sancoes", todas("sancoes", "encontrado")),
-    "nunca_verificado"
-  )
+test("'encontrado' com célula zerada não vira zero provado", () => {
+  // A coleta trouxe dado e a ficha está vazia: o vazio é do recorte da régua
+  // (uma cota antiga demais para a janela, por exemplo), e não da fonte. O que
+  // não pode acontecer é esse zero sair vendido como confirmado.
+  assert.equal(provenienciaDoZero("sancoes", todas("sancoes", "encontrado")), "coletado")
 })
 
 test("coluna sem ingest é 'sem fonte', e não promete coleta que não existe", () => {
@@ -127,8 +131,8 @@ test("coluna sem ingest é 'sem fonte', e não promete coleta que não existe", 
   // curadoria manual. Marcar como 'nunca verificado' sugeriria uma coleta
   // pendente de rodar, e não há nenhuma.
   assert.deepEqual(FONTES_POR_COLUNA.processos, [])
-  assert.equal(provenienciaDoZero("processos", {}), "sem_fonte")
-  assert.equal(provenienciaDoZero("processos", undefined), "sem_fonte")
+  assert.equal(provenienciaDoZero("processos", {}), "sem_ingest")
+  assert.equal(provenienciaDoZero("processos", undefined), "sem_ingest")
 })
 
 test("célula com dado não recebe procedência", () => {
@@ -137,27 +141,57 @@ test("célula com dado não recebe procedência", () => {
   assert.equal(cel.sancoes.proveniencia, undefined)
 })
 
-test("aplicarColetas distingue candidato ausente do log de log não lido", () => {
-  const coorte = [candidato({ slug: "a" }), candidato({ slug: "b" })]
+test("candidato sem tentativa e log não lido não se confundem na célula", () => {
+  const comTentativa = candidato({
+    coletas: { "transparencia-sanctions": { resultado: "vazio_confirmado" } },
+  })
+  const olhadoSemTentativa = candidato({ coletas: {} })
 
-  assert.deepEqual(
-    aplicarColetas(coorte, undefined).map((c) => c.coletas),
-    [undefined, undefined],
-    "sem log, ninguém recebe coletas"
-  )
-
-  const comLog = aplicarColetas(coorte, { a: { "transparencia-sanctions": "vazio_confirmado" } })
-  assert.deepEqual(comLog[0].coletas, { "transparencia-sanctions": "vazio_confirmado" })
-  assert.deepEqual(comLog[1].coletas, {}, "quem não aparece no log foi olhado e não tem tentativa")
-  assert.equal(calcularCelulas(comLog[0]).sancoes.proveniencia, "vazio_confirmado")
-  assert.equal(calcularCelulas(comLog[1]).sancoes.proveniencia, "nunca_verificado")
+  assert.equal(calcularCelulas(comTentativa).sancoes.proveniencia, "zero_provado")
+  assert.equal(calcularCelulas(olhadoSemTentativa).sancoes.proveniencia, "nunca_verificado")
+  assert.equal(calcularCelulas(candidato()).sancoes.proveniencia, "desconhecida")
 })
 
-test("o mapa de fontes cobre exatamente as colunas de zero ambíguo", () => {
-  // Coluna nova de zero sem entrada aqui sairia como procedência desconhecida
-  // para sempre, sem ninguém perceber.
+test("o bloco de coleta do SQL é removível, para banco sem a migration", () => {
+  // A guarda não cabe dentro do SELECT (a relação é resolvida na análise do
+  // comando), então a degradação depende destes marcadores. Renomeá-los sem
+  // mexer no strip deixaria o relatório quebrado em banco novo.
+  const sql = readFileSync(
+    join(import.meta.dirname, "..", "scripts", "audit", "coverage-snapshot.sql"),
+    "utf8"
+  )
+  assert.ok(sql.includes("from coleta_log_ultima"), "o SQL completo lê a view")
+
+  const semColeta = removerBlocoDeColeta(sql)
+  assert.ok(
+    !semColeta.includes("from coleta_log_ultima"),
+    "sem a migration, a view não pode ser referenciada por nenhuma cláusula"
+  )
+  assert.ok(semColeta.includes("'historico'"), "o resto do snapshot continua inteiro")
+  assert.throws(() => removerBlocoDeColeta("select 1"), /marcadores/)
+})
+
+test("o mapa de fontes cobre todas as colunas do relatório", () => {
+  // Coluna nova sem entrada aqui sairia como procedência desconhecida para
+  // sempre, sem ninguém perceber. O mapa é canônico: ele descreve as 23 colunas
+  // e não só as de zero ambíguo, então o teste cobra a lista inteira.
+  const semMapa = COLUNAS.map((c) => c.key).filter((k) => !FONTES_POR_COLUNA[k])
+  assert.deepEqual(semMapa, [], "coluna do relatório sem entrada em FONTES_POR_COLUNA")
+})
+
+test("o mapa lista todo ingest que escreve na tabela da coluna", () => {
+  // Fonte a menos aqui é pior que fonte a mais: `zero_provado` exige que TODAS
+  // as fontes tenham respondido, então esquecer uma faz um zero passar por
+  // confirmado sem que ela tenha sido ouvida. Estes dois furos foram achados em
+  // 04/08 comparando o mapa com quem escreve em cada tabela.
   assert.deepEqual(
-    Object.keys(FONTES_POR_COLUNA).sort(),
-    ["alertas", "cargos", "contradicoes", "partidos", "processos", "sancoes"]
+    [...FONTES_POR_COLUNA.cargos].sort(),
+    ["senado", "tse-historico", "wiki-historico", "wikidata-politico"],
+    "historico_politico tem quatro escritores recorrentes"
+  )
+  assert.deepEqual(
+    [...FONTES_POR_COLUNA.alertas].sort(),
+    ["jarbas", "tcu", "transparencia-sanctions"],
+    "pontos_atencao é escrita por três ingests, não é coluna derivada"
   )
 })

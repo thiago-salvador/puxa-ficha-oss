@@ -63,13 +63,25 @@ export interface Proveniencia {
  * judiciais, cujas 30 linhas vieram de STF, MP-RJ e veículos de imprensa, uma a
  * uma). Nessas colunas, cobrar coleta automatizada seria cobrar o que não
  * existe, e o vazio se resolve com trabalho editorial.
+ *
+ * **Fonte a menos aqui é pior que fonte a mais**, e é por isso que este mapa é
+ * levantado de quem escreve na tabela, e não de memória: `provenienciaDaColuna`
+ * só declara `zero_provado` quando TODAS as fontes listadas responderam, então
+ * esquecer uma faz um zero passar por confirmado sem que ela tenha sido ouvida.
+ * O levantamento é `grep 'from("<tabela>")' scripts/`, descartando os scripts
+ * de correção pontual (`fix-*`, `apply-*`, `backfill-*`, `link-check-*`), que
+ * são intervenção humana e não coleta recorrente: eles não registram tentativa
+ * e não têm o que prometer ao log.
  */
 export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Object.freeze({
   foto: ["wikipedia"],
   bio: ["wikipedia"],
   redes: ["wikipedia", "instagram"],
   dados: ["tse-situacao", "wikidata"],
-  cargos: ["tse-historico", "wikidata-politico"],
+  // `historico_politico` tem quatro escritores recorrentes, não dois:
+  // ingest-tse-historico, ingest-wikidata-politico, ingest-senado e
+  // enrich-wiki-historico.
+  cargos: ["tse-historico", "wikidata-politico", "senado", "wiki-historico"],
   partidos: ["tse-historico", "filiacao", "wikidata-politico"],
 
   patrimonio: ["tse"],
@@ -86,13 +98,17 @@ export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Ob
   noticias: ["google-news"],
   sancoes: ["transparencia-sanctions"],
 
+  // `pontos_atencao` é escrita por três ingests. A leitura anterior, de que a
+  // coluna seria derivada de outras, não se sustenta contra o código:
+  // ingest-jarbas, ingest-tcu e ingest-transparencia-sanctions inserem ali.
+  alertas: ["jarbas", "tcu", "transparencia-sanctions"],
+
   // Curadoria: nenhum ingest escreve, então não há coleta a cobrar.
   processos: [],
   posicoes: [],
   legexec: [],
   // Derivadas de outras colunas, não de fonte externa.
   contradicoes: [],
-  alertas: [],
   revisar: [],
 })
 

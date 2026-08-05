@@ -91,9 +91,39 @@ export async function consultar<T>(sql: string, ref: string, token: string): Pro
   return JSON.parse(texto) as T[]
 }
 
+const MARCA_COLETA_INICIO = "-- @coleta-opcional-inicio"
+const MARCA_COLETA_FIM = "-- @coleta-opcional-fim"
+
+/**
+ * Remove do SQL o bloco que lê `coleta_log_ultima`.
+ *
+ * Existe porque a guarda não cabe dentro do próprio SELECT: a relação é
+ * resolvida na análise do comando, então `to_regclass` em tempo de execução
+ * chegaria tarde e a consulta inteira falharia em banco sem a migration. O
+ * relatório precisa continuar saindo ali (banco novo, rollback, fork), com a
+ * procedência marcada como não lida em vez de nada.
+ *
+ * Marcador ausente é erro e não silêncio: significa que alguém renomeou os
+ * delimitadores no `.sql` e que a degradação parou de funcionar sem avisar.
+ */
+export function removerBlocoDeColeta(sql: string): string {
+  const inicio = sql.indexOf(MARCA_COLETA_INICIO)
+  const fim = sql.indexOf(MARCA_COLETA_FIM)
+  if (inicio === -1 || fim === -1 || fim < inicio) {
+    throw new Error(
+      `coverage-snapshot.sql sem os marcadores ${MARCA_COLETA_INICIO}/${MARCA_COLETA_FIM}: ` +
+        "o bloco de coleta não pode mais ser removido em banco sem a migration coleta_log"
+    )
+  }
+  return sql.slice(0, inicio) + sql.slice(fim + MARCA_COLETA_FIM.length)
+}
+
 /**
  * Roda `coverage-snapshot.sql` e devolve o array que o relatório consome.
  * O SQL devolve uma linha e uma coluna (`snapshot`) com o array inteiro.
+ *
+ * O campo `coleta` de cada candidato sai daqui junto com o resto, numa consulta
+ * só. Em banco sem `coleta_log_ultima` o bloco é removido antes do envio.
  */
 export async function obterSnapshot(
   caminhoSql: string,
@@ -101,7 +131,20 @@ export async function obterSnapshot(
 ): Promise<unknown[]> {
   const ref = opcoes.ref || process.env.SUPABASE_PROJECT_REF || PROJECT_REF_PADRAO
   const token = opcoes.token || resolverToken()
-  const sql = readFileSync(caminhoSql, "utf8")
+  let sql = readFileSync(caminhoSql, "utf8")
+
+  const [{ existe }] = await consultar<{ existe: boolean }>(
+    "select to_regclass('public.coleta_log_ultima') is not null as existe",
+    ref,
+    token
+  )
+  if (!existe) {
+    console.error(
+      "[cobertura] coleta_log_ultima não existe neste banco; " +
+        "o snapshot sai sem procedência e todo zero fica como não lido"
+    )
+    sql = removerBlocoDeColeta(sql)
+  }
 
   const linhas = await consultar<{ snapshot: unknown[] | null }>(sql, ref, token)
   const snapshot = linhas[0]?.snapshot
@@ -115,33 +158,3 @@ export async function obterSnapshot(
   return snapshot
 }
 
-/**
- * Última tentativa de coleta por candidato e por fonte, quando o banco já tem
- * `coleta_log` (migration `coleta_log_tentativa_por_fonte`).
- *
- * Devolve `null` quando a tabela ainda não existe. É de propósito: um relatório
- * que quebrasse por causa de uma tabela ausente obrigaria as duas frentes a
- * mergear no mesmo dia, e o relatório sabe representar a falta (a procedência
- * de todo zero vira `desconhecida` e a legenda diz isso).
- */
-export async function obterColetas(
-  caminhoSql: string,
-  opcoes: { ref?: string; token?: string } = {}
-): Promise<Record<string, Record<string, string>> | null> {
-  const ref = opcoes.ref || process.env.SUPABASE_PROJECT_REF || PROJECT_REF_PADRAO
-  const token = opcoes.token || resolverToken()
-
-  const [{ existe }] = await consultar<{ existe: boolean }>(
-    "select to_regclass('public.coleta_log_ultima') is not null as existe",
-    ref,
-    token
-  )
-  if (!existe) return null
-
-  const linhas = await consultar<{ coletas: Record<string, Record<string, string>> }>(
-    readFileSync(caminhoSql, "utf8"),
-    ref,
-    token
-  )
-  return linhas[0]?.coletas ?? {}
-}

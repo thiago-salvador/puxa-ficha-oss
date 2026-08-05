@@ -118,10 +118,10 @@ tsx scripts/audit/coverage-report.ts --from-snapshot=caminho/do/snapshot.json
 
 | Arquivo | Papel |
 |---|---|
-| `scripts/audit/coverage-snapshot.sql` | Os fatos. Uma linha, uma coluna `snapshot` com o array inteiro. |
-| `scripts/audit/coverage-coleta.sql` | Procedência do zero. Opcional; só roda se `coleta_log` existir. |
+| `scripts/audit/coverage-snapshot.sql` | Os fatos, incluindo o campo `coleta` de cada candidato. Uma linha, uma coluna `snapshot` com o array inteiro. |
+| `scripts/audit/lib/coleta-proveniencia.ts` | Mapa coluna → fontes e veredito da procedência do zero. Lógica pura. |
 | `scripts/audit/lib/coverage-model.ts` | A régua: cinco estados de célula, aplicabilidade, índice. Lógica pura. |
-| `scripts/audit/lib/snapshot-fetch.ts` | Transporte e credencial. Não interpreta nada. |
+| `scripts/audit/lib/snapshot-fetch.ts` | Transporte e credencial. Não interpreta nada, mas remove o bloco de `coleta` quando o banco não tem a view. |
 | `scripts/audit/coverage-report.ts` | Monta e desenha. |
 | `scripts/audit/check-report.ts` | `npm run audit:cobertura:check`, confere o relatório. |
 

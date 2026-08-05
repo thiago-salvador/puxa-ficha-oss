@@ -56,11 +56,11 @@ import {
   calcularIndice,
   type CandidatoCoverage,
   type Cell,
+  type ColetaPorFonte,
   type ItemRevisar,
-  type ResultadoColeta,
 } from "./lib/coverage-model"
 import { lerPendingWrites, type PendingWrite } from "./lib/pending-writes"
-import { obterColetas, obterSnapshot } from "./lib/snapshot-fetch"
+import { obterSnapshot } from "./lib/snapshot-fetch"
 
 const RAIZ = resolve(import.meta.dirname, "..", "..")
 
@@ -153,47 +153,25 @@ function slugsComSqNoSeed(): Set<string> {
 /**
  * Lê o snapshot gerado por `coverage-snapshot.sql`. O SQL não conhece o seed do
  * repo, então `temSqNoSeed` é resolvido aqui.
+ *
+ * O campo `coleta` do SQL vira `coletas` no modelo. Ele pode não existir, e a
+ * diferença importa: snapshot antigo (gravado antes da migration `coleta_log`,
+ * ou lido de banco que ainda não a recebeu) não traz a chave, e aí `coletas`
+ * fica `undefined`, que o modelo lê como "procedência não lida". Snapshot novo
+ * de candidato sem tentativa nenhuma traz `{}`, que é "nunca verificado". São
+ * afirmações diferentes e a leitura precisa preservar as duas.
  */
 export function lerSnapshot(path: string, slugs?: Set<string>): CandidatoCoverage[] {
-  const bruto = JSON.parse(readFileSync(path, "utf8")) as Omit<CandidatoCoverage, "temSqNoSeed">[]
+  const bruto = JSON.parse(readFileSync(path, "utf8")) as (Omit<
+    CandidatoCoverage,
+    "temSqNoSeed" | "coletas"
+  > & { coleta?: ColetaPorFonte })[]
   const comSq = slugsComSqNoSeed()
   return bruto
     .filter((c) => (slugs ? slugs.has(c.slug) : true))
-    .map((c) => ({ ...c, temSqNoSeed: comSq.has(c.slug) }))
+    .map(({ coleta, ...c }) => ({ ...c, temSqNoSeed: comSq.has(c.slug), coletas: coleta }))
 }
 
-
-// ── Procedência do zero (log de coleta) ─────────────────────────────
-//
-// Fica ao lado do snapshot, num arquivo irmão, pelo mesmo motivo que o
-// snapshot fica em arquivo: para o desenho poder ser refeito sem rede, e para
-// a entrada do relatório ser inspecionável. Ausente = procedência não lida, que
-// é o estado de todo banco antes da migration `coleta_log`.
-
-/** Arquivo irmão do snapshot com as tentativas de coleta. */
-export function caminhoColetas(caminhoSnapshot: string): string {
-  return caminhoSnapshot.replace(/\.json$/, "") + "-coleta.json"
-}
-
-export function lerColetas(
-  caminhoSnapshot: string
-): Record<string, Record<string, ResultadoColeta>> | undefined {
-  const p = caminhoColetas(caminhoSnapshot)
-  if (!existsSync(p)) return undefined
-  return JSON.parse(readFileSync(p, "utf8")) as Record<string, Record<string, ResultadoColeta>>
-}
-
-export function aplicarColetas(
-  coorte: CandidatoCoverage[],
-  coletas: Record<string, Record<string, ResultadoColeta>> | undefined
-): CandidatoCoverage[] {
-  if (!coletas) return coorte
-  // Candidato sem chave no log recebe `{}`, não `undefined`: ele FOI olhado e
-  // não tem nenhuma tentativa, o que é "nunca verificado" em todas as fontes.
-  // `undefined` significa outra coisa (o log não foi lido) e não pode vazar
-  // para cá, senão os dois casos voltam a se confundir.
-  return coorte.map((c) => ({ ...c, coletas: coletas[c.slug] ?? {} }))
-}
 
 // ── Overlay das migrations pendentes ────────────────────────────────
 
@@ -403,10 +381,10 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
   const legendaProveniencia = temProveniencia
     ? (
         [
-          ["vazio_confirmado", "#1c6b2d"],
+          ["zero_provado", "#1c6b2d"],
           ["nunca_verificado", "#b98a00"],
-          ["erro", "#a12622"],
-          ["sem_fonte", "#c9c7c0"],
+          ["nao_sabemos", "#a12622"],
+          ["sem_ingest", "#c9c7c0"],
         ] as const
       )
         .map(
@@ -832,27 +810,24 @@ async function main(): Promise<void> {
     )
     caminhoSnapshot = opcoes.snapshotOut
 
-    // Procedência do zero. Opcional por construção: em banco sem `coleta_log`
-    // o relatório continua saindo, com a procedência marcada como não lida.
-    const coletas = await obterColetas(join(RAIZ, "scripts", "audit", "coverage-coleta.sql"))
-    if (coletas) {
-      writeFileSync(caminhoColetas(opcoes.snapshotOut), JSON.stringify(coletas, null, 2), "utf8")
-      console.error(
-        `[cobertura] log de coleta: tentativas registradas para ${Object.keys(coletas).length} candidato(s)`
-      )
-    } else {
-      console.error(
-        "[cobertura] log de coleta: tabela coleta_log ainda não existe neste banco; " +
-          "todo zero sai com procedência não lida"
-      )
-    }
+    // A procedência do zero vem no próprio snapshot, no campo `coleta` de cada
+    // candidato. Uma consulta em vez de duas, e o arquivo do snapshot continua
+    // sendo a entrada única e inspecionável do relatório.
+    const comLog = linhas.filter(
+      (c) => Object.keys((c as { coleta?: object }).coleta ?? {}).length > 0
+    ).length
+    console.error(
+      comLog > 0
+        ? `[cobertura] log de coleta: tentativas registradas para ${comLog} candidato(s)`
+        : "[cobertura] log de coleta: nenhuma tentativa registrada; todo zero sai sem prova"
+    )
   }
 
   const pendentes = opcoes.comPendentes
     ? lerPendingWrites(join(RAIZ, "supabase", "migrations"), opcoes.migrationsDesde)
     : []
 
-  let coorte = aplicarColetas(lerSnapshot(caminhoSnapshot, opcoes.slugs), lerColetas(caminhoSnapshot))
+  let coorte = lerSnapshot(caminhoSnapshot, opcoes.slugs)
   if (pendentes.length) {
     const r = aplicarPendentes(coorte, pendentes)
     coorte = r.coorte

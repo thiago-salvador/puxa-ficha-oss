@@ -29,6 +29,17 @@
  * na própria página do relatório.
  */
 
+import {
+  provenienciaDaColuna,
+  FONTES_POR_COLUNA,
+  ROTULO_PROVENIENCIA as ROTULOS_DO_MODULO,
+  type ColetaPorFonte,
+  type VeredictoProveniencia,
+} from "./coleta-proveniencia"
+
+export type { ColetaPorFonte } from "./coleta-proveniencia"
+export { FONTES_POR_COLUNA } from "./coleta-proveniencia"
+
 export type CellState = "ok" | "partial" | "missing" | "zero" | "na"
 
 /**
@@ -36,25 +47,23 @@ export type CellState = "ok" | "partial" | "missing" | "zero" | "na"
  *
  * Até 2026-08-04 o relatório dizia, na própria legenda, que `zero` podia ser
  * "verificado e nada encontrado" ou "nunca coletado", e que o banco não
- * distinguia os dois. `coleta_log` (2026-08-04) passa a registrar a TENTATIVA,
- * e é dela que estes valores saem — sempre da última tentativa por fonte.
+ * distinguia os dois. `coleta_log` registra a TENTATIVA, e é dela que estes
+ * valores saem — sempre da última tentativa por fonte.
  *
- *   vazio_confirmado : a fonte respondeu e veio vazia. Único caso em que "zero"
- *                      é afirmação, não silêncio.
- *   nunca_verificado : nenhuma tentativa registrada. O zero não quer dizer nada.
- *   erro             : a busca falhou (credencial, HTTP, pré-requisito). Não é zero.
- *   indeterminado    : o ingest terminou sem saber dizer se veio vazio ou falhou.
- *   sem_fonte        : nenhum ingest alimenta esta coluna, então não há o que
- *                      registrar. O dado só entra por curadoria manual.
- *   desconhecida     : o log de coleta não foi lido nesta execução.
+ * **O cálculo NÃO mora aqui.** O mapa coluna → fontes e a precedência do
+ * veredito são de `lib/coleta-proveniencia.ts`, que cobre as 23 colunas. Este
+ * arquivo cuida do DESENHO da célula, que é outra coisa. Havia duas
+ * implementações do mesmo cálculo, escritas em paralelo em 04/08 por duas
+ * threads que não sabiam uma da outra, e manter as duas repunha em escala menor
+ * exatamente a duplicação que o relatório de régua única existiu para acabar.
+ *
+ * O único valor que este arquivo acrescenta é `desconhecida`, que o módulo não
+ * tem como conhecer: é o caso de o log não ter sido lido nesta execução (banco
+ * sem a migration, ou snapshot antigo em disco). Sem ele, "não perguntamos"
+ * viraria "nunca verificado", que é afirmação sobre o banco a partir de uma
+ * falha de leitura nossa.
  */
-export type Proveniencia =
-  | "vazio_confirmado"
-  | "nunca_verificado"
-  | "erro"
-  | "indeterminado"
-  | "sem_fonte"
-  | "desconhecida"
+export type Proveniencia = VeredictoProveniencia | "desconhecida"
 
 export interface Cell {
   state: CellState
@@ -65,11 +74,7 @@ export interface Cell {
 }
 
 export const ROTULO_PROVENIENCIA: Record<Proveniencia, string> = {
-  vazio_confirmado: "verificado e vazio",
-  nunca_verificado: "nunca coletado",
-  erro: "a coleta falhou",
-  indeterminado: "coleta sem veredito",
-  sem_fonte: "sem coleta automática",
+  ...ROTULOS_DO_MODULO,
   desconhecida: "procedência não lida",
 }
 
@@ -161,71 +166,37 @@ export interface CandidatoCoverage {
   /** Itens que dependem de decisão humana para mudar o que está publicado. */
   itensRevisar: ItemRevisar[]
   /**
-   * Última tentativa de coleta por fonte, de `coleta_log_ultima`. Ausente
-   * quando o log não foi lido (ou ainda não existe no banco): aí toda
-   * procedência vira `desconhecida` e o relatório volta a dizer só "zero".
+   * Última tentativa de coleta por fonte, do campo `coleta` do snapshot (que
+   * lê `coleta_log_ultima`). Ausente quando o log não foi lido — banco sem a
+   * migration, ou snapshot em disco anterior a ela. Aí toda procedência vira
+   * `desconhecida` e o relatório volta a dizer só "zero".
+   *
+   * Objeto vazio é OUTRA coisa: o log foi lido e este candidato não tem
+   * tentativa nenhuma registrada, que é `nunca_verificado`. A distinção entre
+   * "não perguntamos" e "perguntamos e não havia registro" é a razão de ser da
+   * tabela, então ela não pode se perder logo aqui.
    */
-  coletas?: Record<string, ResultadoColeta>
+  coletas?: ColetaPorFonte
 }
 
-/** Desfechos de `coleta_log.resultado`. Fonte: a migration da tabela. */
-export type ResultadoColeta =
-  | "encontrado"
-  | "vazio_confirmado"
-  | "nao_aplicavel"
-  | "erro"
-  | "indeterminado"
-
-/**
- * Quais ingests alimentam cada coluna cujo zero era ambíguo.
- *
- * Derivado de quem escreve em cada tabela (`scripts/ingest-*.ts`), não de
- * suposição. Scripts de correção pontual (`fix-*`, `apply-*`) ficam fora: eles
- * são intervenção humana, não coleta recorrente, e não registram tentativa.
- *
- * Lista vazia é informação, não lacuna do mapa: significa que nenhum ingest
- * alimenta a coluna, e que o zero dela nunca vai poder ser confirmado por
- * coleta. Hoje é o caso de processos judiciais e das colunas de curadoria.
- */
-export const FONTES_POR_COLUNA: Record<string, readonly string[]> = {
-  cargos: ["tse-historico", "senado", "wiki-historico", "wikidata-politico"],
-  partidos: ["tse-historico", "filiacao", "wikidata-politico"],
-  sancoes: ["transparencia-sanctions"],
-  alertas: ["jarbas", "tcu", "transparencia-sanctions"],
-  contradicoes: [],
-  processos: [],
-}
-
-/** Colunas que ganham procedência. São exatamente as de zero ambíguo. */
+/** Colunas que ganham procedência. São todas as do mapa canônico. */
 export const COLUNAS_COM_PROVENIENCIA = Object.keys(FONTES_POR_COLUNA)
 
 /**
- * Procedência de um zero, a partir das tentativas das fontes daquela coluna.
+ * Procedência de um zero. Delega o veredito a `lib/coleta-proveniencia.ts`.
  *
- * A ordem é deliberada e vai do pior para o melhor: basta uma fonte ter
- * falhado para o zero deixar de ser confiável, e só quando toda a informação
- * disponível é "consultei e não havia" é que o zero vira afirmação. Um zero que
- * depende de três fontes e só tem duas verificadas continua `nunca_verificado`,
- * porque a terceira pode ser justamente a que tinha o dado.
+ * O único julgamento que sobra aqui é o `desconhecida`: log não lido não é
+ * fonte não verificada.
  */
 export function provenienciaDoZero(
   coluna: string,
-  coletas: Record<string, ResultadoColeta> | undefined
+  coletas: ColetaPorFonte | undefined
 ): Proveniencia {
-  const fontes = FONTES_POR_COLUNA[coluna]
-  if (!fontes) return "desconhecida"
-  if (fontes.length === 0) return "sem_fonte"
+  if (!FONTES_POR_COLUNA[coluna]) return "desconhecida"
+  // Coluna sem ingest não depende do log: o veredito é o mesmo com ou sem ele.
+  if (FONTES_POR_COLUNA[coluna].length === 0) return "sem_ingest"
   if (!coletas) return "desconhecida"
-
-  const tentativas = fontes.map((f) => coletas[f])
-  if (tentativas.some((t) => t === "erro")) return "erro"
-  if (tentativas.some((t) => t === "indeterminado")) return "indeterminado"
-  if (tentativas.some((t) => t === undefined)) return "nunca_verificado"
-  // Sobrou só vazio_confirmado, nao_aplicavel e encontrado. `encontrado` aqui é
-  // contradição (a célula está zerada), e vale tratá-la como não verificada:
-  // ou a coleta gravou em outro candidato, ou o dado foi removido depois.
-  if (tentativas.some((t) => t === "encontrado")) return "nunca_verificado"
-  return "vazio_confirmado"
+  return provenienciaDaColuna(coluna, coletas).veredito
 }
 
 /** Classes de item que entram na fila de revisão. */
@@ -358,11 +329,11 @@ function cell(state: CellState, text: string, tip?: string): Cell {
 function cellZero(coluna: string, c: CandidatoCoverage, semDado: string): Cell {
   const prov = provenienciaDoZero(coluna, c.coletas)
   const explicacao: Record<Proveniencia, string> = {
-    vazio_confirmado: `${semDado}: a fonte foi consultada e respondeu vazio`,
-    nunca_verificado: `${semDado}, e nenhuma coleta registrou tentativa: este zero não afirma nada`,
-    erro: `${semDado}, mas a última coleta falhou: o zero não vale como resposta`,
-    indeterminado: `${semDado}, e a coleta terminou sem saber dizer se a fonte veio vazia`,
-    sem_fonte: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
+    zero_provado: `${semDado}: todas as fontes foram consultadas e responderam vazio`,
+    coletado: `${semDado} nesta régua, mas a coleta trouxe dado: o vazio é do recorte, não da fonte`,
+    nunca_verificado: `${semDado}, e alguma fonte nunca registrou tentativa: este zero não afirma nada`,
+    nao_sabemos: `${semDado}, mas alguma coleta falhou ou não soube dizer: o zero não vale como resposta`,
+    sem_ingest: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
     desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`,
   }
   return { state: "zero", text: "0", tip: explicacao[prov], proveniencia: prov }
