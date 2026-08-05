@@ -5,9 +5,41 @@ import { resolve } from "node:path"
 export { normalizeForMatch } from "./normalize-for-match"
 export { parseCSV } from "./parse-csv-local"
 
+/**
+ * Escopo opcional de slugs para a coleta, via `PF_INGEST_SLUGS`.
+ *
+ * Todos os módulos de ingestão passam por `loadCandidatos()`, então o filtro
+ * aqui escopa a coleta inteira de uma vez: `PF_INGEST_SLUGS=a,b npx tsx
+ * scripts/ingest-all.ts wikipedia` roda só nesses dois candidatos em vez dos
+ * 271 do seed. Serve para trabalhar um lote sem tocar na ficha de quem está
+ * sendo curado em paralelo por outra sessão.
+ *
+ * Slug inexistente aborta a execução: um erro de digitação silencioso viraria
+ * uma coleta vazia que parece sucesso.
+ */
+function parseSlugScope(): Set<string> | null {
+  const raw = process.env.PF_INGEST_SLUGS?.trim()
+  if (!raw) return null
+  const slugs = raw.split(",").map((s) => s.trim()).filter(Boolean)
+  return slugs.length > 0 ? new Set(slugs) : null
+}
+
 export function loadCandidatos(): CandidatoConfig[] {
   const path = resolve(process.cwd(), "data/candidatos.json")
-  return JSON.parse(readFileSync(path, "utf-8"))
+  const todos: CandidatoConfig[] = JSON.parse(readFileSync(path, "utf-8"))
+
+  const escopo = parseSlugScope()
+  if (!escopo) return todos
+
+  const conhecidos = new Set(todos.map((c) => c.slug))
+  const desconhecidos = [...escopo].filter((s) => !conhecidos.has(s))
+  if (desconhecidos.length > 0) {
+    throw new Error(
+      `PF_INGEST_SLUGS cita slug que não existe em data/candidatos.json: ${desconhecidos.join(", ")}`,
+    )
+  }
+
+  return todos.filter((c) => escopo.has(c.slug))
 }
 
 export async function sleep(ms: number): Promise<void> {
