@@ -1546,3 +1546,26 @@ corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
 `nome_urna`; naturalidade e profissão voltaram a `NULL`.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+---
+
+## Infraestrutura de procedência da curadoria (2026-08-05)
+
+**Estado:** pronta na branch `codex/curadoria-proveniencia`, baseada no commit
+`013df47` da PR #105. Nenhum dado de candidato foi alterado e a migration nova
+não foi aplicada no Supabase.
+
+- `processos-curadoria` e `contradicoes-curadoria` agora têm procedência no
+  `coleta_log` e no relatório de cobertura.
+- `sem_achado_no_escopo` registra curadoria concluída sem prometer ausência
+  absoluta. Contradições recusam `vazio_confirmado`.
+- `npm run data:curadoria:registrar` valida slug público, frente, data, detalhe,
+  URLs, identidade e evidência publicável. O padrão é dry-run; escrever exige
+  `--apply`.
+- Processos só aceitam `vazio_confirmado` quando o detalhe declara órgãos,
+  jurisdição, período e termos da busca.
+- Os nove gates passaram. O relatório real preservou 4.462 células, incluiu as
+  duas fontes para os 194 candidatos e ficou sem rolagem horizontal a 375 px;
+  as tabelas largas rolam dentro do container.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

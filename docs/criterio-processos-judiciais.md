@@ -10,9 +10,9 @@ manual. Ele acompanha a mudança de comunicação na ficha feita na mesma data
 - 30 linhas em `public.processos`, cobrindo 21 candidatos (parte deles
   arquivados), todas de verificação manual: STF, MP-RJ, ALEMA, Justiça
   Federal/TRF3 e imprensa com processo nomeado.
-- Nenhum ingest alimenta a tabela. O relatório de cobertura marca a coluna
-  como `sem_ingest`, que é o rótulo correto: o vazio ali se resolve com
-  trabalho editorial, não com pipeline.
+- Nenhum ingest automático alimenta a tabela. A fonte
+  `processos-curadoria` registra no `coleta_log` se a revisão manual foi feita,
+  sem se apresentar como pipeline automático.
 - Consequência honesta: para a maioria das fichas, zero processos significa
   "ninguém verificou", não "verificado e limpo".
 
@@ -89,8 +89,14 @@ fingir cobertura seria pior que declarar o limite.
 - Processo de terceiro homônimo descoberto no caminho é descartado com
   registro no texto da revisão, não silenciosamente.
 - **Vazio verificado deixa rastro**: quando a busca ativa termina sem achado,
-  registrar em `coleta_log` (fonte `processos-curadoria`, resultado
-  `vazio_confirmado`, detalhe com as fontes consultadas). A fonte ainda não
-  está no mapa `FONTES` de `scripts/lib/coleta-log.ts`; adicionar junto com o
-  primeiro registro real, e aí a ficha pode evoluir para o selo "verificado
-  em DD/MM/AAAA", na mesma mecânica do selo de sanções.
+  use `npm run data:curadoria:registrar`. O resultado `vazio_confirmado` só é
+  aceito quando o detalhe traz `órgãos`, `jurisdição`, `período` e `termos` da
+  busca. As URLs consultadas e a prova de identidade também são obrigatórias.
+  O registro diz que não houve processo naquele escopo. Ele não promete uma
+  busca universal.
+- O comando exige slug válido e aceita identidade por `id-oficial` ou
+  `cargo-e-uf`, sempre com URL. Nome sozinho é recusado. Um resultado
+  `encontrado` exige uma URL marcada como `--evidencia-publicavel`, além de
+  constar em `--url`.
+- O padrão é dry-run. `--apply` grava apenas em `coleta_log`; processos e outros
+  dados de candidato continuam fora do escopo do comando.

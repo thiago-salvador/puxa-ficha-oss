@@ -7,7 +7,7 @@
  *   - destaque só conta quando cai nos 25 projetos que a ficha carrega;
  *   - ponto de atenção só conta quando `visivel = true`.
  * O que está no banco esperando decisão humana não vira verde: vira item na
- * coluna "Itens a revisar", com página própria para aprovar ou rejeitar.
+ * coluna "Aguardando aprovação", com página própria para aprovar ou rejeitar.
  *
  * A régua (cinco estados de célula, aplicabilidade, índice de 15 colunas) vive
  * em `lib/coverage-model.ts`; este arquivo só monta e desenha.
@@ -371,9 +371,10 @@ const ORDEM_RESULTADO_FONTE: Record<ResultadoFonte, number> = {
   nunca_verificado: 0,
   erro: 1,
   indeterminado: 2,
-  vazio_confirmado: 3,
-  nao_aplicavel: 4,
-  encontrado: 5
+  sem_achado_no_escopo: 3,
+  vazio_confirmado: 4,
+  nao_aplicavel: 5,
+  encontrado: 6
 }
 
 function dataHoraColeta(valor: string | undefined): string {
@@ -545,6 +546,7 @@ td[data-prov="coletado"] { box-shadow:inset 0 -3px 0 var(--prov-coletado, #0f766
 td[data-prov="nunca_verificado"] { box-shadow:inset 0 -3px 0 var(--prov-nunca, #b98a00); }
 td[data-prov="nao_sabemos"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
 td[data-prov="sem_ingest"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
+td[data-prov="curadoria_concluida_sem_achado"] { box-shadow:inset 0 -3px 0 var(--prov-curadoria, #2563eb); color:var(--fg); }
 td[data-prov="desconhecida"] { box-shadow:inset 0 -3px 0 var(--prov-desconhecida, #7d7a72); }
 td.c-na { background:var(--na-bg); color:var(--na-fg); font-size:11px; }
 td.scr { font-weight:700; border-right:1px solid var(--line); }
@@ -573,6 +575,7 @@ table.fontes td.detalhe { min-width:230px; max-width:420px; overflow:hidden; tex
 .r-nunca_verificado { background:#fdf3d7; color:#8a6100; }
 .r-erro, .r-indeterminado { background:#fbe4e4; color:#a12622; }
 .r-vazio_confirmado { background:#f1f1ee; color:#4f4f4a; }
+.r-sem_achado_no_escopo { background:#e8f0ff; color:#1d4ed8; }
 .r-nao_aplicavel { background:#f7f7f5; color:#7a7a74; }
 .r-encontrado { background:#e3f2e6; color:#1c6b2d; }
 .fonte-indisponivel { color:var(--muted); font-style:italic; }
@@ -662,6 +665,10 @@ export function renderHtml(
   const nm = (n: number) => n.toLocaleString("pt-BR")
   const pill = (n: number) => `<b class="tot">${nm(n)}</b>`
   const totalCelulas = [...totalEstado.values()].reduce((a, b) => a + b, 0)
+  const totalAguardandoAprovacao = [...matriz.values()].reduce(
+    (total, celulas) => total + Number(celulas.revisar?.text ?? 0),
+    0
+  )
 
   // A legenda de procedência só aparece quando há procedência para explicar.
   const temProveniencia = coorte.some((c) => c.coletas !== undefined)
@@ -673,6 +680,7 @@ export function renderHtml(
           ["nunca_verificado", "#b98a00"],
           ["nao_sabemos", "#a12622"],
           ["sem_ingest", "#c9c7c0"],
+          ["curadoria_concluida_sem_achado", "#2563eb"],
           ["desconhecida", "#7d7a72"]
         ] as const
       )
@@ -710,16 +718,17 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
   <span class="soma">${nm(totalCelulas)} células no total, ${nm(coorte.length)} candidatos x ${nm(COLUNAS.length)} frentes de dado</span>
 </div>
 <div class="legend">${legendaProveniencia}</div>
+<div class="legend"><span><span class="sw" style="background:#fdf3d7"></span>Aguardando aprovação ${pill(totalAguardandoAprovacao)}</span><span class="notes" style="margin:0">Fila editorial separada da cobertura concluída.</span></div>
 <p class="notes"><b>Novo eixo por fonte:</b> ${FONTES_POR_CANDIDATO.length} fontes canônicas de escopo candidato, com uma linha por fonte e candidato, mais fontes adicionais que já tenham tentativa registrada. “Nunca verificado” é reservado a fonte aplicável sem tentativa; Câmara e Jarbas, ou Senado e CEAPS, saem como “N/A” quando não há ID oficial nem mandato correspondente no histórico. Uma tentativa registrada sempre mostra seu desfecho real. Fontes territoriais não entram, porque seu alvo é a UF ou um agregado, não a pessoa.</p>
 <ul class="notes">
   <li><b>Não se aplica</b> é inferido do histórico político registrado no próprio site: cota parlamentar exige mandato de deputado federal ou senador com fim a partir de 2009 (quando começa a cota digital do CEAP); votações-chave, mandato federal com fim a partir de 2012 (janela das votações carregadas no banco); projetos de lei, mandato parlamentar em qualquer esfera; legislação do Executivo, chefia de Executivo; patrimônio e financiamento, já ter declarado ao TSE, isto é, SQ_CANDIDATO conhecido no seed do projeto ou candidatura / mandato eletivo no histórico com início até 2024. A pré-candidatura de 2026 não conta, e cargo por nomeação (ministro, secretário, presidência de partido) também não. Histórico incompleto pode gerar falso "não se aplica".</li>
-  <li><b>Zero</b> (cargos ocupados, trocas de partido, contradições, processos, alertas, sanções): o traço embaixo da célula diz por que ela está zerada, lido da última tentativa de coleta em <code>coleta_log</code>. Verde, a fonte foi consultada e respondeu vazio, e só aí o zero afirma alguma coisa. Âmbar, nenhuma coleta registrou tentativa: o zero não quer dizer nada. Vermelho, a coleta falhou ou terminou sem veredito, e o zero é ainda menos confiável que o silêncio. Cinza, nenhum ingest alimenta a coluna e o dado só entra por curadoria manual. Sem traço, este relatório não leu o log de coleta.</li>
+  <li><b>Zero</b> (cargos ocupados, trocas de partido, contradições, processos, alertas, sanções): o traço embaixo da célula diz por que ela está zerada, lido da última tentativa em <code>coleta_log</code>. Verde, todas as fontes responderam vazio. Azul, a curadoria terminou sem achado no escopo declarado, sem prometer ausência absoluta. Âmbar, falta tentativa. Vermelho, a tentativa foi inconclusiva. Cinza, não existe ingest automático. Sem traço, o log não foi lido.</li>
   <li><b>Preenchimento</b>: entram no índice exatamente 15 colunas: foto, bio, redes sociais, dados pessoais (cheio com 3 de 4 ou mais), patrimônio, evolução patrimonial, bens ano a ano, financiamento, doadores detalhados, votações-chave, projetos de lei, cota parlamentar, legislação do Executivo, notícias e posições (quiz). Só contam as aplicáveis ao candidato; parcial vale meio ponto. Ficam fora as seis colunas de zero acima e "proj. em destaque" (curadoria editorial), por isso pode haver 100% com célula amarela de destaque.</li>
   <li>Alertas contam pontos de atenção visíveis que não sejam "feito positivo". Dados pessoais = idade (da view pública <code>candidatos_publico</code>, derivada da data de nascimento), naturalidade, formação e profissão. Posições (quiz) é x/3, um por tema do quiz presidencial.</li>
 </ul>
 ${blocoPendentes}
 ${renderEvidencia(evidencia)}
-<p class="notes" style="font-size:13.5px"><b>Revisão em lote:</b> <a href="revisao/lote.html">abrir a fila inteira numa tabela só</a>, uma linha por fato, com filtro por tipo e cargo e um envio no fim.</p>
+<p class="notes" style="font-size:13.5px"><b>Aguardando aprovação:</b> <a href="revisao/lote.html">abrir a fila editorial numa tabela separada</a>, uma linha por fato, com filtro por tipo e cargo e um envio no fim.</p>
 <nav class="toc">${toc}</nav>
 ${secoes.join("")}
 </main>
