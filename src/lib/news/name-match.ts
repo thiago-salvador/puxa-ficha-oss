@@ -71,6 +71,7 @@ function containsWholeWords(haystack: string, needle: string): boolean {
   return ` ${haystack} `.includes(` ${needle} `)
 }
 
+
 export interface CandidateNameInput {
   nome_urna?: string | null
   nome_completo?: string | null
@@ -86,8 +87,24 @@ export interface CandidateNameInput {
  *  2. nome completo inteiro como sequencia de palavras;
  *  3. qualquer apelido curado inteiro;
  *  4. sigla ou apelido curto (nome de urna sem espaco, ate 5 letras) como palavra inteira;
- *  5. qualquer token distintivo (>= 4 letras, fora das particulas) do nome de urna
- *     ou do nome completo, como palavra inteira.
+ *  5. token distintivo (>= 4 letras, fora das particulas) do NOME DE URNA, como
+ *     palavra inteira;
+ *  6. dois ou mais tokens distintivos que so existem no nome completo. Um
+ *     sozinho nao basta: ver o guarda de sobrenome compartilhado abaixo.
+ *
+ * O QUE FOI TENTADO E REPROVADO NA MEDICAO (05/08/2026), para nao se repetir:
+ * um segundo guarda que olhava a caixa alta do titulo original e reprovava o
+ * token casado quando ele vinha grudado em palavra capitalizada fora do nome
+ * ("Gustavo Canuto", "Vera Castelo Branco"). Contra as 20.047 linhas de
+ * `noticias_candidato` ele derrubava 177 linhas, contra 30 do guarda que ficou,
+ * e as 147 a mais eram cobertura legitima: sufixo de veiculo do Google News
+ * (" - Jovem Pan"), cargo antes do nome ("Governador Clecio"), lista de nomes
+ * ("Tebet, Derrite e Marina") e nome composto de terceiro citado junto. Nao
+ * compensa: o criterio deste modulo e frouxo de proposito, na direcao segura.
+ *
+ * LIMITACAO CONHECIDA que sobra: homonimo que repete o nome de urna INTEIRO
+ * (uma desembargadora "Vera Lucia" contra a candidata "Vera Lucia") passa pela
+ * regra 1 e este modulo nao tem como separar os dois pelo titulo.
  */
 export function newsTitleMentionsCandidate(
   titulo: string | null | undefined,
@@ -114,11 +131,41 @@ export function newsTitleMentionsCandidate(
     return containsWholeWords(title, urnaTokens[0])
   }
 
-  const tokensDistintivos = [...urnaTokens, ...tokenize(nomeCompleto)].filter(
-    (token) => token.length >= TOKEN_DISTINTIVO_MIN && !PARTICULAS.has(token),
+  // ── Casamento por token solto, com o guarda de sobrenome compartilhado ───
+  //
+  // Ate 05/08/2026 bastava UM token distintivo de qualquer um dos dois nomes
+  // aparecer no titulo. Isso entregava a materia do cabeca de chapa ao vice:
+  // `ismar-marques` (nome completo "Ismar Aguiar Marques") recebeu duas
+  // materias sobre ELIZEU AGUIAR, porque "aguiar" e token distintivo do nome
+  // completo dele. As duas foram removidas a mao em 05/08 e voltaram sozinhas
+  // no cron das 06:32 do mesmo dia, que e o motivo de o conserto morar aqui e
+  // nao numa limpeza de banco.
+  const distintivo = (token: string): boolean =>
+    token.length >= TOKEN_DISTINTIVO_MIN && !PARTICULAS.has(token)
+
+  const completoTokens = tokenize(nomeCompleto)
+
+  const urnaDistintivos = urnaTokens.filter(distintivo)
+  // Tokens que SO existem no nome completo (o "Aguiar" de "Ismar Aguiar
+  // Marques"). Sao o vetor de colisao: o nome de urna e como a pessoa e
+  // publicamente chamada, e o sobrenome extra costuma ser o que ela divide com
+  // outra gente da mesma disputa.
+  const soNoCompleto = completoTokens.filter(
+    (token) => distintivo(token) && !urnaTokens.includes(token),
   )
 
-  return tokensDistintivos.some((token) => containsWholeWords(title, token))
+  const casadosUrna = [...new Set(urnaDistintivos)].filter((token) =>
+    containsWholeWords(title, token),
+  )
+  const casadosSoNoCompleto = [...new Set(soNoCompleto)].filter((token) =>
+    containsWholeWords(title, token),
+  )
+
+  // O GUARDA: token exclusivo do nome completo nunca vale sozinho. Precisa de
+  // um segundo pedaco do nome no mesmo titulo ("Luiz Inacio" continua casando
+  // com Lula; "Elizeu Aguiar" sozinho nao casa mais com Ismar Aguiar Marques).
+  if (casadosUrna.length > 0) return true
+  return casadosSoNoCompleto.length >= 2
 }
 
 export interface NewsRelevanceSplit<T> {

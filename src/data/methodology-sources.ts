@@ -190,17 +190,17 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
     updateFrequency: "sob demanda",
     curationType: "automático",
   },
-  {
-    id: "jarbas",
-    name: "Jarbas (Serenata de Amor)",
-    url: "https://jarbas.serenata.ai",
-    description:
-      "Gastos suspeitos da CEAP identificados pelo projeto Serenata de Amor.",
-    dataTypes: ["Suspeitas de irregularidades em CEAP"],
-    sourceKind: "fonte_publica_complementar",
-    updateFrequency: "sob demanda",
-    curationType: "automático",
-  },
+  // Jarbas (Serenata de Amor) saiu daqui em 2026-08-05. Mesma regra do achado
+  // A0.3: fonte só aparece nesta página quando há dado publicado E superfície
+  // que o renderiza. O endpoint responde HTTP 522 (Cloudflare de pé, origem
+  // fora), `pontos_atencao` tem ZERO linha vinda dele e `coleta_log` tem zero
+  // tentativa registrada. Anunciá-la era prometer ao leitor uma verificação que
+  // nunca aconteceu. O ingest continua no repositório, agora gravando `erro` em
+  // vez de silêncio, e o caminho de volta está em docs/fontes-pendentes.md.
+  //
+  // CEAPS continua na lista logo acima, de propósito: ao contrário de Jarbas,
+  // ela tem 102 linhas em `gastos_parlamentares` (65 em fichas publicáveis) que
+  // o site mostra. A rota de atualização caiu, o dado publicado não.
 
   // --- Enriquecimento (biografias, fotos, redes) ---
   {
