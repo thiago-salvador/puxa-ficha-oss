@@ -68,6 +68,14 @@ export type ConferenciaDespesas =
  *
  * Ausencia de `CodigoParlamentar` nao reprova a resposta: nem todo payload
  * traz o bloco. O que reprova e ele vir preenchido e ser de outro senador.
+ *
+ * Ano ausente NAO tem a mesma tolerancia, e a assimetria e proposital. Sem
+ * `CodigoParlamentar` a resposta continua sendo a resposta da rota daquele
+ * senador, entao o dado tem dono conhecido. Sem `NumAno` a despesa nao tem ano
+ * conhecido, e somar despesa de ano desconhecido na linha do ano pedido e o
+ * mesmo defeito do item 2 acima, so que sem nem a evidencia de qual ano foi
+ * somado. Bloco sem ano e descartado e entra em `anosDescartados` como
+ * "sem ano", para o operador ver que houve descarte.
  */
 export function agregarDespesasDoAno(
   payload: DespesasResponse | null | undefined,
@@ -99,8 +107,8 @@ export function agregarDespesasDoAno(
 
   for (const anoData of anos) {
     const anoRetornado = String(anoData.NumAno ?? "").trim()
-    if (anoRetornado && anoRetornado !== String(ano)) {
-      anosDescartados.push(anoRetornado)
+    if (anoRetornado !== String(ano)) {
+      anosDescartados.push(anoRetornado || "sem ano")
       continue
     }
 

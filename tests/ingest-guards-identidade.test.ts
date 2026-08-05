@@ -130,6 +130,27 @@ test("ceaps: ano que a API devolveu sem ser o pedido nao entra na linha do ano p
   assert.deepEqual(dados?.anosDescartados, ["2023"])
 })
 
+test("ceaps: bloco sem NumAno e descartado, nao somado na linha do ano pedido", () => {
+  for (const semAno of ["", "   "]) {
+    const conferencia = agregarDespesasDoAno(
+      payloadDespesas(456, [
+        { NumAno: "2021", valor: "1.000,00" },
+        { NumAno: semAno, valor: "9.000,00" },
+      ]),
+      456,
+      2021
+    )
+    assert.equal(conferencia.ok, true)
+    const dados = conferencia.ok ? conferencia.dados : null
+    assert.equal(
+      dados?.total,
+      1000,
+      "despesa de ano desconhecido nao pode virar despesa do ano pedido"
+    )
+    assert.deepEqual(dados?.anosDescartados, ["sem ano"], "o descarte precisa ser visivel")
+  }
+})
+
 test("ceaps: CodigoParlamentar ausente nao reprova a resposta", () => {
   const conferencia = agregarDespesasDoAno(
     payloadDespesas(undefined, [{ NumAno: "2021", valor: "2.500,50" }]),

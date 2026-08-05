@@ -104,7 +104,19 @@ independentemente do endpoint estar fora:
 2. O codigo somava na linha do ano PEDIDO qualquer ano que a API devolvesse. O
    comentario antigo tratava isso como comportamento conhecido e aceitavel ("a
    API as vezes retorna o ano solicitado, as vezes outros"), o que e evidencia
-   de filtro nao confiavel, nao licenca para confiar nele.
+   de filtro nao confiavel, nao licenca para confiar nele. Bloco sem `NumAno`
+   entra no mesmo descarte: despesa de ano desconhecido somada na linha do ano
+   pedido e o mesmo erro sem nem a evidencia de qual ano foi somado.
+
+**Falha de rede continua indistinguivel de fonte vazia, e a correcao nao e
+aqui.** `fetchJSON` repete e lanca em timeout, DNS, 5xx, 429 e JSON invalido; o
+catch de `fetchDespesasAno` trata todos como `null`, e o chamador loga "sem
+dados" igual a um 404. Separar 404 dos demais dentro deste ingest resolveria um
+ingest so, e o buraco existe em varios (`jarbas` e o proprio `sancoes` sem
+credencial tem o mesmo catch). A correcao estrutural e o `coleta_log`, que
+registra a TENTATIVA e tem `erro` e `indeterminado` como desfechos distintos de
+`vazio_confirmado`. Enquanto o CEAPS estiver 404 em todo id, nenhum dos dois
+caminhos grava dado, entao a distincao so passa a valer quando a rota voltar.
 
 Para religar: achar a rota atual de despesas CEAPS no portal de dados abertos do
 Senado (ou o CSV equivalente) e apontar `BASE_URL` para ela. As guardas ja estao
