@@ -4,7 +4,9 @@ import { join } from "node:path"
 import { describe, it } from "node:test"
 
 import {
+  FONTES_POR_CANDIDATO,
   FONTES_POR_COLUNA,
+  linhasPorFonte,
   provenienciaDaColuna,
   type ColetaPorFonte,
 } from "../scripts/audit/lib/coleta-proveniencia"
@@ -92,6 +94,39 @@ describe("o mapa coluna -> fontes fica em dia com o resto do sistema", () => {
     assert.deepEqual(invalidas, [], `fonte inexistente: ${invalidas.join(", ")}`)
   })
 
+  it("a visão por fonte inclui só fontes cujo alvo é candidato", () => {
+    const esperadas = Object.entries(FONTES)
+      .filter(([, escopo]) => escopo === "candidato")
+      .map(([fonte]) => fonte)
+      .concat("tse-cpf")
+      .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    assert.deepEqual(FONTES_POR_CANDIDATO, esperadas)
+    assert.ok(FONTES_POR_CANDIDATO.includes("tse-cpf"))
+    assert.ok(!FONTES_POR_CANDIDATO.includes("siconfi"))
+  })
+
+  it("a ausência de linha vira nunca verificado sem apagar o último desfecho", () => {
+    const linhas = linhasPorFonte({
+      tse: { resultado: "encontrado", volume: 3, executado_em: "2026-08-05T12:00:00Z" },
+      "busca-redes-manual": { resultado: "encontrado", volume: 1 },
+    })
+    assert.deepEqual(linhas.find((linha) => linha.fonte === "tse"), {
+      fonte: "tse",
+      resultado: "encontrado",
+      volume: 3,
+      executado_em: "2026-08-05T12:00:00Z",
+    })
+    assert.deepEqual(linhas.find((linha) => linha.fonte === "tse-cpf"), {
+      fonte: "tse-cpf",
+      resultado: "nunca_verificado",
+    })
+    assert.deepEqual(linhas.find((linha) => linha.fonte === "busca-redes-manual"), {
+      fonte: "busca-redes-manual",
+      resultado: "encontrado",
+      volume: 1,
+    })
+  })
+
   it("o snapshot que alimenta o relatorio traz o campo coleta", () => {
     // Sem esta linha no SQL, o relatorio le `coleta` como undefined e TODA
     // celula vira nunca_verificado, o que parece funcionar e esta errado.
@@ -101,5 +136,16 @@ describe("o mapa coluna -> fontes fica em dia com o resto do sistema", () => {
     )
     assert.match(sql, /'coleta',\s*coalesce\(/)
     assert.match(sql, /from coleta_log_ultima u/)
+  })
+
+  it("o histórico do snapshot exclui o que a ficha despublicou", () => {
+    const sql = readFileSync(
+      join(process.cwd(), "scripts/audit/coverage-snapshot.sql"),
+      "utf8",
+    )
+    assert.match(
+      sql,
+      /from historico_politico h\s+where h\.candidato_id = c\.id and h\.despublicado_em is null/,
+    )
   })
 })

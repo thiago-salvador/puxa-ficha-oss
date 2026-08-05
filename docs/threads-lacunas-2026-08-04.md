@@ -1091,3 +1091,33 @@ não era desta sessão, e cada item já estava registrado na thread de origem:
    relatório do resgate, esperando decisão.
 9. **`preta-lu`** tem candidatura de 2022 apta cujo resultado vem como `#NULO`;
    falta apurar a votação para o histórico poder ser gravado.
+
+## Thread 7 — cobertura por fonte e filtro de despublicados (05/08/2026)
+
+Base: PR #97 (`fix/cobertura-totais-legenda`, commit `1402759`), em worktree
+isolado fora de `.qwen`. A tabela original de 23 frentes foi preservada e cada
+seção ganhou um segundo eixo com uma linha por fonte e candidato: desfecho,
+volume, última tentativa e detalhe. As fontes nunca consultadas aparecem
+primeiro e são contadas no cabeçalho do candidato.
+
+A lista inclui as 18 fontes canônicas de escopo candidato, `tse-cpf` e fontes
+adicionais já observadas no log. Fontes fora do catálogo só aparecem onde há
+tentativa registrada; elas não viram lacuna inventada para os demais. Fontes
+territoriais ficam fora.
+
+O snapshot agora filtra `historico_politico.despublicado_em is null`, igual à
+ficha pública. A comparação antiga x nova rodou em uma única consulta Supabase
+com `read_only: true`, sobre o mesmo snapshot transacional: 194 candidatos antes
+e depois, **0 células alteradas em todas as 23 colunas**. O efeito visual atual é
+nulo, mas a régua deixa de depender de linhas que a ficha não publica.
+
+Verificação no relatório servido em `http://127.0.0.1:8899/`:
+
+- legenda e DOM: 4.462/4.462 células, com os cinco estados iguais;
+- `coleta_log_ultima`: Aroldo Félix 9/9, Lula 4/4 e Zé Cocá 6/6, sem divergência
+  de fonte ou desfecho;
+- viewport de 375 px: documento 360/360 px, sem rolagem horizontal da página;
+  as 58 tabelas rolam dentro do próprio container;
+- gates do job `verify`: 9/9 PASS, incluindo 1.821 testes.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

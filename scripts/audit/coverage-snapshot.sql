@@ -60,7 +60,8 @@ from (
         'tipo_evento', h.tipo_evento,
         'periodo_inicio', h.periodo_inicio,
         'periodo_fim', h.periodo_fim))
-      from historico_politico h where h.candidato_id = c.id), '[]'::jsonb),
+      from historico_politico h
+      where h.candidato_id = c.id and h.despublicado_em is null), '[]'::jsonb),
     'mudancas', (select count(*) from mudancas_partido m where m.candidato_id = c.id),
     'patrimonioAnos', coalesce((
       select jsonb_agg(p.ano_eleicao) from patrimonio p where p.candidato_id = c.id), '[]'::jsonb),
