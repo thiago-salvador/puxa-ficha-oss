@@ -139,8 +139,11 @@ export async function refreshCandidatosNews(
     }
 
     try {
+      // O clearTimeout fica no finally: cancelar aqui deixaria o `await
+      // res.text()` abaixo sem prazo nenhum, e fonte que manda cabeçalho e não
+      // termina o corpo penduraria a invocação inteira até o limite da Vercel,
+      // sem avançar o cursor nem agendar o encadeamento.
       const res = await deps.fetchImpl(url, { signal: controller.signal })
-      clearTimeout(timer)
 
       if (!res.ok) {
         summary.errors.push({ slug: cand.slug, error: `HTTP ${res.status}` })
@@ -192,7 +195,6 @@ export async function refreshCandidatosNews(
         `rss respondeu ${items.length} item(ns), ${mencionam.length} citam o candidato, ${rows.length} enviados ao upsert, ${contextoDoPleito.length} descartados por nome`,
       )
     } catch (err) {
-      clearTimeout(timer)
       const message =
         err instanceof Error && err.name === "AbortError"
           ? "timeout"
@@ -202,6 +204,8 @@ export async function refreshCandidatosNews(
       summary.errors.push({ slug: cand.slug, error: message })
       registrarColeta("erro", 0, message.slice(0, 500))
     } finally {
+      // Único ponto de cancelamento: cobre sucesso, os `continue` e o catch.
+      clearTimeout(timer)
       if (index < candidatos.length - 1) {
         await deps.sleep(deps.sleepMs)
       }

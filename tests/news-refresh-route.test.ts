@@ -498,3 +498,95 @@ describe("news refresh route", () => {
     assert.deepEqual(captured.revalidatedTags, [])
   })
 })
+
+describe("news refresh route: prazo e origem do encadeamento", () => {
+  const savedSecret = process.env.CRON_SECRET
+  const savedVercelEnv = process.env.VERCEL_ENV
+  const savedChainOrigin = process.env.PF_CRON_CHAIN_ORIGIN
+
+  beforeEach(() => {
+    process.env.CRON_SECRET = CRON_SECRET
+    delete process.env.VERCEL_ENV
+    delete process.env.PF_CRON_CHAIN_ORIGIN
+  })
+
+  afterEach(() => {
+    if (savedSecret === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = savedSecret
+    if (savedVercelEnv === undefined) delete process.env.VERCEL_ENV
+    else process.env.VERCEL_ENV = savedVercelEnv
+    if (savedChainOrigin === undefined) delete process.env.PF_CRON_CHAIN_ORIGIN
+    else process.env.PF_CRON_CHAIN_ORIGIN = savedChainOrigin
+  })
+
+  it("o fetch de encadeamento leva signal com prazo", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    // Sem signal, um POST interno travado nunca voltava: sem retry, sem
+    // chain_fetch_failed e sem nova invocação para o resto da fila.
+    assert.ok(captured.fetchCalls[0].init?.signal instanceof AbortSignal)
+  })
+
+  it("abort do prazo é registrado como timeout e ainda tenta de novo", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      captured.fetchCalls.push({ url: String(url), init })
+      throw Object.assign(new Error("aborted"), { name: "AbortError" })
+    }) as unknown as typeof fetch
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    const eventos = captured.logCalls.filter((l) => l.event.startsWith("chain_fetch_"))
+    assert.deepEqual(
+      eventos.map((e) => e.event),
+      ["chain_fetch_retry", "chain_fetch_failed"],
+    )
+    for (const e of eventos) assert.equal(e.detail.message, "timeout")
+  })
+
+  it("origem http fora de loopback não recebe o CRON_SECRET", async () => {
+    process.env.PF_CRON_CHAIN_ORIGIN = "http://puxaficha.com.br"
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    // Falha alta: nenhum fetch, e o motivo fica no log.
+    assert.equal(captured.fetchCalls.length, 0)
+    const rejeicao = captured.logCalls.find((l) => l.event === "chain_origin_rejected")
+    assert.ok(rejeicao, "esperado chain_origin_rejected")
+    assert.equal(rejeicao.detail.motivo, "sem_https")
+  })
+
+  it("origem https configurada continua encadeando normalmente", async () => {
+    process.env.PF_CRON_CHAIN_ORIGIN = "https://staging.puxaficha.com.br"
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    assert.ok(captured.fetchCalls[0].url.startsWith("https://staging.puxaficha.com.br/"))
+    assert.equal(captured.logCalls.filter((l) => l.event === "chain_origin_rejected").length, 0)
+  })
+
+  it("loopback em http segue liberado, para o desenvolvimento local", async () => {
+    const { deps, captured } = createDeps(makeCandidatos(10))
+    const handler = createNewsRefreshHandler(deps)
+
+    await handler(makeRequest({ limit: "5" }, { origin: "http://localhost:3000" }))
+    for (const cb of captured.afterCallbacks) await cb()
+
+    assert.equal(captured.fetchCalls.length, 1)
+    assert.ok(captured.fetchCalls[0].url.startsWith("http://localhost:3000/"))
+  })
+})

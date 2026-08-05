@@ -3,7 +3,7 @@ import { after, NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
 import { createServiceRoleSupabaseClient } from "@/lib/supabase"
 import { secretsMatch } from "@/lib/crypto-utils"
-import { resolveChainOrigin } from "@/lib/cron-chain-origin"
+import { resolveChainOrigin, validarOrigemEncadeamento } from "@/lib/cron-chain-origin"
 import {
   defaultNewsRefreshDeps,
   refreshCandidatosNews,
@@ -53,6 +53,10 @@ const FICHA_CACHE_TAG = "public-candidato-ficha"
 // mascarar falha estrutural: a segunda falha seguida vira chain_fetch_failed.
 const CHAIN_FETCH_ATTEMPTS = 2
 const CHAIN_FETCH_RETRY_DELAY_MS = 3000
+// O proximo lote so precisa ACEITAR a invocacao, nao terminar o trabalho dele.
+// 15s e folgado para o handshake e curto o bastante para sobrar orcamento para
+// a segunda tentativa dentro da mesma invocacao.
+const CHAIN_FETCH_TIMEOUT_MS = 15_000
 
 type AfterResponseCallback = () => Promise<void> | void
 
@@ -253,11 +257,19 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     const nextCursor = cursorAtual
     const hasMore = summary.processed > 0 && nextCursor < total
 
-    if (hasMore && shouldChain) {
-      // Origem canonica, nunca req.nextUrl.origin: em producao o cron chega pela
-      // URL *.vercel.app atras do SSO e o fetch encadeado morre num 302 silencioso
-      // (ver src/lib/cron-chain-origin.ts).
-      const nextUrl = new URL(req.nextUrl.pathname, resolveChainOrigin(req))
+    // Origem canonica, nunca req.nextUrl.origin: em producao o cron chega pela
+    // URL *.vercel.app atras do SSO e o fetch encadeado morre num 302 silencioso
+    // (ver src/lib/cron-chain-origin.ts).
+    const origemBruta = resolveChainOrigin(req)
+    const origem = validarOrigemEncadeamento(origemBruta)
+    if (hasMore && shouldChain && !origem.ok) {
+      // Falhar alto: o encadeamento para, mas o motivo fica no log em vez de o
+      // CRON_SECRET sair em claro.
+      deps.log("chain_origin_rejected", { origem: origemBruta, motivo: origem.motivo, nextCursor })
+    }
+
+    if (hasMore && shouldChain && origem.ok) {
+      const nextUrl = new URL(req.nextUrl.pathname, origem.origin)
       nextUrl.searchParams.set("cursor", String(nextCursor))
       nextUrl.searchParams.set("limit", String(limit))
       nextUrl.searchParams.set("chain", "1")
@@ -270,6 +282,11 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
         for (let attempt = 1; attempt <= CHAIN_FETCH_ATTEMPTS; attempt += 1) {
           const ultimaTentativa = attempt === CHAIN_FETCH_ATTEMPTS
           const eventoDeFalha = ultimaTentativa ? "chain_fetch_failed" : "chain_fetch_retry"
+          // Prazo por tentativa. Sem ele, um POST interno que trava nunca
+          // devolve: o loop nao tenta de novo, nao registra chain_fetch_failed
+          // e os candidatos restantes ficam sem nova invocacao.
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), CHAIN_FETCH_TIMEOUT_MS)
           try {
             const res = await deps.fetchImpl(nextUrl.toString(), {
               method: "POST",
@@ -278,12 +295,20 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
               // Um redirect aqui e sempre bug (SSO, dominio errado): seguir o 3xx
               // esconderia a falha de novo.
               redirect: "manual",
+              signal: controller.signal,
             })
             if (res.ok) return
             deps.log(eventoDeFalha, { nextCursor, status: res.status, attempt })
           } catch (error) {
-            const message = error instanceof Error ? error.message.slice(0, 300) : "unknown"
+            const message =
+              error instanceof Error && error.name === "AbortError"
+                ? "timeout"
+                : error instanceof Error
+                  ? error.message.slice(0, 300)
+                  : "unknown"
             deps.log(eventoDeFalha, { nextCursor, message, attempt })
+          } finally {
+            clearTimeout(timer)
           }
           if (!ultimaTentativa) {
             await deps.sleep(CHAIN_FETCH_RETRY_DELAY_MS)

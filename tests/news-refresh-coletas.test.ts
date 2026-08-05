@@ -180,3 +180,49 @@ describe("refreshCandidatosNews: rastro de coleta por candidato", () => {
     )
   })
 })
+
+describe("refreshCandidatosNews: o prazo tem que cobrir a leitura do corpo", () => {
+  it(
+    "fonte que manda cabeçalho e não termina o corpo vira erro de timeout, não invocação pendurada",
+    { timeout: 5000 },
+    async () => {
+      // O clearTimeout rodava logo depois do fetch, então o `await res.text()`
+      // ficava sem prazo nenhum: a invocação inteira pendurava até o limite da
+      // Vercel, o cursor não avançava e o encadeamento não era agendado.
+      // Se este teste voltar a pendurar, é essa regressão.
+      const { deps } = makeDeps({
+        fetchImpl: (async (_url: string, init?: RequestInit) => {
+          const signal = init?.signal
+          return {
+            ok: true,
+            status: 200,
+            // Corpo que nunca termina: só rejeita quando o abort chega.
+            text: () =>
+              new Promise<string>((_resolve, reject) => {
+                signal?.addEventListener("abort", () =>
+                  reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+                )
+              }),
+          } as unknown as Response
+        }) as unknown as typeof fetch,
+      })
+
+      const summary = await refreshCandidatosNews([CAND_A], deps)
+
+      assert.equal(summary.errors.length, 1)
+      assert.equal(summary.errors[0].error, "timeout")
+      assert.equal(summary.coletas[0].resultado, "erro")
+    },
+  )
+
+  it("resposta normal segue passando, com o timer cancelado no finally", async () => {
+    const { deps } = makeDeps({
+      fetchImpl: (async () => new Response(rssComItens([]), { status: 200 })) as unknown as typeof fetch,
+    })
+
+    const summary = await refreshCandidatosNews([CAND_A], deps)
+
+    assert.equal(summary.errors.length, 0)
+    assert.equal(summary.processed, 1)
+  })
+})

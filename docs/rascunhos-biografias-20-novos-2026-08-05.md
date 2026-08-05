@@ -198,10 +198,12 @@ Rascunho:
    ao Governo da Bahia: José Estevão e Ariel Capistrano disputam o controle do
    partido"]
 
-Nota editorial (já registrada no log compartilhado de 05/08): a coleta manual
-apontou que a DC chegou a retirar a pré-candidatura dele em 10/06. A ficha o
-mantém como candidato; como comunicar a disputa interna é decisão do dono do
-projeto.
+Nota editorial: a coleta manual apontou que a DC chegou a retirar a
+pré-candidatura dele em 10/06. A ficha o mantém como candidato; como comunicar
+a disputa interna é decisão do dono do projeto. [coleta manual 05/08;
+`execucao = 'manual:redes-pendencias-20260805'`, fonte `busca-redes-manual`,
+alvo `jose-estevao`, no campo `detalhe`: "Obs editorial: DC retirou a
+pre-candidatura em 10/06, disputa interna no partido"]
 
 Não foi possível afirmar (sem fonte): data e local de nascimento, idade,
 profissão, formação, histórico eleitoral, redes sociais. Sem registro no TSE
@@ -229,8 +231,11 @@ Rascunho:
 
 Não foi possível afirmar (sem fonte): em que município foram as candidaturas a
 prefeita de 2020 e 2024 (o registro casado traz só a UF); veículo ou órgão onde
-trabalha como jornalista; formação. Redes já gravadas com fonte: Instagram
-`lenildaluna`, Facebook `lunadealmeida`. Sem registro no TSE 2026 até 04/08.
+trabalha como jornalista; formação. Redes já gravadas: Instagram `lenildaluna`,
+Facebook `lunadealmeida`. [coleta manual 05/08; `execucao =
+'manual:redes-pendencias-20260805'`, fonte `busca-redes-manual`, alvo
+`lenilda-luna`; os dois perfis constam do material de campanha em
+campanhademulher.org] Sem registro no TSE 2026 até 04/08.
 
 ## 11. naf-nascimento — Naftaly Pereira do Nascimento (UP, Vice-Governador, RS)
 
@@ -286,8 +291,11 @@ Não foi possível afirmar (sem fonte): cidade de nascimento (registro só traz 
 UF); área de atuação na advocacia; formação; histórico eleitoral (nenhum
 registro casado no TSE em pleitos anteriores); a saída do agrupamento político
 anterior (títulos de abril citam "saída de Priscila do agrupamento" de
-Belivaldo, mas o título não sustenta afirmação sobre motivo). Rede já gravada
-com fonte: Instagram `priscilafelizolaoficial`.
+Belivaldo, mas o título não sustenta afirmação sobre motivo). Rede já gravada:
+Instagram `priscilafelizolaoficial`. [coleta manual 05/08; `execucao =
+'manual:redes-pendencias-20260805'`, fonte `busca-redes-manual`, alvo
+`priscila-felizola`; a bio do perfil (superintendente do Sebrae/SE) confere com
+infonet.com.br]
 
 ## 14. prof-enfermeira-kaelly — Kaelly Virginia de Oliveira Saraiva (PSOL, Vice-Governador, MS)
 
@@ -343,7 +351,9 @@ Rascunho:
    Alto Acre, 26/07/2026, "Empresário Fábio Ricardo Leite, o Rico, é
    oficializado vice-governador na chapa de Alan Rick"]
 3. Em julho de 2026 foi oficializado candidato a vice-governador do Acre na
-   chapa de Alan Rick. [O Alto Acre, 26/07/2026, título acima; YacoNews,
+   chapa de Alan Rick. [O Alto Acre, 26/07/2026, "Empresário Fábio Ricardo
+   Leite, o Rico, é oficializado vice-governador na chapa de Alan Rick";
+   YacoNews,
    26/07/2026, "Alan Rick anuncia Ricardo Rico Leite como candidato a
    vice-governador do Acre"]
 4. Declarou ao TSE bens de R$ 45 milhões. [O Alto Acre, 30/07/2026, "Alan Rick
@@ -416,8 +426,11 @@ Rascunho:
 Não foi possível afirmar (sem fonte): cidade de nascimento (registro só traz a
 UF); área de atuação na advocacia; formação; se ocupa ou ocupou cargo público
 (nenhum registro casado no TSE em pleitos anteriores; a participação no fórum
-de vice-prefeitos não sustenta afirmar que seja vice-prefeito). Rede já gravada
-com fonte: Instagram `washingtonbandeirafilho`.
+de vice-prefeitos não sustenta afirmar que seja vice-prefeito). Rede já
+gravada: Instagram `washingtonbandeirafilho`. [coleta manual 05/08; `execucao =
+'manual:redes-pendencias-20260805'`, fonte `busca-redes-manual`, alvo
+`washington-bandeira`; a bio do perfil (secretário de educação do PI, ex-juiz)
+confere com seduc.pi.gov.br]
 
 ## 20. yuri-ezequiel — Yuri Ezequiel (UP, Governador, PB)
 
