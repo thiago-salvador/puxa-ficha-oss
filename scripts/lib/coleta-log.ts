@@ -242,12 +242,16 @@ export async function registrarColetas(entradas: EntradaColeta[]): Promise<void>
  *
  * A ordem das regras é a parte que importa:
  *
- *   1. `skipped` não vira linha. O `skipped` da Câmara em modo incremental quer
- *      dizer "o dado já estava coberto, não fui buscar", e pular não é tentar.
- *      Gravar a pulada sobrescreveria, na view `coleta_log_ultima`, a última
- *      tentativa de verdade, trocando um `encontrado` por um vazio inventado.
- *   2. Desfecho declarado pelo ingest (`coleta_resultado`) ganha de qualquer
- *      inferência. É assim que um ingest sai de `indeterminado`.
+ *   1. Desfecho declarado pelo ingest (`coleta_resultado`) ganha de qualquer
+ *      inferência, INCLUSIVE de `skipped`. É assim que um ingest sai de
+ *      `indeterminado`, e é o que separa as duas puladas que existem hoje: a da
+ *      Câmara em modo incremental não declara nada, e a de sanções por CPF
+ *      ausente declara `erro`.
+ *   2. `skipped` sem desfecho declarado não vira linha. O `skipped` da Câmara
+ *      quer dizer "o dado já estava coberto, não fui buscar", e pular não é
+ *      tentar. Gravar a pulada sobrescreveria, na view `coleta_log_ultima`, a
+ *      última tentativa de verdade, trocando um `encontrado` por um vazio
+ *      inventado.
  *   3. Erro é erro, mesmo com escrita parcial: o volume gravado vai junto, mas o
  *      desfecho continua sendo erro, porque a coleta não terminou.
  *   4. Escreveu linha, então achou.
@@ -258,14 +262,17 @@ export async function registrarColetas(entradas: EntradaColeta[]): Promise<void>
  *      seria repetir o erro que o `coleta_log` veio corrigir.
  */
 export function entradaDeResultado(resultado: IngestResult): EntradaColeta | null {
-  if (resultado.skipped) return null
-
   const base = {
     fonte: resultado.source,
     alvo: resultado.candidato,
     duracaoMs: resultado.duration_ms,
   }
 
+  // Antes de `skipped`, de propósito. Um ingest que pula E declara o desfecho
+  // está dizendo POR QUE pulou, e essa é a informação mais cara que o log tem.
+  // Descartá-la fazia o candidato sem CPF valido, que nunca poderá ser
+  // consultado no Portal, aparecer como "nunca verificado", indistinguível de
+  // quem só está na fila. São 96 dos 194 publicáveis.
   if (resultado.coleta_resultado) {
     return {
       ...base,
@@ -274,6 +281,8 @@ export function entradaDeResultado(resultado: IngestResult): EntradaColeta | nul
       detalhe: resultado.coleta_detalhe,
     }
   }
+
+  if (resultado.skipped) return null
 
   if (resultado.errors.length > 0) {
     return {
