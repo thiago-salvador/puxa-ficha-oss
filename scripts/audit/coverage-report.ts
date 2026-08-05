@@ -295,6 +295,8 @@ h2 { font-size:18px; margin:44px 0 10px; }
 h2 .count { font-size:13px; color:var(--muted); font-weight:600; margin-left:6px; }
 .legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin:14px 0 6px; font-size:12.5px; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
+.legend b.tot { font-variant-numeric:tabular-nums; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:1px 7px; font-size:11.5px; font-weight:600; }
+.legend .soma { color:var(--muted); font-size:12px; }
 .sw { width:14px; height:14px; border-radius:4px; display:inline-block; }
 .sw.prov { width:16px; height:4px; border-radius:2px; }
 .notes { font-size:12.5px; color:var(--muted); max-width:980px; margin:10px 0 4px; }
@@ -322,10 +324,12 @@ td.c-partial { background:var(--partial-bg); color:var(--partial-fg); font-weigh
 td.c-missing { background:var(--miss-bg); color:var(--miss-fg); font-weight:700; }
 td.c-zero { background:var(--zero-bg); color:var(--zero-fg); }
 /* Procedência do zero: o traço diz de onde vem o silêncio. */
-td[data-prov="vazio_confirmado"] { box-shadow:inset 0 -3px 0 var(--prov-ok, #1c6b2d); color:var(--fg); }
+td[data-prov="zero_provado"] { box-shadow:inset 0 -3px 0 var(--prov-ok, #1c6b2d); color:var(--fg); }
+td[data-prov="coletado"] { box-shadow:inset 0 -3px 0 var(--prov-coletado, #0f766e); color:var(--fg); }
 td[data-prov="nunca_verificado"] { box-shadow:inset 0 -3px 0 var(--prov-nunca, #b98a00); }
-td[data-prov="erro"], td[data-prov="indeterminado"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
-td[data-prov="sem_fonte"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
+td[data-prov="nao_sabemos"] { box-shadow:inset 0 -3px 0 var(--prov-erro, #a12622); }
+td[data-prov="sem_ingest"] { box-shadow:inset 0 -3px 0 var(--prov-sem, #c9c7c0); }
+td[data-prov="desconhecida"] { box-shadow:inset 0 -3px 0 var(--prov-desconhecida, #7d7a72); }
 td.c-na { background:var(--na-bg); color:var(--na-fg); font-size:11px; }
 td.scr { font-weight:700; border-right:1px solid var(--line); }
 a.rev { color:var(--warn-link, #1f4fd8); font-weight:700; text-decoration:none; }
@@ -376,22 +380,43 @@ export function renderHtml(coorte: CandidatoCoverage[], pendentes: PendingWrite[
 
   const data = new Date().toLocaleDateString("pt-BR")
 
+  // Totais da legenda. Sem eles, quem abre o relatório vê as cores e não sabe o
+  // tamanho de cada balde, que é a primeira pergunta que todo mundo faz.
+  const totalEstado = new Map<string, number>()
+  const totalProveniencia = new Map<string, number>()
+  for (const cand of coorte) {
+    for (const cel of Object.values(calcularCelulas(cand))) {
+      totalEstado.set(cel.state, (totalEstado.get(cel.state) ?? 0) + 1)
+      if (cel.proveniencia) {
+        totalProveniencia.set(
+          cel.proveniencia,
+          (totalProveniencia.get(cel.proveniencia) ?? 0) + 1
+        )
+      }
+    }
+  }
+  const nm = (n: number) => n.toLocaleString("pt-BR")
+  const pill = (n: number) => `<b class="tot">${nm(n)}</b>`
+  const totalCelulas = [...totalEstado.values()].reduce((a, b) => a + b, 0)
+
   // A legenda de procedência só aparece quando há procedência para explicar.
   const temProveniencia = coorte.some((c) => c.coletas !== undefined)
   const legendaProveniencia = temProveniencia
     ? (
         [
+          ["coletado", "#0f766e"],
           ["zero_provado", "#1c6b2d"],
           ["nunca_verificado", "#b98a00"],
           ["nao_sabemos", "#a12622"],
           ["sem_ingest", "#c9c7c0"],
+          ["desconhecida", "#7d7a72"],
         ] as const
       )
         .map(
           ([p, cor]) =>
             `<span><span class="sw prov" style="background:${cor}"></span>Zero: ${esc(
               ROTULO_PROVENIENCIA[p]
-            )}</span>`
+            )} ${pill(totalProveniencia.get(p) ?? 0)}</span>`
         )
         .join("")
     : `<span class="notes" style="margin:0">Procedência do zero indisponível: este relatório não leu <code>coleta_log</code>, então nenhum zero distingue "verificado e vazio" de "nunca coletado".</span>`
@@ -413,11 +438,12 @@ ${presidentes.length} pré-candidatos a Presidente, ${governadores.length} a Gov
 Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
 
 <div class="legend">
-  <span><span class="sw" style="background:var(--ok-bg)"></span>Preenchido (número = volume)</span>
-  <span><span class="sw" style="background:var(--partial-bg)"></span>Parcial</span>
-  <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio</span>
-  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero</span>
-  <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica</span>
+  <span><span class="sw" style="background:var(--ok-bg)"></span>Preenchido (número = volume) ${pill(totalEstado.get("ok") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--partial-bg)"></span>Parcial ${pill(totalEstado.get("partial") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--miss-bg)"></span>Esperado e vazio ${pill(totalEstado.get("missing") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--zero-bg)"></span>Zero ${pill(totalEstado.get("zero") ?? 0)}</span>
+  <span><span class="sw" style="background:var(--na-bg)"></span>Não se aplica ${pill(totalEstado.get("na") ?? 0)}</span>
+  <span class="soma">${nm(totalCelulas)} células no total, ${nm(coorte.length)} candidatos x ${nm(COLUNAS.length)} frentes de dado</span>
 </div>
 <div class="legend">${legendaProveniencia}</div>
 <ul class="notes">
