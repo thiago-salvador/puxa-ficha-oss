@@ -21,9 +21,13 @@
  * Uso quando o ingest volta ANTES de montar resultado (o caso da credencial
  * ausente, que é a origem dos 194 de 194 vazios em sanções):
  *
+ * O roster do exemplo é o mesmo do caminho feliz daquele ingest
+ * (`loadCandidatosPublicos()` desde 2026-08-04): registrar tentativa de quem o
+ * pipeline nunca consultaria inventa lacuna que ninguém tem intenção de fechar.
+ *
  *   if (!apiKey) {
  *     await registrarColetas(
- *       loadCandidatos().map((c) => ({
+ *       (await loadCandidatosPublicos()).map((c) => ({
  *         fonte: "transparencia-sanctions",
  *         alvo: c.slug,
  *         resultado: "erro" as const,

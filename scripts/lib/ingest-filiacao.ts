@@ -3,8 +3,8 @@ import { parse } from "csv-parse"
 import { resolve } from "path"
 import { execSync } from "child_process"
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, normalizeForMatch } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { normalizeForMatch } from "./helpers"
 import { log, warn, error } from "./logger"
 import { resolveCanonicalParty } from "./party-canonical"
 import type { IngestResult, CandidatoConfig } from "./types"
@@ -249,7 +249,7 @@ function pickCurrentParty(filiacoes: FiliacaoEntry[]): string | null {
 }
 
 export async function ingestFiliacao(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   mkdirSync(DATA_DIR, { recursive: true })

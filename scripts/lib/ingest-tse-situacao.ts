@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, createWriteStream, readdirSync, rmSync, writeFil
 import { resolve } from "path"
 import { execSync } from "child_process"
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, parseCSV, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { parseCSV, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
 import type { IngestResult, CandidatoConfig } from "./types"
 import {
@@ -448,7 +448,7 @@ async function processAno(
 export async function ingestTSESituacao(
   options: IngestTSESituacaoOptions = {}
 ): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   mkdirSync(DATA_DIR, { recursive: true })
   const matched = new Map<string, MatchedData>()
   const ambiguousByYear = new Map<number, string[]>()

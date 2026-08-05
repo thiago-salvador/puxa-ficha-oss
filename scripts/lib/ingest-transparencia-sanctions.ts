@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, fetchJSON, sleep, normalizeForMatch } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { fetchJSON, sleep, normalizeForMatch } from "./helpers"
 import { log, warn } from "./logger"
 import { registrarColetas } from "./coleta-log"
 import type { IngestResult } from "./types"
@@ -575,8 +576,12 @@ export async function ingestTransparenciaSanctions(): Promise<IngestResult[]> {
     // a diferenca legivel: a ficha continua vazia, mas o relatorio passa a
     // dizer POR QUE esta vazia, e da para ver que falta credencial em vez de
     // concluir que 194 politicos tem ficha limpa.
+    // Mesmo roster do caminho feliz (`loadCandidatosPublicos`), e nao o seed
+    // inteiro: o log tem que registrar tentativa exatamente de quem o pipeline
+    // teria consultado. Gravar `erro` para quem nunca seria coletado inventaria
+    // 77 lacunas que ninguem tem intencao de fechar.
     await registrarColetas(
-      loadCandidatos().map((cand) => ({
+      (await loadCandidatosPublicos()).map((cand) => ({
         fonte: "transparencia-sanctions",
         alvo: cand.slug,
         resultado: "erro" as const,
@@ -588,7 +593,7 @@ export async function ingestTransparenciaSanctions(): Promise<IngestResult[]> {
 
   const headers = { "chave-api-dados": apiKey, Accept: "application/json" }
   const deps = criarDepsHttp(headers)
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

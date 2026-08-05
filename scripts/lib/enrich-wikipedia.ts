@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, fetchJSON, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { fetchJSON, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
 import type { IngestResult } from "./types"
 
@@ -501,7 +502,7 @@ async function applyFallback(slug: string, candidatoId: string, existing: Record
 }
 
 export async function enrichWikipedia(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos().filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
+  const candidatos = (await loadCandidatosPublicos()).filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

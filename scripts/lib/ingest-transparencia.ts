@@ -4,7 +4,8 @@
  */
 
 import { supabase } from "./supabase"
-import { loadCandidatos, fetchJSON, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { fetchJSON, sleep } from "./helpers"
 import { log, warn } from "./logger"
 import { registrarColetas } from "./coleta-log"
 import type { IngestResult } from "./types"
@@ -17,8 +18,10 @@ export async function ingestTransparencia(): Promise<IngestResult[]> {
     warn("transparencia", "TRANSPARENCIA_API_KEY nao definida, pulando")
     // Mesmo caminho mudo do ingest-transparencia-sanctions: voltar sem escrever
     // nada não deixava rastro de que a fonte foi tentada.
+    // Mesmo roster do caminho feliz: o log registra tentativa de quem o
+    // pipeline teria consultado, e não do seed inteiro.
     await registrarColetas(
-      loadCandidatos().map((cand) => ({
+      (await loadCandidatosPublicos()).map((cand) => ({
         fonte: "transparencia",
         alvo: cand.slug,
         resultado: "erro" as const,
@@ -31,7 +34,7 @@ export async function ingestTransparencia(): Promise<IngestResult[]> {
   warn("transparencia", "STUB: este modulo consulta a API mas NAO persiste dados. Contribuicao com insert/upsert bem-vinda.")
 
   const headers = { "chave-api-dados": apiKey, Accept: "application/json" }
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

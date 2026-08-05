@@ -1,6 +1,6 @@
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, fetchJSON, normalizeForMatch, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { fetchJSON, normalizeForMatch, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
 import type { IngestResult } from "./types"
 
@@ -299,7 +299,7 @@ async function ingestAutorias(codigo: number, candidatoId: string, slug: string)
 
 export async function ingestSenado(targetSlugs?: string[]): Promise<IngestResult[]> {
   const selectedSlugs = targetSlugs != null ? new Set(targetSlugs) : null
-  const candidatos = loadCandidatos().filter((cand) =>
+  const candidatos = (await loadCandidatosPublicos()).filter((cand) =>
     selectedSlugs ? selectedSlugs.has(cand.slug) : true
   )
   const results: IngestResult[] = []
