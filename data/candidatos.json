@@ -3920,7 +3920,8 @@
       "camara": null,
       "senado": null,
       "tse_sq_candidato": {
-        "2022": "70001611377"
+        "2022": "70001611377",
+        "2026": "70002535930"
       }
     }
   },
@@ -3936,7 +3937,8 @@
       "tse_sq_candidato": {
         "2022": "90001649536"
       }
-    }
+    },
+    "wikipedia_title": "Luis_Cesar_Bueno"
   },
   {
     "slug": "saulo-arcangeli",
@@ -3947,7 +3949,9 @@
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {}
+      "tse_sq_candidato": {
+        "2026": "100002534190"
+      }
     }
   },
   {
@@ -3959,19 +3963,23 @@
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {}
+      "tse_sq_candidato": {
+        "2026": "10002533539"
+      }
     }
   },
   {
     "slug": "gilberto-vasconcelos",
-    "nome_completo": "Gilberto Vasconcelos",
+    "nome_completo": "Gilberto Vasconcelos da Silva",
     "nome_urna": "Gilberto Vasconcelos",
     "cargo_disputado": "Governador",
     "estado": "AM",
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {}
+      "tse_sq_candidato": {
+        "2026": "40002535267"
+      }
     }
   },
   {
@@ -4062,7 +4070,8 @@
       "tse_sq_candidato": {
         "2026": "40002532271"
       }
-    }
+    },
+    "wikipedia_title": "Alessandra_Campelo"
   },
   {
     "slug": "luciana-gurgel",
@@ -4076,7 +4085,8 @@
       "tse_sq_candidato": {
         "2026": "30002530015"
       }
-    }
+    },
+    "wikipedia_title": "Luciana_Gurgel"
   },
   {
     "slug": "prof-meire-reis",
@@ -4104,7 +4114,8 @@
       "tse_sq_candidato": {
         "2026": "50002533189"
       }
-    }
+    },
+    "wikipedia_title": "Zé_Cocá"
   },
   {
     "slug": "washington-bandeira",
@@ -4132,7 +4143,8 @@
       "tse_sq_candidato": {
         "2026": "180002533957"
       }
-    }
+    },
+    "wikipedia_title": "Ismar_Marques"
   },
   {
     "slug": "priscila-felizola",
@@ -4216,7 +4228,8 @@
       "tse_sq_candidato": {
         "2026": "200002534002"
       }
-    }
+    },
+    "wikipedia_title": "Larissa_Rosado"
   },
   {
     "slug": "baba",
@@ -4230,6 +4243,7 @@
       "tse_sq_candidato": {
         "2026": "200002534441"
       }
-    }
+    },
+    "wikipedia_title": "Babá_Pereira"
   }
 ]
