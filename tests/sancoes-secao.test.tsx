@@ -116,6 +116,42 @@ describe("SancoesSection: as duas caras do zero renderizadas", () => {
     assert.doesNotMatch(html, /Nada encontrado/)
   })
 
+  it("só data_fim: o card mostra o fim, em vez de engolir a única data que existe", () => {
+    // O contrato de SancaoAdministrativa deixa data_inicio e data_fim
+    // independentes. Sanção importada só com o término não pode aparecer sem
+    // data nenhuma.
+    const html = renderToStaticMarkup(
+      <SancoesSection
+        sancoes={[buildSancao({ data_inicio: null, data_fim: "2025-06-30" })]}
+        verificacao={null}
+      />
+    )
+    assert.match(html, /Até 30\/06\/2025/)
+    assert.doesNotMatch(html, /Desde/)
+  })
+
+  it("as duas datas juntas continuam no formato Desde ... até ...", () => {
+    const html = renderToStaticMarkup(
+      <SancoesSection
+        sancoes={[buildSancao({ data_inicio: "2024-02-01", data_fim: "2025-06-30" })]}
+        verificacao={null}
+      />
+    )
+    assert.match(html, /Desde 01\/02\/2024/)
+    assert.match(html, /até 30\/06\/2025/)
+  })
+
+  it("sanção sem data nenhuma não inventa rótulo de período", () => {
+    const html = renderToStaticMarkup(
+      <SancoesSection
+        sancoes={[buildSancao({ data_inicio: null, data_fim: null })]}
+        verificacao={null}
+      />
+    )
+    assert.doesNotMatch(html, /Desde/)
+    assert.doesNotMatch(html, /Até/)
+  })
+
   it("rótulo de fonte sempre presente, nas três caras", () => {
     for (const props of [
       { sancoes: [], verificacao: VERIFICACAO_VAZIA },

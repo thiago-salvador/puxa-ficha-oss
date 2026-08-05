@@ -49,12 +49,21 @@ export function SancoesSection({
                 {s.vinculo === "empresa_associada" && (
                   <MetaBadge tone="muted">Via empresa associada</MetaBadge>
                 )}
-                {s.data_inicio && (
+                {/*
+                  As duas datas são independentes no contrato. Sanção que só
+                  tem término mostra "Até ...", em vez de perder a única data
+                  que existe.
+                */}
+                {s.data_inicio ? (
                   <span className="text-[10px] font-semibold text-muted-foreground">
                     Desde {formatDate(s.data_inicio)}
                     {s.data_fim ? ` até ${formatDate(s.data_fim)}` : ""}
                   </span>
-                )}
+                ) : s.data_fim ? (
+                  <span className="text-[10px] font-semibold text-muted-foreground">
+                    Até {formatDate(s.data_fim)}
+                  </span>
+                ) : null}
               </div>
               {s.descricao && (
                 <p className="mt-2 text-[length:var(--text-body)] font-medium leading-snug text-foreground">
