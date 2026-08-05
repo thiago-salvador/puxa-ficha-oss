@@ -22,6 +22,50 @@ interface JarbasResponse {
   results: JarbasReimbursement[]
 }
 
+/**
+ * Conferencia de identidade do retorno (irmao do incidente de 2026-08-04).
+ *
+ * A URL filtra por `?applicant_id=`, e a interface acima ate declara o campo
+ * `applicant_id` na resposta, mas nada comparava os dois. Era o mesmo desenho
+ * que produziu 729 sancoes falsas no ingest do Portal da Transparencia, onde a
+ * API ignorava o parametro de filtro em silencio e devolvia a lista nacional.
+ *
+ * Aqui o estrago potencial e pior do que uma linha errada numa tabela: o que
+ * este ingest grava e um `pontos_atencao` com gravidade alta ou media, texto
+ * de acusacao nomeada ("a IA Rosie identificou reembolsos suspeitos"). Dado
+ * errado aqui e acusacao contra pessoa real.
+ *
+ * Regra: um unico registro de outro deputado condena a resposta inteira. Se o
+ * filtro falhou, o `count` tambem nao vale nada, entao nao da para aproveitar
+ * "a parte boa" da resposta.
+ *
+ * Em 2026-08-05 a API responde 404 em todas as rotas, inclusive na raiz, entao
+ * este caminho esta dormente. A guarda existe para o dia em que ela voltar.
+ */
+export type ConferenciaReembolsos =
+  | { ok: true; reembolsos: JarbasReimbursement[] }
+  | { ok: false; motivo: string }
+
+export function conferirReembolsos(
+  registros: JarbasReimbursement[] | undefined | null,
+  applicantIdEsperado: number
+): ConferenciaReembolsos {
+  if (!Array.isArray(registros)) {
+    return { ok: false, motivo: "resposta sem lista de reembolsos" }
+  }
+
+  const intrusos = registros.filter((r) => r?.applicant_id !== applicantIdEsperado)
+  if (intrusos.length > 0) {
+    const amostra = [...new Set(intrusos.map((r) => String(r?.applicant_id ?? "ausente")))].slice(0, 3)
+    return {
+      ok: false,
+      motivo: `${intrusos.length} de ${registros.length} registro(s) sao de outro applicant_id (${amostra.join(", ")}), filtro da API nao foi respeitado`,
+    }
+  }
+
+  return { ok: true, reembolsos: registros }
+}
+
 function formatValor(values: number[]): number {
   const total = values.reduce((acc, v) => acc + v, 0)
   return Math.round(total * 100) / 100
@@ -104,8 +148,18 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
         continue
       }
 
+      const conferencia = conferirReembolsos(jarbasData.results, cand.ids.camara)
+      if (!conferencia.ok) {
+        result.errors.push(`Retorno recusado: ${conferencia.motivo}`)
+        warn("jarbas", `  ${cand.slug}: retorno recusado, nada gravado — ${conferencia.motivo}`)
+        result.duration_ms = Date.now() - start
+        results.push(result)
+        await sleep(500)
+        continue
+      }
+
+      const reembolsos = conferencia.reembolsos
       const totalSuspeitos = jarbasData.count ?? 0
-      const reembolsos = jarbasData.results ?? []
 
       if (totalSuspeitos === 0 || reembolsos.length === 0) {
         log("jarbas", `  ${cand.slug}: nenhum gasto suspeito encontrado`)
