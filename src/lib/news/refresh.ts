@@ -34,6 +34,34 @@ export interface NoticiaRow {
   data_publicacao: string
 }
 
+/**
+ * Desfecho da tentativa de um candidato, no vocabulário de `public.coleta_log`
+ * (migration 20260804160000). O refresh só produz três dos cinco valores:
+ * `nao_aplicavel` não existe aqui (todo publicável é elegível a notícia) e
+ * `indeterminado` tampouco, porque este módulo separa falha de vazio desde a
+ * origem: HTTP quebrado/timeout/upsert com erro é `erro`, e RSS respondido sem
+ * nenhum título citando o candidato é `vazio_confirmado`.
+ */
+export type ColetaResultadoNews = "encontrado" | "vazio_confirmado" | "erro"
+
+/**
+ * Uma tentativa de coleta por candidato, pronta para virar linha de
+ * `public.coleta_log` (fonte `google-news`, escopo `candidato`). Montada aqui,
+ * gravada pela rota: o módulo continua puro (sem Supabase, sem rede própria).
+ */
+export interface ColetaTentativaNews {
+  /** Slug do candidato (o `alvo` da coleta_log). */
+  alvo: string
+  candidato_id: string
+  resultado: ColetaResultadoNews
+  /** Linhas enviadas ao upsert. Obrigatoriamente > 0 em `encontrado`. */
+  volume: number
+  detalhe: string
+  /** URL da busca RSS consultada. */
+  url: string
+  duracao_ms: number
+}
+
 export interface NewsRefreshSummary {
   processed: number
   withNews: number
@@ -44,6 +72,13 @@ export interface NewsRefreshSummary {
    */
   discardedByName: number
   errors: Array<{ slug: string; error: string }>
+  /**
+   * Uma tentativa por candidato processado, sempre, inclusive nos que não
+   * renderam linha nenhuma. É o que permite provar "consultamos e não havia"
+   * em vez de deixar o zero ambíguo (incidente de 2026-08-04: o cron cobria 5
+   * de 194 candidatos por dia e nenhum rastro denunciava).
+   */
+  coletas: ColetaTentativaNews[]
 }
 
 export interface NewsRefreshDeps {
@@ -77,6 +112,7 @@ export async function refreshCandidatosNews(
     rowsUpserted: 0,
     discardedByName: 0,
     errors: [],
+    coletas: [],
   }
 
   for (let index = 0; index < candidatos.length; index += 1) {
@@ -86,6 +122,21 @@ export async function refreshCandidatosNews(
     const url = buildGoogleNewsSearchUrl(cand.nome_urna, cand.cargo_disputado)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs)
+    const inicio = Date.now()
+    const coletaBase = { alvo: cand.slug, candidato_id: cand.id, url }
+    const registrarColeta = (
+      resultado: ColetaResultadoNews,
+      volume: number,
+      detalhe: string,
+    ) => {
+      summary.coletas.push({
+        ...coletaBase,
+        resultado,
+        volume,
+        detalhe,
+        duracao_ms: Date.now() - inicio,
+      })
+    }
 
     try {
       const res = await deps.fetchImpl(url, { signal: controller.signal })
@@ -93,6 +144,7 @@ export async function refreshCandidatosNews(
 
       if (!res.ok) {
         summary.errors.push({ slug: cand.slug, error: `HTTP ${res.status}` })
+        registrarColeta("erro", 0, `HTTP ${res.status}`)
         continue
       }
 
@@ -107,6 +159,13 @@ export async function refreshCandidatosNews(
       const newsItems = mencionam.slice(0, deps.newsLimit)
 
       if (newsItems.length === 0) {
+        // A fonte respondeu; nenhum titulo cita o candidato. Isso e um zero
+        // provado, nao um "nao sabemos": o RSS veio, foi lido e descartado.
+        registrarColeta(
+          "vazio_confirmado",
+          0,
+          `rss respondeu ${items.length} item(ns), 0 citam o candidato no titulo`,
+        )
         continue
       }
 
@@ -121,11 +180,17 @@ export async function refreshCandidatosNews(
       const { error } = await deps.upsertNoticias(rows)
       if (error) {
         summary.errors.push({ slug: cand.slug, error })
+        registrarColeta("erro", 0, `upsert falhou: ${error}`.slice(0, 500))
         continue
       }
 
       summary.withNews += 1
       summary.rowsUpserted += rows.length
+      registrarColeta(
+        "encontrado",
+        rows.length,
+        `rss respondeu ${items.length} item(ns), ${mencionam.length} citam o candidato, ${rows.length} enviados ao upsert, ${contextoDoPleito.length} descartados por nome`,
+      )
     } catch (err) {
       clearTimeout(timer)
       const message =
@@ -135,6 +200,7 @@ export async function refreshCandidatosNews(
             ? err.message
             : String(err)
       summary.errors.push({ slug: cand.slug, error: message })
+      registrarColeta("erro", 0, message.slice(0, 500))
     } finally {
       if (index < candidatos.length - 1) {
         await deps.sleep(deps.sleepMs)
