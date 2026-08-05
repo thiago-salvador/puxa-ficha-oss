@@ -103,7 +103,7 @@ const INGEST_TASKS: IngestTask[] = [
   { source: "tcu", heading: "--- TCU (Inabilitados + CADIRREG) ---", failureLabel: "TCU", run: ingestTCU },
   {
     source: "sancoes",
-    heading: "--- Portal da Transparencia (CEIS/CNEP/CEAF/CEPIM) ---",
+    heading: "--- Portal da Transparencia (CEIS/CNEP/CEAF) ---",
     failureLabel: "Sancoes",
     run: ingestTransparenciaSanctions,
   },
