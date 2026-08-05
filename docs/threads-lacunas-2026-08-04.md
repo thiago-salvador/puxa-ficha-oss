@@ -1450,3 +1450,24 @@ nenhuma migration. Preparou a pauta de decisão do Thiago.
   (61 linhas: título, classe, gravidade, fonte clicável, efeito de
   aprovar/rejeitar, recomendação; + pauta de PRs #93/#94/#95 e gaps). Nada foi
   servido/aberto: entrega final é da sessão principal.
+
+---
+
+## Fechamento das lacunas publicáveis e decisões editoriais (2026-08-05)
+
+- **Redes:** os pacotes oficiais `rede_social_candidato` de 2018, 2020, 2022,
+  2024 e 2026 foram rechecados para os 22 alvos. Só o Facebook pessoal de
+  `henrique-areas` teve identidade confirmada por bio; as demais pistas sem bio
+  confirmatória ficaram vazias e registradas em `coleta_log`.
+- **CPF e naturalidade:** `cadu-xavier` recebeu o CPF e a UF de nascimento do
+  `consulta_cand_2020`, por SQ exato `200000998862`. Nenhuma identidade foi
+  inferida. Readback atual dos 194 publicáveis: 21 sem rede, 29 sem CPF, 7 sem
+  naturalidade e 3 sem foto.
+- **Decisões do Thiago:** foto atual de `marcus-sodre` em 600x800; cargo de
+  `marcio-franca` como `Vice-Governador`; Aécio Neves, Eduardo Leite e Ricardo
+  Nunes preservados no acervo com `publicavel=false`; relatório com coluna de
+  origem técnica da foto, fora do índice e sem afirmar autoria ou licença.
+- **Prova:** migration idempotente aplicada com rollback prévio e readback de
+  35 logs; os 9 gates do job `verify` passaram em Node 24.15.0.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

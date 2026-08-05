@@ -22,6 +22,17 @@ from (
     'cargo_disputado', c.cargo_disputado,
     'estado', c.estado,
     'foto', c.foto_url is not null,
+    'foto_origem', case
+      when c.foto_url is null then null
+      when c.foto_url like '/%' then 'local'
+      when lower(c.foto_url) like '%tse.jus.br%' then 'tse'
+      when lower(c.foto_url) like '%wikimedia.org%'
+        or lower(c.foto_url) like '%wikipedia.org%' then 'wikimedia'
+      when lower(c.foto_url) like '%camara.leg.br%'
+        or lower(c.foto_url) like '%senado.leg.br%'
+        or lower(c.foto_url) like '%.gov.br/%' then 'oficial'
+      else 'terceiro'
+    end,
     'bio', c.biografia is not null,
     'redes', coalesce(c.redes_sociais, '{}'::jsonb) <> '{}'::jsonb
              and coalesce(c.redes_sociais, '[]'::jsonb) <> '[]'::jsonb,

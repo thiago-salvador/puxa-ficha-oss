@@ -112,6 +112,8 @@ export interface HistoricoEvento {
   periodo_fim: number | null
 }
 
+export type FotoOrigem = "local" | "tse" | "wikimedia" | "oficial" | "terceiro"
+
 export interface CandidatoCoverage {
   slug: string
   nome_urna: string
@@ -120,6 +122,8 @@ export interface CandidatoCoverage {
   estado: string | null
 
   foto: boolean
+  /** Origem tecnica da URL; nao afirma autoria, licenca ou titularidade. */
+  foto_origem?: FotoOrigem | null
   bio: boolean
   redes: boolean
 
@@ -275,6 +279,7 @@ export interface ColunaDef {
 /** Ordem das colunas na tabela. */
 export const COLUNAS: ColunaDef[] = [
   { key: "foto", label: "Foto" },
+  { key: "foto_origem", label: "Origem da foto" },
   { key: "bio", label: "Bio" },
   { key: "redes", label: "Redes sociais" },
   { key: "dados", label: "Dados pessoais" },
@@ -348,6 +353,29 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   const out: Record<string, Cell> = {}
 
   out.foto = c.foto ? cell("ok", "✓") : cell("missing", "—")
+  if (!c.foto) {
+    out.foto_origem = cell("na", "—", "sem foto")
+  } else if (!c.foto_origem) {
+    out.foto_origem = cell(
+      "partial",
+      "Não lida",
+      "snapshot antigo ou sem origem técnica; não afirma autoria ou licença"
+    )
+  } else {
+    const rotulos: Record<FotoOrigem, string> = {
+      local: "Local",
+      tse: "TSE",
+      wikimedia: "Wikimedia",
+      oficial: "Órgão oficial",
+      terceiro: "Terceiro",
+    }
+    const origemMaisForte = ["tse", "wikimedia", "oficial"].includes(c.foto_origem)
+    out.foto_origem = cell(
+      origemMaisForte ? "ok" : "partial",
+      rotulos[c.foto_origem],
+      "classificação técnica pela URL; não afirma autoria, licença ou titularidade"
+    )
+  }
   out.bio = c.bio ? cell("ok", "✓") : cell("missing", "—")
   out.redes = c.redes ? cell("ok", "✓") : cell("missing", "—")
 
