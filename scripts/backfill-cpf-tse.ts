@@ -52,8 +52,11 @@
  * Auditoria completa (com os CPFs e as linhas de evidência) em
  * `data/tse-cpf/backfill-cpf-audit.json`, fora do git.
  */
-import { existsSync, mkdirSync, createWriteStream, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, createWriteStream, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs"
 import { resolve } from "node:path"
+import { pathToFileURL } from "node:url"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
 import { execSync } from "node:child_process"
 import { supabase } from "./lib/supabase"
 import { loadCandidatos, parseCSV, normalizeForMatch } from "./lib/helpers"
@@ -195,35 +198,47 @@ export function montarMapaNomeNascimento(alvos: AlvoBackfill[]): {
   return { mapa, colididos: colididos.sort() }
 }
 
-async function baixarArquivo(url: string, destino: string): Promise<boolean> {
+/** Um `consulta_cand` estagnado não pode segurar a varredura inteira. */
+export const DOWNLOAD_TIMEOUT_MS = 300_000
+
+/**
+ * Baixa um arquivo do TSE com backpressure, prazo e limpeza do parcial.
+ *
+ * Três armadilhas que o download na mão tinha e o `pipeline` resolve de uma vez:
+ * o descritor ficava aberto (e o arquivo de zero byte virava cache hit
+ * envenenado) quando o corpo não vinha; `stream.write` sem checar o retorno
+ * acumulava os arquivos grandes em memória; e sem `signal` uma conexão parada
+ * travava a varredura toda.
+ *
+ * `fetchImpl` é injetável só para o teste; produção usa o `fetch` global.
+ */
+export async function baixarArquivo(
+  url: string,
+  destino: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
   if (existsSync(destino)) {
     log("tse-cpf", `  Cache hit: ${destino}`)
     return true
   }
   log("tse-cpf", `  Baixando: ${url}`)
   try {
-    const res = await fetch(url)
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) })
     if (!res.ok) {
       warn("tse-cpf", `  HTTP ${res.status} para ${url}`)
       return false
     }
-    const stream = createWriteStream(destino)
-    const reader = res.body?.getReader()
-    if (!reader) return false
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      stream.write(value)
+    // O arquivo só nasce depois que existe corpo para escrever nele.
+    if (!res.body) {
+      warn("tse-cpf", `  Resposta sem corpo para ${url}`)
+      return false
     }
-    stream.end()
-    await new Promise<void>((res2, rej) => {
-      stream.on("finish", res2)
-      stream.on("error", rej)
-    })
+    await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(destino))
     return true
   } catch (err) {
     warn("tse-cpf", `  Falha no download: ${err}`)
     try {
+      // Parcial que sobrevive vira cache hit e quebra a extração na próxima run.
       rmSync(destino, { force: true })
     } catch {
       /* melhor deixar o arquivo parcial do que falhar duas vezes */
@@ -280,6 +295,9 @@ async function varrerAno(
   if (csvs.length === 0) {
     warn("tse-cpf", `Nenhum CSV em ${ano}`)
     rmSync(extractDir, { recursive: true, force: true })
+    // Mesmo motivo do zip corrompido: extrair sem trazer consulta_cand é um
+    // cache inútil que repete a falha em toda re-execução.
+    rmSync(zipPath, { force: true })
     return { ano, ok: false, linhas: 0 }
   }
 
@@ -323,17 +341,101 @@ async function varrerAno(
   return { ano, ok: true, linhas }
 }
 
+/** Seed mínimo que a rota 1 precisa ler. */
+export interface SeedComSq {
+  slug: string
+  ids: { tse_sq_candidato?: Record<string, string> | null }
+}
+
+/**
+ * Rota 1: `${ano}|${SQ}` -> slug, com colisão interna derrubada.
+ *
+ * A rota 2 já derrubava os dois lados quando dois alvos dividiam a chave
+ * nome+nascimento; a rota 1 não tinha guard equivalente e o `set` sobrescrevia
+ * em silêncio. Isso é pior aqui do que lá: a rota 1 é a única que escreve em
+ * `candidatos.cpf`, então o primeiro candidato perderia sua única rota
+ * persistente e o segundo receberia CPF resolvido por um SQ que o seed atribui
+ * a outra pessoa. Dois alvos com o mesmo SQ no mesmo ano é erro de curadoria do
+ * seed, exatamente a condição que o cabeçalho manda mandar para revisão humana.
+ */
+export function montarMapaSq(seed: SeedComSq[]): {
+  mapa: Map<string, string>
+  colididos: string[]
+} {
+  const donos = new Map<string, string[]>()
+  for (const cand of seed) {
+    const porAno = cand.ids.tse_sq_candidato ?? {}
+    for (const [anoStr, sq] of Object.entries(porAno)) {
+      const ano = Number(anoStr)
+      if (!sq || !ANOS_VARRIDOS.includes(ano)) continue
+      const chave = `${ano}|${String(sq).trim()}`
+      donos.set(chave, [...(donos.get(chave) ?? []), cand.slug])
+    }
+  }
+  const mapa = new Map<string, string>()
+  const colididos = new Set<string>()
+  for (const [chave, slugs] of donos) {
+    const unicos = [...new Set(slugs)]
+    if (unicos.length === 1) {
+      mapa.set(chave, unicos[0])
+    } else {
+      for (const slug of unicos) colididos.add(slug)
+    }
+  }
+  return { mapa, colididos: [...colididos].sort() }
+}
+
+/** Teto do PostgREST nesta instância; acima disso a resposta vem truncada em silêncio. */
+const PAGE_SIZE = 1000
+
+/**
+ * Percorre uma consulta paginada até o fim.
+ *
+ * Sem isso, o `select` volta no máximo 1000 linhas e o script trata a lista
+ * truncada como universo completo: alvo que ficou de fora nunca recebe CPF e o
+ * resumo mente sobre a cobertura. O mesmo truncamento já subcontou dados no
+ * resgate de duplicados.
+ */
+export async function carregarPaginado<T>(
+  // PromiseLike, e não Promise: o builder do PostgREST é thenable, mas não
+  // implementa catch/finally.
+  consultar: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  rotulo: string,
+): Promise<T[]> {
+  const tudo: T[] = []
+  for (let inicio = 0; ; inicio += PAGE_SIZE) {
+    const { data, error: err } = await consultar(inicio, inicio + PAGE_SIZE - 1)
+    if (err) throw new Error(`${rotulo}: ${err.message}`)
+    const linhas = data ?? []
+    tudo.push(...linhas)
+    if (linhas.length < PAGE_SIZE) break
+  }
+  return tudo
+}
+
 async function carregarAlvos(): Promise<AlvoBackfill[]> {
-  const { data: publicos, error: errPub } = await supabase.from("candidatos_publico").select("slug")
-  if (errPub) throw new Error(`candidatos_publico: ${errPub.message}`)
-  const slugsPublicos = new Set((publicos ?? []).map((r) => r.slug as string))
+  // As duas consultas paginam: 194 publicáveis hoje, mas o acervo cresce e o
+  // PostgREST corta em 1000 sem avisar.
+  const publicos = await carregarPaginado<{ slug: string }>(
+    (de, ate) => supabase.from("candidatos_publico").select("slug").order("slug").range(de, ate),
+    "candidatos_publico",
+  )
+  const slugsPublicos = new Set(publicos.map((r) => r.slug))
 
-  const { data, error: errCand } = await supabase
-    .from("candidatos")
-    .select("slug, nome_completo, data_nascimento, estado, cpf")
-  if (errCand) throw new Error(`candidatos: ${errCand.message}`)
+  const data = await carregarPaginado<Record<string, unknown>>(
+    (de, ate) =>
+      supabase
+        .from("candidatos")
+        .select("slug, nome_completo, data_nascimento, estado, cpf")
+        // Filtrar no banco encolhe a página e evita gastar as 1000 linhas com
+        // quem já tem CPF.
+        .is("cpf", null)
+        .order("slug")
+        .range(de, ate),
+    "candidatos",
+  )
 
-  return (data ?? [])
+  return data
     .filter((r) => slugsPublicos.has(r.slug as string) && !r.cpf)
     .map((r) => ({
       slug: r.slug as string,
@@ -355,15 +457,14 @@ async function main() {
   const alvosSet = new Set(alvos.map((a) => a.slug))
   const seed = loadCandidatos().filter((c) => alvosSet.has(c.slug))
 
-  // Rota 1: SQ por ano, só dos alvos e só de 2010 em diante.
-  const sqParaSlug = new Map<string, string>()
-  for (const cand of seed) {
-    const porAno = cand.ids.tse_sq_candidato ?? {}
-    for (const [anoStr, sq] of Object.entries(porAno)) {
-      const ano = Number(anoStr)
-      if (!sq || !ANOS_VARRIDOS.includes(ano)) continue
-      sqParaSlug.set(`${ano}|${String(sq).trim()}`, cand.slug)
-    }
+  // Rota 1: SQ por ano, só dos alvos e só de 2010 em diante, com colisão
+  // interna derrubada do mesmo jeito que a rota 2.
+  const { mapa: sqParaSlug, colididos: sqColididos } = montarMapaSq(seed)
+  if (sqColididos.length > 0) {
+    warn(
+      "tse-cpf",
+      `SQ_CANDIDATO colide entre alvos no seed, rota 1 desativada para: ${sqColididos.join(", ")}`,
+    )
   }
 
   // Rota 2: nome+nascimento, com colisão interna derrubada.
@@ -486,10 +587,15 @@ async function main() {
     revisoes: revisoes.length,
     conflitos: conflitos.length,
     sem_match: semMatch.length,
+    rota1_colisoes_sq: sqColididos,
     rota2_colisoes_internas: colididos,
     decisoes: decisoes.map(({ alvo, decisao }) => ({ slug: alvo.slug, ...decisao })),
   }
-  writeFileSync(AUDIT_PATH, `${JSON.stringify(auditoria, null, 2)}\n`)
+  // As evidências carregam CPF, então o arquivo nasce 0600. O `mode` do
+  // writeFileSync só vale na criação: em arquivo que já existe (toda
+  // re-execução) a permissão antiga sobreviveria, daí o chmod explícito.
+  writeFileSync(AUDIT_PATH, `${JSON.stringify(auditoria, null, 2)}\n`, { mode: 0o600 })
+  chmodSync(AUDIT_PATH, 0o600)
   log("tse-cpf", `Auditoria em ${AUDIT_PATH}`)
   log(
     "tse-cpf",
@@ -497,7 +603,10 @@ async function main() {
   )
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL percent-encoda espaço e acento; o template `file://` não, e a
+// comparação falharia num checkout com esses caracteres no caminho, saindo sem
+// rodar main e sem imprimir nada.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     error("tse-cpf", err instanceof Error ? err.message : String(err))
     process.exitCode = 1

@@ -18,6 +18,7 @@ import {
 
 import { CandidatePhoto } from "@/components/CandidatePhoto"
 import { formatCompact } from "@/lib/utils"
+import { processosOverviewDisplay } from "@/lib/processos-display"
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import type { CandidatoComparavel } from "@/lib/types"
@@ -250,7 +251,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   ? `Remover ${candidato.nome_urna} da comparação`
                   : `Adicionar ${candidato.nome_urna} à comparação`}. ${
                   candidato.idade ? `${candidato.idade} anos, ` : ""
-                }${candidato.total_processos} processos, ${candidato.total_votos_mapeados} votações mapeadas`}
+                }${
+                  candidato.total_processos > 0
+                    ? `${candidato.total_processos} processos`
+                    : "processos não verificados"
+                }, ${candidato.total_votos_mapeados} votações mapeadas`}
                 className={`flex w-full items-center gap-3 rounded-[12px] border px-4 py-3.5 text-left transition-all ${
                   selected
                     ? "border-foreground bg-foreground/[0.03]"
@@ -291,7 +296,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   className="flex shrink-0 flex-col items-end gap-0.5 text-right text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
                 >
                   {candidato.idade && <span>{candidato.idade} anos</span>}
-                  <span>{candidato.total_processos} processos</span>
+                  <span>
+                    {candidato.total_processos > 0
+                      ? `${candidato.total_processos} processos`
+                      : "processos não verificados"}
+                  </span>
                   <span>{candidato.total_votos_mapeados} votações</span>
                 </div>
               </button>
@@ -429,7 +438,8 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                         )}
                       </td>
                       <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
-                        {candidato.total_processos}
+                        {/* Zero aqui é ausência de busca ativa, não ficha limpa. */}
+                        {processosOverviewDisplay(candidato.total_processos).value}
                       </td>
                       <td className="py-3 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.alertas_graves}
@@ -686,11 +696,18 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                         candidato.total_processos > 0 &&
                         !allEqual
 
+                      const display = processosOverviewDisplay(candidato.total_processos)
+
                       return (
                         <td key={candidato.id} className="py-3 text-center">
                           <span className="text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
-                            {candidato.total_processos}
+                            {display.value}
                           </span>
+                          {display.sub && (
+                            <span className="mt-0.5 block text-[10px] font-semibold text-muted-foreground">
+                              {display.sub}
+                            </span>
+                          )}
                           {isMax && (
                             <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-destructive">
                               maior

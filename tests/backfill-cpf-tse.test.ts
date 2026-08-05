@@ -1,11 +1,17 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   ANOS_VARRIDOS,
+  baixarArquivo,
+  carregarPaginado,
   chaveNomeNascimento,
   converterDataBR,
   decidirCpfDoCandidato,
   montarMapaNomeNascimento,
+  montarMapaSq,
   type AlvoBackfill,
   type HitCpf,
 } from "../scripts/backfill-cpf-tse"
@@ -142,9 +148,208 @@ describe("montarMapaNomeNascimento", () => {
   })
 })
 
+describe("montarMapaSq: a rota que escreve no banco também derruba colisão", () => {
+  function seed(slug: string, porAno: Record<string, string>) {
+    return { slug, ids: { tse_sq_candidato: porAno } }
+  }
+
+  it("indexa por ano e ignora pleito fora de ANOS_VARRIDOS", () => {
+    const { mapa, colididos } = montarMapaSq([
+      seed("a", { "2022": "250001234567", "2008": "999" }),
+      seed("b", { "2026": "260009999999" }),
+    ])
+    assert.equal(mapa.get("2022|250001234567"), "a")
+    assert.equal(mapa.get("2026|260009999999"), "b")
+    // 2008 não entra: até lá o SQ é sequencial por UF.
+    assert.equal(mapa.has("2008|999"), false)
+    assert.deepEqual(colididos, [])
+  })
+
+  it("mesmo SQ no mesmo ano para dois alvos derruba os dois lados", () => {
+    // Antes do guard, o segundo `set` sobrescrevia o primeiro: "a" perdia a
+    // única rota que persiste e "b" herdava um CPF resolvido por um SQ que o
+    // seed atribui a outra pessoa.
+    const { mapa, colididos } = montarMapaSq([
+      seed("a", { "2022": "250001234567" }),
+      seed("b", { "2022": "250001234567" }),
+      seed("c", { "2022": "250007654321" }),
+    ])
+    assert.equal(mapa.has("2022|250001234567"), false)
+    assert.equal(mapa.get("2022|250007654321"), "c")
+    assert.deepEqual(colididos, ["a", "b"])
+  })
+
+  it("SQ igual em anos diferentes não é colisão", () => {
+    const { mapa, colididos } = montarMapaSq([
+      seed("a", { "2022": "250001234567" }),
+      seed("b", { "2018": "250001234567" }),
+    ])
+    assert.equal(mapa.get("2022|250001234567"), "a")
+    assert.equal(mapa.get("2018|250001234567"), "b")
+    assert.deepEqual(colididos, [])
+  })
+
+  it("o mesmo alvo repetindo o próprio SQ não se auto-derruba", () => {
+    const { mapa, colididos } = montarMapaSq([
+      seed("a", { "2022": "250001234567" }),
+      seed("a", { "2022": " 250001234567 " }),
+    ])
+    assert.equal(mapa.get("2022|250001234567"), "a")
+    assert.deepEqual(colididos, [])
+  })
+
+  it("SQ vazio é ignorado, não vira chave", () => {
+    const { mapa } = montarMapaSq([seed("a", { "2022": "" })])
+    assert.equal(mapa.size, 0)
+  })
+})
+
+describe("carregarPaginado: o PostgREST corta em 1000 e o script não pode acreditar", () => {
+  it("segue paginando enquanto a página vier cheia", async () => {
+    const universo = Array.from({ length: 2350 }, (_, i) => ({ slug: `cand-${i}` }))
+    const faixas: Array<[number, number]> = []
+    const linhas = await carregarPaginado<{ slug: string }>(async (de, ate) => {
+      faixas.push([de, ate])
+      return { data: universo.slice(de, ate + 1), error: null }
+    }, "candidatos")
+
+    assert.equal(linhas.length, 2350)
+    assert.equal(linhas[2349].slug, "cand-2349")
+    // Três chamadas: 1000, 1000 e a página curta que encerra o laço.
+    assert.deepEqual(faixas, [
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ])
+  })
+
+  it("página exatamente cheia pede a seguinte antes de parar", async () => {
+    const universo = Array.from({ length: 1000 }, (_, i) => ({ slug: `cand-${i}` }))
+    let chamadas = 0
+    const linhas = await carregarPaginado<{ slug: string }>(async (de, ate) => {
+      chamadas++
+      return { data: universo.slice(de, ate + 1), error: null }
+    }, "candidatos")
+
+    assert.equal(linhas.length, 1000)
+    assert.equal(chamadas, 2)
+  })
+
+  it("erro do banco sobe com o rótulo da consulta", async () => {
+    await assert.rejects(
+      () => carregarPaginado(async () => ({ data: null, error: { message: "permission denied" } }), "candidatos"),
+      /candidatos: permission denied/,
+    )
+  })
+})
+
+describe("baixarArquivo: nada de descritor aberto nem cache envenenado", () => {
+  function comDiretorioTemporario(fn: (dir: string) => Promise<void>) {
+    return async () => {
+      const dir = mkdtempSync(join(tmpdir(), "backfill-cpf-"))
+      try {
+        await fn(dir)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+  }
+
+  it(
+    "resposta sem corpo não deixa arquivo de zero byte para trás",
+    comDiretorioTemporario(async (dir) => {
+      const destino = join(dir, "consulta_cand_2026.zip")
+      const fetchFake = (async () => new Response(null, { status: 200 })) as unknown as typeof fetch
+
+      const ok = await baixarArquivo("https://exemplo/consulta.zip", destino, fetchFake)
+
+      assert.equal(ok, false)
+      // O arquivo vazio sobrevivente virava cache hit e quebrava extrairZip.
+      assert.equal(existsSync(destino), false)
+    }),
+  )
+
+  it(
+    "corpo que estoura no meio não deixa parcial cacheado",
+    comDiretorioTemporario(async (dir) => {
+      const destino = join(dir, "consulta_cand_2024.zip")
+      const corpo = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]))
+          controller.error(new Error("conexão caiu"))
+        },
+      })
+      const fetchFake = (async () => new Response(corpo, { status: 200 })) as unknown as typeof fetch
+
+      const ok = await baixarArquivo("https://exemplo/consulta.zip", destino, fetchFake)
+
+      assert.equal(ok, false)
+      assert.equal(existsSync(destino), false)
+    }),
+  )
+
+  it(
+    "download completo grava o arquivo e passa signal com prazo",
+    comDiretorioTemporario(async (dir) => {
+      const destino = join(dir, "consulta_cand_2022.zip")
+      let signalRecebido: AbortSignal | null | undefined
+      const fetchFake = (async (_url: string, init?: RequestInit) => {
+        signalRecebido = init?.signal
+        return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 })
+      }) as unknown as typeof fetch
+
+      const ok = await baixarArquivo("https://exemplo/consulta.zip", destino, fetchFake)
+
+      assert.equal(ok, true)
+      assert.equal(existsSync(destino), true)
+      // Sem prazo, uma conexão parada segurava a varredura inteira.
+      assert.ok(signalRecebido instanceof AbortSignal)
+    }),
+  )
+
+  it(
+    "HTTP de erro não cria arquivo nenhum",
+    comDiretorioTemporario(async (dir) => {
+      const destino = join(dir, "consulta_cand_2020.zip")
+      const fetchFake = (async () => new Response("nao encontrado", { status: 404 })) as unknown as typeof fetch
+
+      assert.equal(await baixarArquivo("https://exemplo/consulta.zip", destino, fetchFake), false)
+      assert.equal(existsSync(destino), false)
+    }),
+  )
+})
+
 describe("ANOS_VARRIDOS", () => {
   it("não desce de 2010: até 2008 o SQ é sequencial por UF e colide", () => {
     assert.ok(Math.min(...ANOS_VARRIDOS) >= 2010)
     assert.ok(ANOS_VARRIDOS.includes(2026))
+  })
+})
+
+describe("backfill-cpf-tse: garantias que só se leem na fonte", () => {
+  const fonte = readFileSync("scripts/backfill-cpf-tse.ts", "utf-8")
+
+  it("a auditoria com CPF nasce 0600 e reaplica o modo em arquivo existente", () => {
+    // O `mode` do writeFileSync só vale na criação; sem o chmod, a permissão
+    // antiga sobrevive em toda re-execução.
+    assert.match(fonte, /writeFileSync\(AUDIT_PATH,[\s\S]{0,80}\{ mode: 0o600 \}\)/)
+    assert.match(fonte, /chmodSync\(AUDIT_PATH, 0o600\)/)
+  })
+
+  it("o entrypoint usa pathToFileURL, não template file://", () => {
+    // Caminho com espaço ou acento quebra a comparação do template e o script
+    // sai sem rodar main, sem imprimir nada.
+    assert.match(fonte, /import\.meta\.url === pathToFileURL\(process\.argv\[1\]\)\.href/)
+    assert.doesNotMatch(fonte, /`file:\/\/\$\{process\.argv\[1\]\}`/)
+  })
+
+  it("o zip que extrai sem consulta_cand não fica de cache", () => {
+    const trecho = fonte.slice(fonte.indexOf("Nenhum CSV em"), fonte.indexOf("Nenhum CSV em") + 400)
+    assert.match(trecho, /rmSync\(zipPath, \{ force: true \}\)/)
+  })
+
+  it("as duas consultas de alvos paginam e filtram cpf nulo no banco", () => {
+    assert.match(fonte, /carregarPaginado[\s\S]{0,200}candidatos_publico/)
+    assert.match(fonte, /\.is\("cpf", null\)/)
   })
 })

@@ -49,10 +49,16 @@ pública do CNJ):
   atributo `data-pf-overview-raw` segue com o número cru.
 - O rótulo da seção omite "(0)": zero ali é ausência de verificação, não
   contagem apurada.
-- Superfície pendente conhecida: o comparador (`ComparadorPanel`) e a tabela
-  de comparação ainda exibem "0 processos" numérico. Registrado aqui como
-  dívida de comunicação; a correção deve reutilizar
-  `src/lib/processos-display.ts`.
+- O comparador (`ComparadorPanel`) segue a mesma régua: a tabela e a linha
+  "Processos" da comparação usam `processosOverviewDisplay`, mostrando "—" com
+  a legenda "não verificado" quando a contagem é zero. A lista compacta e o
+  `aria-label` do botão dizem "processos não verificados" em vez de "0
+  processos", para o leitor de tela ouvir a mesma coisa que a tela mostra.
+  O atributo `data-pf-comparador-processos` continua com o valor cru, e o
+  destaque "maior" segue calculado sobre os números crus.
+- O skeleton da ficha deferida (`CandidatoProfileSkeleton`) também renderiza a
+  legenda: sem ela, o "—" aparecia sozinho na primeira pintura e reintroduzia
+  a afirmação de ficha limpa durante o carregamento.
 
 ## Quem recebe busca ativa manual (ordem de prioridade)
 
