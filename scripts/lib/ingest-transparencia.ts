@@ -6,6 +6,7 @@
 import { supabase } from "./supabase"
 import { loadCandidatos, fetchJSON, sleep } from "./helpers"
 import { log, warn } from "./logger"
+import { registrarColetas } from "./coleta-log"
 import type { IngestResult } from "./types"
 
 const API = "https://api.portaldatransparencia.gov.br/api-de-dados"
@@ -14,6 +15,16 @@ export async function ingestTransparencia(): Promise<IngestResult[]> {
   const apiKey = process.env.TRANSPARENCIA_API_KEY
   if (!apiKey) {
     warn("transparencia", "TRANSPARENCIA_API_KEY nao definida, pulando")
+    // Mesmo caminho mudo do ingest-transparencia-sanctions: voltar sem escrever
+    // nada não deixava rastro de que a fonte foi tentada.
+    await registrarColetas(
+      loadCandidatos().map((cand) => ({
+        fonte: "transparencia",
+        alvo: cand.slug,
+        resultado: "erro" as const,
+        detalhe: "TRANSPARENCIA_API_KEY ausente: a API nao foi consultada",
+      }))
+    )
     return []
   }
 
@@ -64,6 +75,15 @@ export async function ingestTransparencia(): Promise<IngestResult[]> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       result.errors.push(msg)
+    }
+
+    // O módulo é stub por desenho (ver o cabeçalho): consulta a API e só loga.
+    // Nenhum caminho aqui escreve no banco, então nenhum caminho aqui pode
+    // afirmar que o candidato "não tem" nada. `indeterminado` é o rótulo
+    // correto, e serve de marcador da dívida no relatório de cobertura.
+    if (result.errors.length === 0) {
+      result.coleta_resultado = "indeterminado"
+      result.coleta_detalhe = "modulo stub: consulta a API mas nao persiste nada"
     }
 
     result.duration_ms = Date.now() - start
