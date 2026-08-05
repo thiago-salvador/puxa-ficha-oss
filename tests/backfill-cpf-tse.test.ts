@@ -12,6 +12,7 @@ import {
   decidirCpfDoCandidato,
   montarMapaNomeNascimento,
   montarMapaSq,
+  montarMapaSqDosAlvos,
   type AlvoBackfill,
   type HitCpf,
 } from "../scripts/backfill-cpf-tse"
@@ -201,6 +202,39 @@ describe("montarMapaSq: a rota que escreve no banco também derruba colisão", (
   it("SQ vazio é ignorado, não vira chave", () => {
     const { mapa } = montarMapaSq([seed("a", { "2022": "" })])
     assert.equal(mapa.size, 0)
+  })
+})
+
+describe("montarMapaSqDosAlvos: colisões são globais e invalidam a rota inteira", () => {
+  function seed(slug: string, porAno: Record<string, string>) {
+    return { slug, ids: { tse_sq_candidato: porAno } }
+  }
+
+  it("detecta colisão do alvo com candidato fora do backfill", () => {
+    const { mapa, colididos } = montarMapaSqDosAlvos(
+      [
+        seed("alvo-sem-cpf", { "2022": "250001234567" }),
+        seed("fora-do-alvo-com-cpf", { "2022": "250001234567" }),
+      ],
+      new Set(["alvo-sem-cpf"]),
+    )
+
+    assert.equal(mapa.size, 0)
+    assert.deepEqual(colididos, ["alvo-sem-cpf"])
+  })
+
+  it("remove também outro SQ único de um alvo que colidiu", () => {
+    const { mapa, colididos } = montarMapaSqDosAlvos(
+      [
+        seed("alvo", { "2022": "250001234567", "2018": "250009999999" }),
+        seed("outro", { "2022": "250001234567" }),
+      ],
+      new Set(["alvo"]),
+    )
+
+    assert.equal(mapa.has("2018|250009999999"), false)
+    assert.equal(mapa.size, 0)
+    assert.deepEqual(colididos, ["alvo"])
   })
 })
 

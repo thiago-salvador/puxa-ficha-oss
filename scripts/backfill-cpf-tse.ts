@@ -385,6 +385,26 @@ export function montarMapaSq(seed: SeedComSq[]): {
   return { mapa, colididos: [...colididos].sort() }
 }
 
+/**
+ * Monta a rota persistente contra o seed inteiro e só depois seleciona alvos.
+ * Uma colisão em qualquer SQ desativa toda a rota 1 do alvo, inclusive outros
+ * SQs que isoladamente seriam únicos.
+ */
+export function montarMapaSqDosAlvos(
+  seedCompleto: SeedComSq[],
+  alvos: ReadonlySet<string>,
+): { mapa: Map<string, string>; colididos: string[] } {
+  const { mapa: mapaCompleto, colididos } = montarMapaSq(seedCompleto)
+  const alvosColididos = new Set(colididos.filter((slug) => alvos.has(slug)))
+  const mapa = new Map<string, string>()
+
+  for (const [chave, slug] of mapaCompleto) {
+    if (alvos.has(slug) && !alvosColididos.has(slug)) mapa.set(chave, slug)
+  }
+
+  return { mapa, colididos: [...alvosColididos].sort() }
+}
+
 /** Teto do PostgREST nesta instância; acima disso a resposta vem truncada em silêncio. */
 const PAGE_SIZE = 1000
 
@@ -455,11 +475,13 @@ async function main() {
   if (alvos.length === 0) return
 
   const alvosSet = new Set(alvos.map((a) => a.slug))
-  const seed = loadCandidatos().filter((c) => alvosSet.has(c.slug))
 
-  // Rota 1: SQ por ano, só dos alvos e só de 2010 em diante, com colisão
-  // interna derrubada do mesmo jeito que a rota 2.
-  const { mapa: sqParaSlug, colididos: sqColididos } = montarMapaSq(seed)
+  // Rota 1: a propriedade do SQ é conferida no seed inteiro, inclusive contra
+  // candidatos que já têm CPF e portanto não estão entre os alvos.
+  const { mapa: sqParaSlug, colididos: sqColididos } = montarMapaSqDosAlvos(
+    loadCandidatos(),
+    alvosSet,
+  )
   if (sqColididos.length > 0) {
     warn(
       "tse-cpf",
