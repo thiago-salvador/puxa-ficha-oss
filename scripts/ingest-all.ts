@@ -22,6 +22,7 @@ import { ingestIbge } from "./lib/ingest-ibge"
 import { ingestIdeb } from "./lib/ingest-ideb"
 import { ingestIpea } from "./lib/ingest-ipea"
 import { log, error } from "./lib/logger"
+import { registrarColeta, registrarColetaDeResultados } from "./lib/coleta-log"
 import type { IngestResult } from "./lib/types"
 
 const VALID_SOURCES = [
@@ -39,6 +40,14 @@ type IngestTask = {
   source: IngestSource
   heading: string
   failureLabel: string
+  /**
+   * Nome da fonte em `coleta_log`, usado só quando a tarefa inteira estoura e
+   * não sobra nenhum IngestResult para traduzir. Fora desse caso o nome vem do
+   * campo `source` de cada resultado, que é a fonte da verdade. Existe porque
+   * `VALID_SOURCES` é vocabulário de CLI (`sancoes`) e não bate com o que os
+   * ingests declaram (`transparencia-sanctions`).
+   */
+  fonteColeta?: string
   before?: () => void
   run: () => Promise<IngestResult[] | void>
 }
@@ -103,7 +112,8 @@ const INGEST_TASKS: IngestTask[] = [
   { source: "tcu", heading: "--- TCU (Inabilitados + CADIRREG) ---", failureLabel: "TCU", run: ingestTCU },
   {
     source: "sancoes",
-    heading: "--- Portal da Transparencia (CEIS/CNEP/CEAF/CEPIM) ---",
+    fonteColeta: "transparencia-sanctions",
+    heading: "--- Portal da Transparencia (CEIS/CNEP/CEAF) ---",
     failureLabel: "Sancoes",
     run: ingestTransparenciaSanctions,
   },
@@ -148,13 +158,32 @@ const INGEST_TASKS: IngestTask[] = [
   { source: "capag", heading: "--- CAPAG (rating fiscal) ---", failureLabel: "CAPAG", run: ingestCapag },
   {
     source: "atlas-violencia",
+    fonteColeta: "atlas_violencia",
     heading: "--- Atlas da Violencia (IPEA) ---",
     failureLabel: "Atlas Violencia",
     run: ingestAtlasViolencia,
   },
-  { source: "ibge", heading: "--- IBGE SIDRA ---", failureLabel: "IBGE", run: ingestIbge },
-  { source: "ideb", heading: "--- INEP/IDEB ---", failureLabel: "IDEB", run: ingestIdeb },
-  { source: "ipea", heading: "--- IPEA Data ---", failureLabel: "IPEA", run: ingestIpea },
+  {
+    source: "ibge",
+    fonteColeta: "ibge_sidra",
+    heading: "--- IBGE SIDRA ---",
+    failureLabel: "IBGE",
+    run: ingestIbge,
+  },
+  {
+    source: "ideb",
+    fonteColeta: "inep_ideb",
+    heading: "--- INEP/IDEB ---",
+    failureLabel: "IDEB",
+    run: ingestIdeb,
+  },
+  {
+    source: "ipea",
+    fonteColeta: "ipeadata",
+    heading: "--- IPEA Data ---",
+    failureLabel: "IPEA",
+    run: ingestIpea,
+  },
   {
     source: "google-news",
     heading: "--- Google News RSS ---",
@@ -163,6 +192,24 @@ const INGEST_TASKS: IngestTask[] = [
   },
 ]
 
+/**
+ * O registro em `coleta_log` acontece AQUI, e não dentro de cada ingest, de
+ * propósito.
+ *
+ * Todo caminho real de execução passa por este arquivo: os três comandos do
+ * .github/workflows/ingest.yml são `npx tsx scripts/ingest-all.ts <fonte>`. Um
+ * único ponto cobre os 20+ ingests e cobre também o que for adicionado depois,
+ * enquanto espalhar a chamada pelos ingests exigiria acertar cada `return
+ * results` (a Câmara, o CAPAG, a filiação e o TSE têm mais de um) e deixaria
+ * fonte nova sem rastro por esquecimento, que é o modo de falha exato que o
+ * `coleta_log` existe para tornar visível.
+ *
+ * O que um ingest precisa fazer por conta própria é só o que este ponto não
+ * consegue saber: declarar `coleta_resultado` quando sabe distinguir "a fonte
+ * respondeu vazio" de "a consulta falhou", e registrar tentativa quando volta
+ * antes de montar resultado nenhum (o caso da credencial ausente em
+ * ingest-transparencia-sanctions e ingest-transparencia).
+ */
 async function runIngestTask(task: IngestTask, allResults: IngestResult[]) {
   log("pipeline", task.heading)
   task.before?.()
@@ -171,9 +218,22 @@ async function runIngestTask(task: IngestTask, allResults: IngestResult[]) {
     const results = await task.run()
     if (results) {
       allResults.push(...results)
+      await registrarColetaDeResultados(results)
     }
   } catch (err) {
     error("pipeline", `${task.failureLabel} falhou: ${err}`)
+
+    // A tarefa morreu antes de devolver resultado, então não há por candidato o
+    // que registrar. Uma linha de escopo global deixa o rastro de que a fonte
+    // foi tentada e quebrou nesta execução, que é o que separa "a fonte falhou"
+    // de "ninguém foi lá".
+    await registrarColeta({
+      fonte: task.fonteColeta ?? task.source,
+      alvo: task.fonteColeta ?? task.source,
+      escopo: "global",
+      resultado: "erro",
+      detalhe: `${task.failureLabel} falhou: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500),
+    })
   }
 }
 

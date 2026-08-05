@@ -182,5 +182,15 @@ export function formatHistoricoCargoTituloPublico(
     "cargo" | "tipo_evento" | "observacoes" | "periodo_inicio" | "periodo_fim"
   >,
 ): string {
-  return isHistoricoCandidaturaRow(item) ? `Candidatura: ${item.cargo}` : item.cargo
+  if (!isHistoricoCandidaturaRow(item)) return item.cargo
+  // "Candidatura: Candidatura a Vereador" era o que a ficha do jarbas-soares
+  // mostrava. O rótulo já diz que é candidatura; repetir o prefixo que veio no
+  // texto do cargo é gagueira. Vale para as três formas que o banco tem
+  // ("Candidatura a", "Candidato a", "Candidata a"), sem depender de a coluna
+  // ter sido normalizada.
+  const cargo = (item.cargo ?? "")
+    .trim()
+    .replace(/^(?:pré|pre)?[- ]?candidat(?:ura|o|a)\s+(?:a|ao|à|as|aos)\s+/i, "")
+    .trim()
+  return `Candidatura: ${cargo || item.cargo}`
 }

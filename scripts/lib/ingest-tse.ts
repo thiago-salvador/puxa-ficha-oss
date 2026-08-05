@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, createWriteStream, readdirSync, rmSync, type Dir
 import { resolve, sep } from "path"
 import { execSync } from "child_process"
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, parseCSV, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { parseCSV, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
 import type { IngestResult, CandidatoConfig } from "./types"
 import {
@@ -632,7 +632,7 @@ export async function ingestTSE(
   anos: number[] = DEFAULT_ANOS,
   options: IngestTseOptions = {}
 ): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const allResults: IngestResult[] = []
 
   mkdirSync(DATA_DIR, { recursive: true })

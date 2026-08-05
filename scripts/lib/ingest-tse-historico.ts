@@ -3,8 +3,8 @@ import { resolve } from "path"
 import { execSync } from "child_process"
 import { supabase } from "./supabase"
 import { fixCandidatePartyTimelineConsistency } from "../fix-party-timeline-consistency"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, parseCSV } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { parseCSV } from "./helpers"
 import { log, warn, error } from "./logger"
 import { resolveCanonicalParty } from "./party-canonical"
 import {
@@ -268,7 +268,7 @@ const SKIP_SUPLENTE_CARGOS = new Set([
 ])
 
 export async function ingestTSEHistorico(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   mkdirSync(DATA_DIR, { recursive: true })
 
   // Coleta candidaturas de todos os anos

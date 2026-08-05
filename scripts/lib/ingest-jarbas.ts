@@ -1,6 +1,6 @@
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
 
@@ -22,6 +22,50 @@ interface JarbasResponse {
   results: JarbasReimbursement[]
 }
 
+/**
+ * Conferencia de identidade do retorno (irmao do incidente de 2026-08-04).
+ *
+ * A URL filtra por `?applicant_id=`, e a interface acima ate declara o campo
+ * `applicant_id` na resposta, mas nada comparava os dois. Era o mesmo desenho
+ * que produziu 729 sancoes falsas no ingest do Portal da Transparencia, onde a
+ * API ignorava o parametro de filtro em silencio e devolvia a lista nacional.
+ *
+ * Aqui o estrago potencial e pior do que uma linha errada numa tabela: o que
+ * este ingest grava e um `pontos_atencao` com gravidade alta ou media, texto
+ * de acusacao nomeada ("a IA Rosie identificou reembolsos suspeitos"). Dado
+ * errado aqui e acusacao contra pessoa real.
+ *
+ * Regra: um unico registro de outro deputado condena a resposta inteira. Se o
+ * filtro falhou, o `count` tambem nao vale nada, entao nao da para aproveitar
+ * "a parte boa" da resposta.
+ *
+ * Em 2026-08-05 a API responde 404 em todas as rotas, inclusive na raiz, entao
+ * este caminho esta dormente. A guarda existe para o dia em que ela voltar.
+ */
+export type ConferenciaReembolsos =
+  | { ok: true; reembolsos: JarbasReimbursement[] }
+  | { ok: false; motivo: string }
+
+export function conferirReembolsos(
+  registros: JarbasReimbursement[] | undefined | null,
+  applicantIdEsperado: number
+): ConferenciaReembolsos {
+  if (!Array.isArray(registros)) {
+    return { ok: false, motivo: "resposta sem lista de reembolsos" }
+  }
+
+  const intrusos = registros.filter((r) => r?.applicant_id !== applicantIdEsperado)
+  if (intrusos.length > 0) {
+    const amostra = [...new Set(intrusos.map((r) => String(r?.applicant_id ?? "ausente")))].slice(0, 3)
+    return {
+      ok: false,
+      motivo: `${intrusos.length} de ${registros.length} registro(s) sao de outro applicant_id (${amostra.join(", ")}), filtro da API nao foi respeitado`,
+    }
+  }
+
+  return { ok: true, reembolsos: registros }
+}
+
 function formatValor(values: number[]): number {
   const total = values.reduce((acc, v) => acc + v, 0)
   return Math.round(total * 100) / 100
@@ -38,7 +82,7 @@ function suspicionsLabel(suspicions: Record<string, boolean>): string[] {
 }
 
 export async function ingestJarbas(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {
@@ -83,7 +127,13 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
         })
 
         if (res.status === 404) {
-          log("jarbas", `  ${cand.slug}: sem dados na API (404)`)
+          // NAO e "candidato sem gasto suspeito": a API inteira responde 404,
+          // inclusive na raiz. Sem declarar o desfecho, este caminho virava
+          // `vazio_confirmado` no coleta_log, que e o projeto afirmando ter
+          // procurado e nao achado nada. Ver docs/fontes-pendentes.md.
+          result.coleta_resultado = "erro"
+          result.coleta_detalhe = `jarbas.serenata.ai respondeu HTTP 404: fonte fora do ar, nao e ausencia de gasto suspeito`
+          log("jarbas", `  ${cand.slug}: API fora do ar (404), registrado como erro`)
           result.duration_ms = Date.now() - start
           results.push(result)
           await sleep(500)
@@ -96,16 +146,32 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
 
         jarbasData = (await res.json()) as JarbasResponse
       } catch (fetchErr) {
-        // API pode estar fora do ar ocasionalmente
-        warn("jarbas", `  ${cand.slug}: API indisponivel: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
+        // Transporte caiu (timeout, DNS, 5xx, JSON invalido). Em 2026-08-05 o
+        // dominio responde HTTP 522, ou seja o Cloudflare esta de pe e a origem
+        // nao. Tambem nao e ausencia de gasto suspeito, e tambem precisa sair
+        // do log como erro em vez de silencio.
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        result.coleta_resultado = "erro"
+        result.coleta_detalhe = `jarbas.serenata.ai indisponivel: ${msg}`.slice(0, 500)
+        warn("jarbas", `  ${cand.slug}: API indisponivel: ${msg}`)
         result.duration_ms = Date.now() - start
         results.push(result)
         await sleep(500)
         continue
       }
 
+      const conferencia = conferirReembolsos(jarbasData.results, cand.ids.camara)
+      if (!conferencia.ok) {
+        result.errors.push(`Retorno recusado: ${conferencia.motivo}`)
+        warn("jarbas", `  ${cand.slug}: retorno recusado, nada gravado — ${conferencia.motivo}`)
+        result.duration_ms = Date.now() - start
+        results.push(result)
+        await sleep(500)
+        continue
+      }
+
+      const reembolsos = conferencia.reembolsos
       const totalSuspeitos = jarbasData.count ?? 0
-      const reembolsos = jarbasData.results ?? []
 
       if (totalSuspeitos === 0 || reembolsos.length === 0) {
         log("jarbas", `  ${cand.slug}: nenhum gasto suspeito encontrado`)

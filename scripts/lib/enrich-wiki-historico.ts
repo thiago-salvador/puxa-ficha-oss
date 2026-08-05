@@ -1,6 +1,8 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { sleep } from "./helpers"
 import { log, warn } from "./logger"
+import { registrarColetas, type EntradaColeta } from "./coleta-log"
 import { canonicalizeEstadoForStorage } from "@/lib/br-uf"
 
 // Slug → Portuguese Wikipedia article title (reuse from enrich-wikipedia.ts)
@@ -96,7 +98,7 @@ function extractCargosFromCategories(categories: string[]): Array<{
 }
 
 export async function enrichWikiHistorico() {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
 
   // Read WIKI_TITLES inline (same map as enrich-wikipedia.ts)
   // We dynamically read the file to get the title mappings
@@ -119,6 +121,17 @@ export async function enrichWikiHistorico() {
   const totalInserted = 0
   let totalSkipped = 0
   const totalErrors = 0
+
+  // Este modulo nunca insere: `totalInserted` e const 0 e o guard abaixo pula
+  // todo cargo, porque categoria da Wikipedia nao traz `periodo_inicio` e o
+  // banco recusa registro sem data. Ou seja, a fonte foi consultada de verdade,
+  // e estruturalmente nao tem o que preencher. Isso e `nao_aplicavel`, e nao um
+  // zero: sem a linha, o relatorio nao distingue este caso de "ninguem foi la".
+  //
+  // So entra aqui o candidato que o loop realmente examinou. Quem sai antes (sem
+  // titulo na Wikipedia, sem linha no banco) fica sem linha, e continua contando
+  // como nunca verificado, que e a verdade.
+  const tentativas: EntradaColeta[] = []
 
   for (const cand of candidatos) {
     const wikiTitle = titleMap[cand.slug]
@@ -152,6 +165,13 @@ export async function enrichWikiHistorico() {
     const cargos = extractCargosFromCategories(categories)
     if (cargos.length === 0) continue
 
+    tentativas.push({
+      fonte: "wiki-historico",
+      alvo: cand.slug,
+      resultado: "nao_aplicavel",
+      detalhe: `${cargos.length} cargo(s) na categoria, nenhum com periodo_inicio utilizavel`,
+    })
+
     log("wiki-historico", `${cand.slug}: ${cargos.length} cargos encontrados via categorias`)
 
     for (const c of cargos) {
@@ -167,6 +187,8 @@ export async function enrichWikiHistorico() {
       totalSkipped++
     }
   }
+
+  await registrarColetas(tentativas)
 
   console.log(`\n=== Wikipedia Historico ===`)
   console.log(`Cargos inseridos: ${totalInserted}`)

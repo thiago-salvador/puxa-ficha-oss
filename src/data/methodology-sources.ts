@@ -18,13 +18,14 @@ export interface MethodologySource {
  * Esta lista e uma promessa publica em /metodologia. Duas coisas mudaram na
  * etapa 2C:
  *
- * 1. Fonte so entra aqui quando ja existe dado publicado. A entrada "Cadastro
- *    de Sancoes (CGU)" foi removida: o ingest existe
- *    (`scripts/lib/ingest-transparencia-sanctions.ts`), mas
- *    `public.sancoes_administrativas` tinha 0 linhas em 2026-07-25 e nenhum
- *    componente de `src/components/` ou `src/app/(site)/` renderiza o campo.
- *    Prometer fonte sem dado e sem superficie e promessa vazia. O caminho para
- *    religar esta em `docs/fontes-pendentes.md`.
+ * 1. Fonte so entra aqui quando ja existe dado publicado e superficie que o
+ *    renderiza. A entrada "Cadastro de Sancoes (CGU)" foi removida em
+ *    2026-07-25 por falhar nas duas condicoes, e REINSERIDA em 2026-08-05
+ *    quando as duas passaram a valer: `SancoesSection` renderiza o bloco na
+ *    aba Justica (inclusive a prova negativa "nada encontrado", com data,
+ *    lida de `coleta_log_ultima`) e a varredura corrigida de 2026-08-04
+ *    registrou o desfecho da consulta para cada candidato com CPF valido.
+ *    Historico do vaivem em `docs/fontes-pendentes.md`.
  *
  * 2. `updateFrequency` descreve cadencia REAL e verificavel, nao intencao.
  *    "diaria" so vale com cron de producao (`vercel.json`) ou `schedule:` em
@@ -134,13 +135,37 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
     updateFrequency: "sob demanda",
     curationType: "automático",
   },
-  // REMOVIDO na etapa 2C (auditoria 2026-07-24, achado A0.3): "Cadastro de
-  // Sanções (CGU)" (CEIS, CNEP, CEPIM). O ingest existe em
-  // scripts/lib/ingest-transparencia-sanctions.ts e continua no repositório,
-  // mas em 2026-07-25 a tabela public.sancoes_administrativas tinha 0 linhas e
-  // nenhum componente renderiza o dado. Volta para esta lista quando as duas
-  // condições forem verdadeiras ao mesmo tempo: tabela com linha e superfície
-  // de exibição na ficha. Checklist em docs/fontes-pendentes.md.
+  // REINSERIDO em 2026-08-05: "Cadastro de Sanções (CGU)". Tinha sido removido
+  // na etapa 2C (auditoria 2026-07-24, achado A0.3) porque a tabela estava
+  // vazia e nenhum componente renderizava o dado. As duas condições mudaram:
+  //   - A superfície existe: SancoesSection renderiza o bloco na aba Justiça,
+  //     inclusive o resultado negativo verificado ("nada encontrado", com data),
+  //     lido de coleta_log_ultima (fonte transparencia-sanctions).
+  //   - O dado publicado hoje é a prova negativa: a varredura corrigida de
+  //     2026-08-04 (PR #85, parâmetros codigoSancionado/cpfSancionado +
+  //     conferência de identidade do retorno) consultou CEIS, CNEP e CEAF e
+  //     registrou vazio_confirmado para os candidatos com CPF válido. CEPIM
+  //     saiu do pipeline na mesma PR: só filtra CNPJ, nunca casaria com CPF.
+  // Histórico completo do vaivém em docs/fontes-pendentes.md.
+  {
+    id: "transparencia-sancoes",
+    name: "Cadastro de Sanções (CGU)",
+    url: "https://portaldatransparencia.gov.br/sancoes",
+    description:
+      "Cadastros de sanções administrativas do Portal da Transparência, consultados por CPF com conferência de identidade em cada registro retornado. A ficha também mostra quando a consulta foi feita e nada foi encontrado, com a data da verificação.",
+    dataTypes: [
+      "Sanções administrativas (CEIS, CNEP, CEAF)",
+      "Verificação com resultado vazio (registro da consulta e data)",
+    ],
+    sourceKind: "base_oficial",
+    // Sem automação: lote manual via workflow_dispatch em
+    // .github/workflows/ingest.yml (verificado 2026-08-05). Se ganhar cron,
+    // este rótulo muda no MESMO commit.
+    updateFrequency: "sob demanda",
+    curationType: "automático",
+    curationNote:
+      "Consulta automática por CPF validado; candidato sem CPF válido não é consultado e a ficha marca os cadastros como não verificados.",
+  },
   {
     id: "filiacao",
     name: "TSE: Filiação Partidária",
@@ -165,17 +190,17 @@ export const METHODOLOGY_SOURCES: readonly MethodologySource[] = [
     updateFrequency: "sob demanda",
     curationType: "automático",
   },
-  {
-    id: "jarbas",
-    name: "Jarbas (Serenata de Amor)",
-    url: "https://jarbas.serenata.ai",
-    description:
-      "Gastos suspeitos da CEAP identificados pelo projeto Serenata de Amor.",
-    dataTypes: ["Suspeitas de irregularidades em CEAP"],
-    sourceKind: "fonte_publica_complementar",
-    updateFrequency: "sob demanda",
-    curationType: "automático",
-  },
+  // Jarbas (Serenata de Amor) saiu daqui em 2026-08-05. Mesma regra do achado
+  // A0.3: fonte só aparece nesta página quando há dado publicado E superfície
+  // que o renderiza. O endpoint responde HTTP 522 (Cloudflare de pé, origem
+  // fora), `pontos_atencao` tem ZERO linha vinda dele e `coleta_log` tem zero
+  // tentativa registrada. Anunciá-la era prometer ao leitor uma verificação que
+  // nunca aconteceu. O ingest continua no repositório, agora gravando `erro` em
+  // vez de silêncio, e o caminho de volta está em docs/fontes-pendentes.md.
+  //
+  // CEAPS continua na lista logo acima, de propósito: ao contrário de Jarbas,
+  // ela tem 102 linhas em `gastos_parlamentares` (65 em fichas publicáveis) que
+  // o site mostra. A rota de atualização caiu, o dado publicado não.
 
   // --- Enriquecimento (biografias, fotos, redes) ---
   {

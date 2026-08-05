@@ -1,6 +1,6 @@
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
 import {
@@ -10,7 +10,7 @@ import {
 import { splitNewsByCandidateMention } from "../../src/lib/news/name-match"
 
 export async function ingestGoogleNews(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {
