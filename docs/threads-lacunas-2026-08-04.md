@@ -1499,3 +1499,29 @@ corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
 `nome_urna`; naturalidade e profissão voltaram a `NULL`.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+---
+
+## Reconciliação do histórico de migrations (2026-08-05, 13:03 BRT)
+
+**Estado:** histórico local alinhado ao ledger remoto sem alterar o banco. O
+`migration fetch` confirmou os quatro pares com timestamps divergentes e a
+migration editorial já aplicada; as diferenças recuperadas são comentários,
+formatação e, em um `COMMENT ON CONSTRAINT`, o texto histórico sem acento.
+
+- As migrations de `coleta_log`, backfill, notícias e domínio de status agora
+  usam os timestamps remotos `20260805003740`, `20260805004921`,
+  `20260805120133` e `20260805120633`.
+- A migration editorial `20260805123929` foi incorporada a partir da PR #104 e
+  comparada com o SQL recuperado do ledger remoto.
+- As duas migrations realmente pendentes foram portadas para novos arquivos
+  futuros, criados pela CLI: `20260805160207` (teto durável de e-mail por hash
+  de IP) e `20260805160212` (retenção de analytics por 90 dias).
+- O readback remoto confirmou que a coluna e o índice do teto de e-mail ainda
+  não existem; o índice de analytics já existe, mas o comentário de retenção
+  ainda não. Portanto, as duas migrations futuras continuam necessárias.
+- `supabase migration list --linked` ficou em paridade até `20260805137000`.
+  `supabase db push --dry-run` listou somente as duas migrations futuras. Nenhum
+  `db push`, `migration repair` ou SQL de escrita foi executado.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
