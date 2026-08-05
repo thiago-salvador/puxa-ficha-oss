@@ -53,6 +53,53 @@ Ou seja, o dado atravessa o backend inteiro e morre antes da tela.
 
 ---
 
+## DECISAO de 2026-08-05 sobre as duas fontes mortas
+
+O dono aprovou resolver a ambiguidade "o ingest roda, nao da erro e devolve sem
+dados". A decisao NAO foi a mesma para as duas, porque a situacao delas nao e a
+mesma, e o criterio que separou foi um so: **a fonte ja pos dado no ar?**
+
+| | Jarbas / Serenata | CEAPS Senado |
+|---|---|---|
+| Endpoint hoje | **HTTP 522** (Cloudflare de pe, origem fora) | **HTTP 404** na rota de despesas |
+| Linhas publicadas por ela | **0** em `pontos_atencao` | **102** em `gastos_parlamentares` (65 em fichas publicaveis) |
+| Tentativas em `coleta_log` | **0** | 10 |
+| Card em `/metodologia` | **REMOVIDO** | **MANTIDO** |
+| Ingest | mantido, agora grava `erro` | mantido, agora grava `erro` / `indeterminado` |
+
+**Por que o card do Jarbas saiu.** E exatamente o achado A0.3 que criou este
+arquivo: a pagina anunciava ao publico uma fonte que nunca produziu uma linha.
+Somado ao endpoint fora do ar, o card prometia ao leitor uma verificacao de
+gasto suspeito que nunca aconteceu para ninguem. `tests/ui-claims-copy-contract.test.ts`
+passou a travar a volta dele sem dado junto.
+
+**Por que o card do CEAPS ficou.** Aqui removeria a procedencia de numero que
+esta no ar agora: 102 linhas de gasto parlamentar que a ficha e o comparador
+mostram. A rota de ATUALIZACAO caiu; o dado publicado nao sumiu. Tirar o card
+deixaria o leitor sem saber de onde veio o valor que ele esta lendo, que e o
+oposto do que este arquivo existe para evitar.
+
+**Por que nenhum dos dois ingests foi removido.** Remover apaga junto as guardas
+de identidade escritas em 05/08 e os testes que as cobrem, e 522 e 404 nao provam
+descontinuacao definitiva. O que muda e o silencio: os dois passam a declarar o
+desfecho em `coleta_log`, entao "fonte morta" para de ser indistinguivel de
+"procuramos e nao achamos".
+
+**Criterio objetivo para remover o ingest do Jarbas depois** (antes nao havia
+nenhum, e por isso a pergunta ficou aberta): agora que cada rodada grava `erro`,
+se `coleta_log` mostrar `fonte = 'jarbas'` com `resultado = 'erro'` em **8
+rodadas semanais consecutivas** sem nenhuma `encontrado` no meio, a API esta
+descontinuada de fato e o ingest sai junto com o tipo, o teste e a entrada aqui.
+Consulta que responde isso:
+
+```sql
+select date_trunc('week', executado_em) semana, resultado, count(*)
+  from coleta_log where fonte = 'jarbas'
+ group by 1, 2 order by 1 desc;
+```
+
+---
+
 ## Fontes com endpoint morto (verificado em 2026-08-05)
 
 Estas duas nao sao lacuna de curadoria nem de credencial: o endpoint saiu do ar.
