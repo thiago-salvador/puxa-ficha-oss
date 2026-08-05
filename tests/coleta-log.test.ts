@@ -55,7 +55,7 @@ describe("entradaDeResultado nao inventa veredito", () => {
     assert.equal(entrada.detalhe, "4 cadastros vazios")
   })
 
-  it("skipped nao vira linha nenhuma", () => {
+  it("skipped SEM desfecho declarado nao vira linha nenhuma", () => {
     // O skipped da Camara em modo incremental significa "o dado ja estava
     // coberto". Gravar isso sobrescreveria, em coleta_log_ultima, a ultima
     // tentativa real, trocando um encontrado por um vazio que nunca aconteceu.
@@ -63,6 +63,26 @@ describe("entradaDeResultado nao inventa veredito", () => {
       entradaDeResultado(resultado({ skipped: true, skip_reason: "ja coberto" })),
       null,
     )
+  })
+
+  it("skipped COM desfecho declarado vira linha, e o desfecho manda", () => {
+    // As duas puladas nao sao a mesma coisa. A de sancoes por CPF ausente sabe
+    // dizer POR QUE pulou, e essa e a informacao mais cara que o log tem: sao
+    // 96 dos 194 publicaveis que nunca poderao ser consultados no Portal
+    // enquanto nao tiverem CPF. Sem a linha, eles ficam indistinguiveis de quem
+    // so esta na fila para ser coletado.
+    const entrada = entradaDeResultado(
+      resultado({
+        skipped: true,
+        skip_reason: "sem CPF",
+        coleta_resultado: "erro",
+        coleta_detalhe: "sem CPF: nenhum cadastro foi consultado",
+      }),
+    )
+    assert.ok(entrada, "pulada com desfecho declarado precisa deixar rastro")
+    assert.equal(entrada.resultado, "erro")
+    assert.equal(entrada.volume, 0)
+    assert.equal(entrada.detalhe, "sem CPF: nenhum cadastro foi consultado")
   })
 
   it("erro continua erro mesmo com escrita parcial", () => {
