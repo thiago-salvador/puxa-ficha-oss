@@ -210,7 +210,7 @@ const INGEST_TASKS: IngestTask[] = [
  * antes de montar resultado nenhum (o caso da credencial ausente em
  * ingest-transparencia-sanctions e ingest-transparencia).
  */
-async function runIngestTask(task: IngestTask, allResults: IngestResult[]) {
+async function runIngestTask(task: IngestTask, allResults: IngestResult[]): Promise<boolean> {
   log("pipeline", task.heading)
   task.before?.()
 
@@ -220,6 +220,7 @@ async function runIngestTask(task: IngestTask, allResults: IngestResult[]) {
       allResults.push(...results)
       await registrarColetaDeResultados(results)
     }
+    return true
   } catch (err) {
     error("pipeline", `${task.failureLabel} falhou: ${err}`)
 
@@ -234,6 +235,7 @@ async function runIngestTask(task: IngestTask, allResults: IngestResult[]) {
       resultado: "erro",
       detalhe: `${task.failureLabel} falhou: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500),
     })
+    return false
   }
 }
 
@@ -246,10 +248,12 @@ async function main() {
   const start = Date.now()
   const allResults: IngestResult[] = []
   const selectedSources = new Set(sources)
+  let taskFailures = 0
 
   for (const task of INGEST_TASKS) {
     if (selectedSources.has(task.source)) {
-      await runIngestTask(task, allResults)
+      const ok = await runIngestTask(task, allResults)
+      if (!ok) taskFailures++
     }
   }
 
@@ -263,19 +267,20 @@ async function main() {
   log("pipeline", `Rows upserted: ${totalRows}`)
   log("pipeline", `Errors: ${totalErrors}`)
 
-  if (totalErrors > 0) {
+  if (totalErrors > 0 || taskFailures > 0) {
     log("pipeline", ``)
     log("pipeline", `Erros por candidato:`)
     for (const r of allResults.filter((r) => r.errors.length > 0)) {
       error("pipeline", `  ${r.source}/${r.candidato}: ${r.errors.join("; ")}`)
     }
+    if (taskFailures > 0) error("pipeline", `  ${taskFailures} fonte(s) falharam antes de devolver resultados`)
     process.exit(1)
   }
 
   if (shouldShowHistoricoReminder(selectedSources)) {
     log(
       "pipeline",
-      "Histórico: após alterar TSE/Wikidata, rode `npx tsx scripts/audit-factual.ts` (ou o relatório CI) para validar duplicatas/observações."
+      "Histórico: após alterar TSE/Wikidata, rode `node --import tsx --test tests/release-verify-historico.test.ts` e a suíte CI para validar duplicatas/observações."
     )
   }
 }

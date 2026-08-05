@@ -42,5 +42,7 @@ export interface IngestResult {
    * real. Ver o comentario da migration 20260804160000.
    */
   coleta_resultado?: "encontrado" | "vazio_confirmado" | "nao_aplicavel" | "erro" | "indeterminado"
+  /** Registros confirmados na fonte, quando isso difere das linhas gravadas localmente. */
+  coleta_volume?: number
   coleta_detalhe?: string
 }

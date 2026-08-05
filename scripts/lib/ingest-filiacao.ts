@@ -11,7 +11,7 @@ import type { IngestResult, CandidatoConfig } from "./types"
 
 const DATA_DIR = resolve(process.cwd(), "data/filiacao")
 const FILIADOS_URL =
-  "https://cdn.tse.jus.br/estatistica/sead/eleitorado/filiados/arquivos/filiados_totais.zip"
+  "https://cdn.tse.jus.br/estatistica/sead/odsele/filiacao_partidaria/perfil_filiacao_partidaria.zip"
 
 function parseDateBR(value: string): string | null {
   if (!value || value.trim() === "" || value === "#NULO#" || value === "#NE#") return null
@@ -138,6 +138,23 @@ interface FiliacaoEntry {
   uf: string
 }
 
+const COLUNAS_FILIACAO_INDIVIDUAL = [
+  "NM_ELEITOR",
+  "SG_PARTIDO",
+  "DS_SITUACAO_FILIADO",
+  "DT_FILIACAO",
+  "DT_DESFILIACAO",
+] as const
+
+function validarEsquemaIndividual(row: Record<string, string>): void {
+  const ausentes = COLUNAS_FILIACAO_INDIVIDUAL.filter((coluna) => !(coluna in row))
+  if (ausentes.length > 0) {
+    throw new Error(
+      `Arquivo oficial nao contem filiacao individual; colunas ausentes: ${ausentes.join(", ")}`,
+    )
+  }
+}
+
 interface TimelineEntry {
   partido_anterior: string
   partido_novo: string
@@ -260,7 +277,7 @@ export async function ingestFiliacao(): Promise<IngestResult[]> {
   const ok = await downloadFile(FILIADOS_URL, zipPath)
   if (!ok) {
     error("filiacao", "Falha ao baixar arquivo de filiados")
-    return results
+    throw new Error(`Falha ao baixar ${FILIADOS_URL}`)
   }
 
   log("filiacao", "Extraindo zip de filiados...")
@@ -269,7 +286,7 @@ export async function ingestFiliacao(): Promise<IngestResult[]> {
   } catch (err) {
     error("filiacao", `Erro ao extrair zip: ${err}`)
     cleanupFile(zipPath)
-    return results
+    throw err
   }
 
   // Cleanup zip imediatamente para liberar espaco
@@ -281,18 +298,24 @@ export async function ingestFiliacao(): Promise<IngestResult[]> {
   if (csvFiles.length === 0) {
     warn("filiacao", "Nenhum CSV encontrado no zip de filiados")
     cleanupDir(extractDir)
-    return results
+    throw new Error("Nenhum CSV encontrado no zip de filiados")
   }
 
   const nameMap = buildCandidateNameMap(candidatos)
 
   // Agrega todas as filiacoes por candidato
   const filiacoesPorCandidato = new Map<string, FiliacaoEntry[]>()
+  const errosDeParse: string[] = []
 
   for (const csvFile of csvFiles) {
     log("filiacao", `  Parseando: ${csvFile}`)
     try {
+      let esquemaValidado = false
       await parseCSV(csvFile, (row) => {
+        if (!esquemaValidado) {
+          validarEsquemaIndividual(row)
+          esquemaValidado = true
+        }
         const nomeRaw = row.NM_ELEITOR || ""
         const nomeNorm = normalizeForMatch(nomeRaw)
         const candidates = nameMap.get(nomeNorm)
@@ -315,11 +338,16 @@ export async function ingestFiliacao(): Promise<IngestResult[]> {
       })
     } catch (err) {
       warn("filiacao", `  Erro ao parsear ${csvFile}: ${err}`)
+      errosDeParse.push(err instanceof Error ? err.message : String(err))
     }
   }
 
   // Cleanup arquivos extraidos
   cleanupDir(extractDir)
+
+  if (errosDeParse.length > 0) {
+    throw new Error(errosDeParse.join("; ").slice(0, 500))
+  }
 
   log("filiacao", `Candidatos encontrados no CSV: ${filiacoesPorCandidato.size}`)
 
