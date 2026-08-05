@@ -111,6 +111,19 @@ describe("entradaDeResultado nao inventa veredito", () => {
     assert.equal(entrada.resultado, "nao_aplicavel")
     assert.equal(entrada.volume, 0)
   })
+
+  it("volume confirmado na fonte independe de linhas novas no banco", () => {
+    const entrada = entradaDeResultado(
+      resultado({
+        rows_upserted: 0,
+        coleta_resultado: "encontrado",
+        coleta_volume: 7,
+      }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "encontrado")
+    assert.equal(entrada.volume, 7)
+  })
 })
 
 describe("normalizarEntrada respeita a constraint coleta_log_volume_coerente", () => {
@@ -221,16 +234,55 @@ describe("FONTES cobre todo source declarado pelos ingests", () => {
   })
 
   it("nenhuma entrada de FONTES virou orfa", () => {
-    // `wiki-historico` nao monta IngestResult (enrich-wiki-historico retorna
-    // void), entao chama registrarColetas direto em vez de declarar `source:`.
     // `tse-cpf` e o backfill dedicado de CPF (scripts/backfill-cpf-tse.ts),
-    // fora de scripts/lib, que tambem chama registrarColetas direto.
-    // Essas sao as excecoes legitimas; qualquer outra e fonte esquecida.
-    const excecoes = new Set(["wiki-historico", "tse-cpf"])
+    // fora de scripts/lib, que chama registrarColetas direto. Esta e a unica
+    // excecao legitima; qualquer outra e fonte esquecida.
+    const excecoes = new Set(["tse-cpf"])
     const orfas = Object.keys(FONTES).filter(
       (f) => !declarados.has(f) && !excecoes.has(f),
     )
     assert.deepEqual(orfas, [], `fonte no mapa sem ingest correspondente: ${orfas.join(", ")}`)
+  })
+
+  it("wiki-historico usa o titulo do roster atual e devolve IngestResult", () => {
+    const src = readFileSync(join(libDir, "enrich-wiki-historico.ts"), "utf8")
+    assert.match(src, /cand\.wikipedia_title/)
+    assert.doesNotMatch(src, /WIKI_TITLES/)
+    assert.match(src, /source:\s*"wiki-historico",\s*\n\s*candidato:/)
+    assert.match(src, /Promise<IngestResult\[\]>/)
+    assert.match(src, /arg\.startsWith\("--slug="\)/)
+    assert.match(src, /res\.headers\.get\("retry-after"\)/)
+  })
+
+  it("tse-historico registra vazio e trata linha legada sem cargo_canonico", () => {
+    const src = readFileSync(join(libDir, "ingest-tse-historico.ts"), "utf8")
+    assert.match(src, /coleta_resultado:\s*anosComFalha\.length === 0 \? "vazio_confirmado" : "indeterminado"/)
+    assert.match(src, /\.eq\("cargo", record\.cargo\)/)
+    assert.match(src, /historico legado/)
+    assert.match(src, /result\.coleta_resultado = "nao_aplicavel"/)
+    assert.match(src, /arg\.startsWith\("--slug="\)/)
+  })
+
+  it("filiacao usa o recurso oficial atual e falha de tarefa gera exit nao-zero", () => {
+    const filiacao = readFileSync(join(libDir, "ingest-filiacao.ts"), "utf8")
+    const pipeline = readFileSync(join(root, "scripts/ingest-all.ts"), "utf8")
+    assert.match(filiacao, /odsele\/filiacao_partidaria\/perfil_filiacao_partidaria\.zip/)
+    assert.match(filiacao, /throw new Error\(`Falha ao baixar/)
+    assert.match(filiacao, /COLUNAS_FILIACAO_INDIVIDUAL/)
+    assert.match(filiacao, /Arquivo oficial nao contem filiacao individual/)
+    assert.match(pipeline, /let taskFailures = 0/)
+    assert.match(pipeline, /totalErrors > 0 \|\| taskFailures > 0/)
+  })
+
+  it("wikidata-politico distingue candidato sem QID de resposta vazia", () => {
+    const src = readFileSync(join(libDir, "ingest-wikidata-politico.ts"), "utf8")
+    assert.match(src, /result\.coleta_resultado = "nao_aplicavel"/)
+    assert.match(src, /sem wikidata_id: nenhuma consulta remota foi executada/)
+    assert.match(src, /const sourceRows = parties\.length \+ offices\.length/)
+    assert.match(src, /sourceRows === 0/)
+    assert.match(src, /result\.coleta_resultado = "vazio_confirmado"/)
+    assert.match(src, /result\.coleta_volume = sourceRows/)
+    assert.match(src, /arg\.startsWith\("--slug="\)/)
   })
 
   it("as fontes territoriais estao marcadas como territorio", () => {

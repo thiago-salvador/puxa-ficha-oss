@@ -15,8 +15,8 @@ const HEADERS = {
 }
 const args = process.argv.slice(2)
 const slugArgs = args
-  .filter((arg, index) => args[index - 1] === "--slug")
-  .flatMap((value) => value.split(","))
+  .filter((arg) => arg.startsWith("--slug="))
+  .flatMap((value) => value.slice("--slug=".length).split(","))
   .map((value) => value.trim())
   .filter(Boolean)
 const filterSlugs = slugArgs.length > 0 ? new Set(slugArgs) : null
@@ -429,6 +429,10 @@ export async function ingestWikidataPolitico(): Promise<IngestResult[]> {
 
       if (!dbCandidate.wikidata_id) {
         log("wikidata-politico", `  ${cand.slug}: sem wikidata_id, pulando`)
+        result.skipped = true
+        result.skip_reason = "sem wikidata_id"
+        result.coleta_resultado = "nao_aplicavel"
+        result.coleta_detalhe = "sem wikidata_id: nenhuma consulta remota foi executada"
         result.duration_ms = Date.now() - start
         results.push(result)
         continue
@@ -445,6 +449,14 @@ export async function ingestWikidataPolitico(): Promise<IngestResult[]> {
       if (mudancas > 0) result.tables_updated.push("mudancas_partido")
       if (historico > 0) result.tables_updated.push("historico_politico")
       result.rows_upserted = mudancas + historico
+      const sourceRows = parties.length + offices.length
+      result.coleta_detalhe = `${parties.length} filiacao(oes) e ${offices.length} cargo(s) retornados pela fonte`
+      if (sourceRows === 0) {
+        result.coleta_resultado = "vazio_confirmado"
+      } else {
+        result.coleta_resultado = "encontrado"
+        result.coleta_volume = sourceRows
+      }
 
       log(
         "wikidata-politico",

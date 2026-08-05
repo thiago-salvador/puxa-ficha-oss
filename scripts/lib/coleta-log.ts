@@ -282,7 +282,10 @@ export function entradaDeResultado(resultado: IngestResult): EntradaColeta | nul
     return {
       ...base,
       resultado: resultado.coleta_resultado,
-      volume: resultado.coleta_resultado === "encontrado" ? resultado.rows_upserted : 0,
+      volume:
+        resultado.coleta_resultado === "encontrado"
+          ? (resultado.coleta_volume ?? resultado.rows_upserted)
+          : 0,
       detalhe: resultado.coleta_detalhe,
     }
   }
