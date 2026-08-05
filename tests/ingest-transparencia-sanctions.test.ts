@@ -92,7 +92,7 @@ function depsEspiao(resposta: (tipo: SancaoTipo) => unknown[] = () => []): {
           param: endpoint.paramDocumento,
           documento,
         })
-        return resposta(endpoint.tipo)
+        return { ok: true, registros: resposta(endpoint.tipo) }
       },
     },
   }
@@ -306,6 +306,47 @@ test("conferirDocumento: exato, mascarado, CNPJ e ausente", () => {
   assert.equal(conferirDocumento(CPF_CANDIDATO, null), "nao-confere")
   assert.equal(conferirDocumento(CPF_CANDIDATO, "Sem informação"), "nao-confere")
   assert.equal(conferirDocumento("", "529.982.247-25"), "nao-confere")
+})
+
+// ---------------------------------------------------------------------------
+// Invariante 3: cadastro que nao respondeu nao vira zero
+// ---------------------------------------------------------------------------
+//
+// O `coleta_log` so pode gravar `vazio_confirmado` quando todos os cadastros
+// responderam. Se a falha voltasse como lista vazia, um HTTP 500 no CEIS viraria
+// "candidato sem sancao" no relatorio publico, que e a mesma classe de erro do
+// falso positivo, so que na direcao contraria.
+
+test("cadastro que falha entra em falhas e nao se confunde com cadastro vazio", async () => {
+  const coleta = await coletarSancoesDoCandidato(CPF_CANDIDATO, NOME_CANDIDATO, {
+    async buscar(endpoint) {
+      if (endpoint.tipo === "CEIS") return { ok: false, erro: "ceis: HTTP 500" }
+      return { ok: true, registros: [] }
+    },
+  })
+
+  assert.equal(coleta.consultou, true)
+  assert.deepEqual(coleta.sancoes, [], "falha de cadastro nao pode inventar sancao")
+  assert.deepEqual(coleta.falhas, ["ceis: HTTP 500"])
+})
+
+test("todos os cadastros respondendo vazio deixa falhas vazio (o zero e afirmavel)", async () => {
+  const { deps } = depsEspiao(() => [])
+  const coleta = await coletarSancoesDoCandidato(CPF_CANDIDATO, NOME_CANDIDATO, deps)
+
+  assert.equal(coleta.consultou, true)
+  assert.deepEqual(coleta.falhas, [])
+})
+
+test("guard de CPF barra antes da rede e nao reporta falha de cadastro", async () => {
+  const coleta = await coletarSancoesDoCandidato(null, NOME_CANDIDATO, {
+    async buscar() {
+      throw new Error("nao deveria ter consultado")
+    },
+  })
+
+  assert.equal(coleta.consultou, false)
+  assert.deepEqual(coleta.falhas, [], "sem consulta nao ha cadastro a culpar")
 })
 
 test("parseDataBR: DD/MM/AAAA vira ISO, resto vira null", () => {

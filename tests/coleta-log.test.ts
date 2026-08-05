@@ -202,7 +202,8 @@ describe("FONTES cobre todo source declarado pelos ingests", () => {
 
   it("nenhuma entrada de FONTES virou orfa", () => {
     // `wiki-historico` nao monta IngestResult (enrich-wiki-historico retorna
-    // void) e por isso e instrumentado a mao; fica de fora da comparacao.
+    // void), entao chama registrarColetas direto em vez de declarar `source:`.
+    // Esta e a unica excecao legitima; qualquer outra e fonte esquecida.
     const orfas = Object.keys(FONTES).filter(
       (f) => !declarados.has(f) && f !== "wiki-historico",
     )

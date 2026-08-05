@@ -29,6 +29,20 @@ from (
     'naturalidade', c.naturalidade,
     'formacao', c.formacao,
     'profissao', c.profissao_declarada,
+    -- Ultima tentativa de coleta por fonte, de public.coleta_log_ultima. E o que
+    -- permite separar "verificamos e nao ha" de "nunca fomos buscar" nas 954
+    -- celulas que hoje caem no estado `zero`. Ausencia de chave para uma fonte
+    -- significa nunca verificado, e e leitura pela negativa de proposito: nao
+    -- existe momento em que gravar "nunca fui la". Ver
+    -- scripts/audit/lib/coleta-proveniencia.ts.
+    'coleta', coalesce((
+      select jsonb_object_agg(u.fonte, jsonb_build_object(
+        'resultado', u.resultado,
+        'volume', u.volume,
+        'executado_em', u.executado_em,
+        'detalhe', u.detalhe))
+      from coleta_log_ultima u
+      where u.escopo = 'candidato' and u.alvo = c.slug), '{}'::jsonb),
     'historico', coalesce((
       select jsonb_agg(jsonb_build_object(
         'cargo_canonico', h.cargo_canonico,

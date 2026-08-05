@@ -1,6 +1,7 @@
 import { supabase } from "./supabase"
 import { loadCandidatos, fetchJSON, sleep, normalizeForMatch } from "./helpers"
 import { log, warn } from "./logger"
+import { registrarColetas } from "./coleta-log"
 import type { IngestResult } from "./types"
 import { motivoRecusaDeFonte } from "../../src/lib/public-attention-point"
 
@@ -353,8 +354,25 @@ export function normalizarRegistros(
 // Coleta (rede injetavel, para o teste rodar sem API)
 // ---------------------------------------------------------------------------
 
+/**
+ * Resposta de um cadastro, com a falha SEPARADA do vazio.
+ *
+ * A versao anterior devolvia `[]` nos dois casos, e era essa linha que produzia
+ * o pior dado do banco: uma sancao real atras de um HTTP 500 chegava ao
+ * chamador com exatamente a mesma cara de "este politico nao tem sancao
+ * nenhuma". O ingest entao gravava zero, e o zero virava a ficha publica. Nao
+ * da para afirmar que um cadastro esta vazio sem saber que ele respondeu.
+ *
+ * Isto e o ponto de injecao da rede, entao e aqui que a distincao precisa
+ * existir: qualquer camada acima so consegue distinguir o que este tipo
+ * distinguir.
+ */
+export type RespostaCadastro<T = unknown> =
+  | { ok: true; registros: T[] }
+  | { ok: false; erro: string }
+
 export interface ColetaDeps {
-  buscar(endpoint: EndpointSancao, documento: string): Promise<unknown[]>
+  buscar(endpoint: EndpointSancao, documento: string): Promise<RespostaCadastro>
 }
 
 export interface ColetaResultado {
@@ -363,6 +381,11 @@ export interface ColetaResultado {
   motivoSkip?: string
   sancoes: SancaoNormalizada[]
   descartes: string[]
+  /**
+   * Cadastros que nao responderam. Com um deles aqui, "sem sancao" e presuncao
+   * e nao achado, e o ingest nao pode declarar `vazio_confirmado`.
+   */
+  falhas: string[]
 }
 
 /**
@@ -376,20 +399,31 @@ export async function coletarSancoesDoCandidato(
   hoje: Date = new Date()
 ): Promise<ColetaResultado> {
   if (!cpfBruto || !somenteDigitos(cpfBruto)) {
-    return { consultou: false, motivoSkip: "sem CPF", sancoes: [], descartes: [] }
+    return { consultou: false, motivoSkip: "sem CPF", sancoes: [], descartes: [], falhas: [] }
   }
   if (!cpfEhValido(cpfBruto)) {
-    return { consultou: false, motivoSkip: "CPF invalido", sancoes: [], descartes: [] }
+    return { consultou: false, motivoSkip: "CPF invalido", sancoes: [], descartes: [], falhas: [] }
   }
 
   const cpf = somenteDigitos(cpfBruto)
   const ctx: ContextoCandidato = { cpf, nome: nomeCandidato }
   const sancoes: SancaoNormalizada[] = []
   const descartes: string[] = []
+  const falhas: string[] = []
 
   for (const endpoint of ENDPOINTS) {
-    const registros = await deps.buscar(endpoint, cpf)
-    if (!Array.isArray(registros) || registros.length === 0) continue
+    const resposta = await deps.buscar(endpoint, cpf)
+
+    // Cadastro que nao respondeu nao vira zero: vira falha anotada. O chamador
+    // segue com o que os outros trouxeram, como antes, mas fica impedido de
+    // dizer que consultou tudo.
+    if (!resposta.ok) {
+      falhas.push(resposta.erro)
+      continue
+    }
+
+    const registros = resposta.registros
+    if (registros.length === 0) continue
 
     const { aceitas, descartes: descartados } = normalizarRegistros(
       endpoint.tipo,
@@ -401,7 +435,7 @@ export async function coletarSancoesDoCandidato(
     descartes.push(...descartados)
   }
 
-  return { consultou: true, sancoes, descartes }
+  return { consultou: true, sancoes, descartes, falhas }
 }
 
 function criarDepsHttp(headers: Record<string, string>): ColetaDeps {
@@ -410,18 +444,16 @@ function criarDepsHttp(headers: Record<string, string>): ColetaDeps {
       try {
         const url = `${API}/${endpoint.path}?${endpoint.paramDocumento}=${encodeURIComponent(documento)}&pagina=1`
         const data = await fetchJSON<unknown[]>(url, headers)
-        if (Array.isArray(data)) return data
+        if (Array.isArray(data)) return { ok: true, registros: data }
         // Corpo fora do contrato nao e cadastro vazio: e resposta que nao
-        // sabemos ler. Segue como lista vazia para nao gravar lixo, mas o aviso
-        // impede que a falha passe por "candidato limpo".
-        warn("transparencia-sanctions", `${endpoint.path}: resposta nao e lista, tratando como vazio`)
-        return []
+        // sabemos ler. Vai como falha, e nao como lista vazia, para que a
+        // resposta ilegivel nunca passe por "candidato limpo".
+        warn("transparencia-sanctions", `${endpoint.path}: resposta nao e lista`)
+        return { ok: false, erro: `${endpoint.path}: resposta nao e lista` }
       } catch (err) {
-        warn(
-          "transparencia-sanctions",
-          `${endpoint.path}: consulta falhou (${err instanceof Error ? err.message : String(err)}), tratando como vazio`
-        )
-        return []
+        const motivo = err instanceof Error ? err.message : String(err)
+        warn("transparencia-sanctions", `${endpoint.path}: consulta falhou (${motivo})`)
+        return { ok: false, erro: `${endpoint.path}: ${motivo}` }
       }
     },
   }
@@ -535,6 +567,22 @@ export async function ingestTransparenciaSanctions(): Promise<IngestResult[]> {
   const apiKey = process.env.TRANSPARENCIA_API_KEY
   if (!apiKey) {
     warn("transparencia-sanctions", "TRANSPARENCIA_API_KEY nao definida, pulando")
+
+    // ESTE e o caminho que produziu 194 de 194 fichas com sancoes vazias,
+    // incluindo politicos com cinco mandatos. Voltar aqui sem escrever nada era
+    // indistinguivel, para quem le o banco depois, de ter consultado os
+    // cadastros e nao ter achado nada. Uma linha de `erro` por candidato torna
+    // a diferenca legivel: a ficha continua vazia, mas o relatorio passa a
+    // dizer POR QUE esta vazia, e da para ver que falta credencial em vez de
+    // concluir que 194 politicos tem ficha limpa.
+    await registrarColetas(
+      loadCandidatos().map((cand) => ({
+        fonte: "transparencia-sanctions",
+        alvo: cand.slug,
+        resultado: "erro" as const,
+        detalhe: "TRANSPARENCIA_API_KEY ausente: nenhum cadastro foi consultado",
+      }))
+    )
     return []
   }
 
@@ -583,6 +631,11 @@ export async function ingestTransparenciaSanctions(): Promise<IngestResult[]> {
         )
         result.skipped = true
         result.skip_reason = coleta.motivoSkip
+        // Sem CPF valido nao ha como consultar cadastro nenhum. Ficha vazia por
+        // falta de pre-requisito nao e ficha limpa, entao vai como `erro` e nao
+        // como vazio.
+        result.coleta_resultado = "erro"
+        result.coleta_detalhe = `${coleta.motivoSkip}: nenhum cadastro foi consultado`
         result.duration_ms = Date.now() - start
         results.push(result)
         // Sem requisicao feita, nao ha rate limit a respeitar.
@@ -627,6 +680,31 @@ export async function ingestTransparenciaSanctions(): Promise<IngestResult[]> {
         )
       } else {
         log("transparencia-sanctions", `  ${cand.slug}: sem sancoes nos cadastros`)
+      }
+
+      // O veredito de coleta, que e o que separa a ficha limpa da ficha nao
+      // consultada. So com todos os cadastros respondendo da para afirmar que
+      // este politico nao tem sancao.
+      //
+      // A falha de cadastro NAO entra em `result.errors` de proposito: o
+      // ingest-all faz process.exit(1) com qualquer erro ali, e uma
+      // indisponibilidade parcial do Portal passaria a derrubar a ingestao
+      // inteira, que nao e o comportamento de hoje e nao e decisao desta
+      // mudanca. O `coleta_resultado` registra a verdade sem mexer no status do
+      // pipeline.
+      if (coleta.falhas.length > 0) {
+        result.coleta_resultado = "erro"
+        result.coleta_detalhe =
+          `cadastro(s) sem resposta, zero nao confirmado: ${coleta.falhas.join("; ")}`.slice(0, 500)
+        warn(
+          "transparencia-sanctions",
+          `  ${cand.slug}: ${coleta.falhas.length} cadastro(s) sem resposta, zero nao confirmado`
+        )
+      } else if (totalUpserted > 0) {
+        result.coleta_resultado = "encontrado"
+      } else {
+        result.coleta_resultado = "vazio_confirmado"
+        result.coleta_detalhe = `${ENDPOINTS.map((e) => e.tipo).join(", ")} responderam sem registro para o CPF`
       }
     } catch (err) {
       result.errors.push(err instanceof Error ? err.message : String(err))
