@@ -96,6 +96,11 @@ export const FONTES: Readonly<Record<string, EscopoColeta>> = Object.freeze({
   "wikidata-politico": "candidato",
   instagram: "candidato",
   "google-news": "candidato",
+  // Backfill dedicado de CPF (scripts/backfill-cpf-tse.ts). Fonte própria de
+  // propósito: gravar como `tse` sobrescreveria, em `coleta_log_ultima`, a
+  // última tentativa real do ingest do TSE (perfil/patrimônio/financiamento)
+  // com um desfecho que só fala do CPF.
+  "tse-cpf": "candidato",
 
   siconfi: "territorio",
   capag: "territorio",

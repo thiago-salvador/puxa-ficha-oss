@@ -49,10 +49,20 @@ export function getPatrimonioEmptyState(hasHistorico: boolean) {
   }
 }
 
+/**
+ * Honestidade sobre o vazio (2026-08-05): processos judiciais não têm ingest.
+ * Os 30 processos do site vêm de verificação manual num grupo restrito de
+ * candidatos, e não existe base pública que permita buscar processo por
+ * pessoa (a API pública do DataJud/CNJ não expõe as partes; verificado em
+ * 05/08/2026, ver docs/criterio-processos-judiciais.md). A copy anterior
+ * ("não foram encontrados... nas bases consultadas") afirmava uma consulta
+ * que nunca aconteceu, e deixava o leitor inferir ficha limpa.
+ */
 export function getProcessosEmptyState() {
   return {
-    title: "Nenhum processo encontrado",
-    description: "Não foram encontrados processos judiciais associados a este candidato nas bases consultadas.",
+    title: "Processos judiciais ainda não verificados",
+    description:
+      "Ainda não fizemos busca ativa de processos para esta ficha. Os processos exibidos no site vêm de verificação manual em fontes públicas (tribunais superiores, Ministério Público e imprensa) para parte dos candidatos, porque não existe base pública que permita buscar processos por pessoa. A ausência de registros aqui não significa ficha limpa.",
     type: "neutral" as const,
   }
 }
