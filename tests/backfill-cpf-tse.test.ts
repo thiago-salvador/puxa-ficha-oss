@@ -366,7 +366,7 @@ describe("identidades invalidadas por homônimo", () => {
     ids?: { tse_sq_candidato?: Record<string, string> }
   }>
 
-  for (const slug of ["cadu-xavier", "jarbas-soares"]) {
+  for (const slug of ["cadu-xavier", "jarbas-soares", "renato-gomes"]) {
     it(`${slug} não expõe SQ ao backfill automático`, () => {
       const candidato = candidatos.find((item) => item.slug === slug)
       assert.ok(candidato, `candidato ausente no seed: ${slug}`)
