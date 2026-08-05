@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyn
 import dynamic from "next/dynamic"
 import type { FichaCandidato, LegislacaoMandatoExecutivo, ProjetoLei } from "@/lib/types"
 import { classifyAttentionPoints } from "@/lib/attention-points"
+import { processosOverviewDisplay } from "@/lib/processos-display"
 import { formatCompact, formatDate, safeHref } from "@/lib/utils"
 import { ProfileTabs, type Tab } from "./ProfileTabs"
 import { GravityBadge } from "./GravityBadge"
@@ -248,6 +249,7 @@ export function CandidatoProfile({
   const patrimonio = ficha.patrimonio ?? []
   const financiamento = ficha.financiamento ?? []
   const processos = ficha.processos ?? []
+  const processosOverview = processosOverviewDisplay(ficha.total_processos, ficha.processos_criminais)
   const votos = ficha.votos ?? []
   const historico = ficha.historico ?? []
   const mudancas = ficha.mudancas_partido ?? []
@@ -482,12 +484,12 @@ export function CandidatoProfile({
       <section className="mx-auto max-w-7xl px-5 py-4 sm:py-6 md:px-12">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5 [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1">
             <StatCard
-              value={ficha.total_processos ?? 0}
+              value={processosOverview.value}
               label="Processos"
               icon={Scale}
               dataValueAttr="data-pf-overview-processos"
               dataRawValue={ficha.total_processos ?? 0}
-              sub={(ficha.processos_criminais ?? 0) > 0 ? `${ficha.processos_criminais} criminal` : undefined}
+              sub={processosOverview.sub}
             />
             <StatCard
               value={latestPatrimonio ? formatCompact(latestPatrimonio.valor_total) : "N/D"}
@@ -605,7 +607,8 @@ export function CandidatoProfile({
             {/* JUSTICA TAB */}
             {activeTab === "justica" && (
               <div>
-                <SectionLabel>Processos judiciais ({processos.length})</SectionLabel>
+                {/* Sem "(0)": zero aqui é ausência de verificação, não contagem apurada. */}
+                <SectionLabel>{processos.length > 0 ? `Processos judiciais (${processos.length})` : "Processos judiciais"}</SectionLabel>
                 <SectionTitle>{fixedCopy.justiceSituation}</SectionTitle>
                 {processos.length === 0 && (() => { const s = suggestFor("justica"); return <EmptyState {...getProcessosEmptyState()} suggestLabel={s?.label} onSuggest={s?.go} /> })()}
                 {/* Group by type */}

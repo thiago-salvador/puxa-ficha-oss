@@ -27,6 +27,7 @@ next-env.d.ts
 
 # production data downloads (large, regenerable via the ingest pipeline)
 data/tse/
+data/tse-cpf/
 data/operations/
 tmp/
 
