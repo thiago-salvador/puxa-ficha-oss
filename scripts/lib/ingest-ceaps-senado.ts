@@ -28,11 +28,112 @@ interface AnoData {
 interface DespesasResponse {
   DespesasSenador?: {
     Parlamentar?: {
-      IdentificacaoParlamentar?: Record<string, unknown>
+      IdentificacaoParlamentar?: {
+        CodigoParlamentar?: string | number
+        NomeParlamentar?: string
+      }
     }
     Periodo?: {
       Ano?: AnoData | AnoData[]
     }
+  }
+}
+
+export interface DespesasAgregadas {
+  total: number
+  porCategoria: GastoPorCategoria
+  destaques: GastoDestaque[]
+  /** Anos que a API devolveu sem serem o pedido, e que foram descartados. */
+  anosDescartados: string[]
+}
+
+export type ConferenciaDespesas =
+  | { ok: true; dados: DespesasAgregadas | null }
+  | { ok: false; motivo: string }
+
+/**
+ * Agrega as despesas de UM ano, conferindo antes de quem elas sao.
+ *
+ * Dois defeitos que esta funcao fecha, os dois da mesma familia do incidente de
+ * 2026-08-04 no ingest de sancoes:
+ *
+ * 1. `IdentificacaoParlamentar` estava tipado como `Record<string, unknown>` e
+ *    nunca era lido. O payload diz de quem sao as despesas e o codigo ignorava,
+ *    gravando em `gastos_parlamentares` o que a API mandasse.
+ * 2. O codigo aceitava qualquer ano devolvido e somava tudo na linha do ano
+ *    PEDIDO. O comentario antigo registrava isso como comportamento conhecido
+ *    ("a API as vezes retorna o ano solicitado, as vezes outros"), o que e
+ *    evidencia de que o filtro nao e confiavel, nao licenca para confiar nele.
+ *    Somar 2023 na linha de 2019 nao e dado incompleto, e dado errado.
+ *
+ * Ausencia de `CodigoParlamentar` nao reprova a resposta: nem todo payload
+ * traz o bloco. O que reprova e ele vir preenchido e ser de outro senador.
+ */
+export function agregarDespesasDoAno(
+  payload: DespesasResponse | null | undefined,
+  senadoId: number,
+  ano: number
+): ConferenciaDespesas {
+  const despesasSenador = payload?.DespesasSenador
+  if (!despesasSenador) return { ok: true, dados: null }
+
+  const codigoRetornado = despesasSenador.Parlamentar?.IdentificacaoParlamentar?.CodigoParlamentar
+  if (codigoRetornado !== undefined && codigoRetornado !== null && String(codigoRetornado).trim() !== "") {
+    if (String(codigoRetornado).trim() !== String(senadoId)) {
+      const nome = despesasSenador.Parlamentar?.IdentificacaoParlamentar?.NomeParlamentar ?? "sem nome"
+      return {
+        ok: false,
+        motivo: `despesas devolvidas sao do parlamentar ${codigoRetornado} (${nome}), nao do ${senadoId}`,
+      }
+    }
+  }
+
+  const periodo = despesasSenador.Periodo
+  if (!periodo) return { ok: true, dados: null }
+
+  const anos = toArray(periodo.Ano)
+  const porCategoria: GastoPorCategoria = {}
+  const allDespesas: GastoDestaque[] = []
+  const anosDescartados: string[] = []
+  let total = 0
+
+  for (const anoData of anos) {
+    const anoRetornado = String(anoData.NumAno ?? "").trim()
+    if (anoRetornado && anoRetornado !== String(ano)) {
+      anosDescartados.push(anoRetornado)
+      continue
+    }
+
+    for (const mes of toArray(anoData.Mes)) {
+      for (const d of toArray(mes.Despesa)) {
+        const valor = parseValor(d.ValorDespesa)
+        if (valor <= 0) continue
+
+        const categoria = (d.TipoDespesa || "OUTROS").trim().toUpperCase()
+        porCategoria[categoria] = (porCategoria[categoria] ?? 0) + valor
+        total += valor
+
+        allDespesas.push({
+          fornecedor: (d.NomeFornecedor || "").trim(),
+          tipo: categoria,
+          valor,
+          data: d.DataDespesa ?? null,
+        })
+      }
+    }
+  }
+
+  if (total === 0) return { ok: true, dados: null }
+
+  return {
+    ok: true,
+    dados: {
+      total,
+      porCategoria,
+      // Top 5 gastos por valor
+      destaques: allDespesas.sort((a, b) => b.valor - a.valor).slice(0, 5),
+      anosDescartados: [...new Set(anosDescartados)],
+    },
   }
 }
 
@@ -60,7 +161,7 @@ interface GastoDestaque {
 async function fetchDespesasAno(
   senadoId: number,
   ano: number
-): Promise<{ total: number; porCategoria: GastoPorCategoria; destaques: GastoDestaque[] } | null> {
+): Promise<DespesasAgregadas | null> {
   const url = `${BASE_URL}/${senadoId}/despesas?ano=${ano}`
 
   let data: DespesasResponse
@@ -69,49 +170,30 @@ async function fetchDespesasAno(
       Accept: "application/json",
     })
   } catch (err) {
+    // Em 2026-08-05 esta rota responde 404 ("No static resource
+    // dadosabertos/senador/{id}/despesas") para todo id testado, enquanto
+    // /senador/{id} segue 200: a rota de despesas saiu do ar. O aviso e a unica
+    // coisa que separa "fonte morta" de "senador sem gasto", porque o retorno
+    // null vira "sem dados" no chamador.
     warn("ceaps-senado", `  HTTP erro para id=${senadoId} ano=${ano}: ${err}`)
     return null
   }
 
-  const periodo = data?.DespesasSenador?.Periodo
-  if (!periodo) return null
-
-  const anos = toArray(periodo.Ano)
-  const porCategoria: GastoPorCategoria = {}
-  const allDespesas: GastoDestaque[] = []
-  let total = 0
-
-  for (const anoData of anos) {
-    // Aceita qualquer ano retornado pela API (ela as vezes retorna o ano solicitado, as vezes outros)
-    const meses = toArray(anoData.Mes)
-
-    for (const mes of meses) {
-      const despesas = toArray(mes.Despesa)
-
-      for (const d of despesas) {
-        const valor = parseValor(d.ValorDespesa)
-        if (valor <= 0) continue
-
-        const categoria = (d.TipoDespesa || "OUTROS").trim().toUpperCase()
-        porCategoria[categoria] = (porCategoria[categoria] ?? 0) + valor
-        total += valor
-
-        allDespesas.push({
-          fornecedor: (d.NomeFornecedor || "").trim(),
-          tipo: categoria,
-          valor,
-          data: d.DataDespesa ?? null,
-        })
-      }
-    }
+  const conferencia = agregarDespesasDoAno(data, senadoId, ano)
+  if (!conferencia.ok) {
+    warn("ceaps-senado", `  id=${senadoId} ano=${ano}: retorno recusado — ${conferencia.motivo}`)
+    return null
   }
 
-  if (total === 0) return null
+  const dados = conferencia.dados
+  if (dados && dados.anosDescartados.length > 0) {
+    warn(
+      "ceaps-senado",
+      `  id=${senadoId} ano=${ano}: a API tambem devolveu ${dados.anosDescartados.join(", ")}, descartado(s) para nao somar ano alheio nesta linha`
+    )
+  }
 
-  // Top 5 gastos por valor
-  const destaques = allDespesas.sort((a, b) => b.valor - a.valor).slice(0, 5)
-
-  return { total, porCategoria, destaques }
+  return dados
 }
 
 export async function ingestCeapsSenado(): Promise<IngestResult[]> {
