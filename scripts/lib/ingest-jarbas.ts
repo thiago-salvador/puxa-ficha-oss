@@ -127,7 +127,13 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
         })
 
         if (res.status === 404) {
-          log("jarbas", `  ${cand.slug}: sem dados na API (404)`)
+          // NAO e "candidato sem gasto suspeito": a API inteira responde 404,
+          // inclusive na raiz. Sem declarar o desfecho, este caminho virava
+          // `vazio_confirmado` no coleta_log, que e o projeto afirmando ter
+          // procurado e nao achado nada. Ver docs/fontes-pendentes.md.
+          result.coleta_resultado = "erro"
+          result.coleta_detalhe = `jarbas.serenata.ai respondeu HTTP 404: fonte fora do ar, nao e ausencia de gasto suspeito`
+          log("jarbas", `  ${cand.slug}: API fora do ar (404), registrado como erro`)
           result.duration_ms = Date.now() - start
           results.push(result)
           await sleep(500)
@@ -140,8 +146,14 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
 
         jarbasData = (await res.json()) as JarbasResponse
       } catch (fetchErr) {
-        // API pode estar fora do ar ocasionalmente
-        warn("jarbas", `  ${cand.slug}: API indisponivel: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`)
+        // Transporte caiu (timeout, DNS, 5xx, JSON invalido). Em 2026-08-05 o
+        // dominio responde HTTP 522, ou seja o Cloudflare esta de pe e a origem
+        // nao. Tambem nao e ausencia de gasto suspeito, e tambem precisa sair
+        // do log como erro em vez de silencio.
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        result.coleta_resultado = "erro"
+        result.coleta_detalhe = `jarbas.serenata.ai indisponivel: ${msg}`.slice(0, 500)
+        warn("jarbas", `  ${cand.slug}: API indisponivel: ${msg}`)
         result.duration_ms = Date.now() - start
         results.push(result)
         await sleep(500)
