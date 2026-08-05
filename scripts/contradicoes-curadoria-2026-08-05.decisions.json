@@ -1,4 +1,34 @@
 {
+  "thiago_review": {
+    "submitted_at": "2026-08-05T20:26:57.568Z",
+    "instructions": "",
+    "summary": {
+      "approve_recommendation": 7,
+      "needs_more_review": 6,
+      "reject_recommendation": 5
+    },
+    "publication_or_content_change_applied": false,
+    "decisions": {
+      "new-eduardo-paes": "approve_recommendation",
+      "new-sergio-moro-gov-pr": "approve_recommendation",
+      "new-gelson-merisio": "approve_recommendation",
+      "existing-ciro-gomes-gov-ce": "needs_more_review",
+      "existing-flavio-bolsonaro-ponto": "needs_more_review",
+      "existing-flavio-bolsonaro-voto": "needs_more_review",
+      "existing-haddad-gov-sp": "needs_more_review",
+      "existing-hertz-dias": "approve_recommendation",
+      "existing-lula": "approve_recommendation",
+      "existing-renan-santos": "needs_more_review",
+      "existing-romeu-zema": "needs_more_review",
+      "existing-ronaldo-caiado-ponto": "reject_recommendation",
+      "existing-ronaldo-caiado-voto": "reject_recommendation",
+      "existing-rui-costa-pimenta": "approve_recommendation",
+      "existing-samara-martins": "approve_recommendation",
+      "existing-tarcisio-gov-sp-1": "reject_recommendation",
+      "existing-tarcisio-gov-sp-2": "reject_recommendation",
+      "existing-tarcisio-gov-sp-3": "reject_recommendation"
+    }
+  },
   "default_no_finding_note": "Curadoria concluída sem achado no escopo. O resultado não prova ausência absoluta de contradições.",
   "pairs": [
     {
