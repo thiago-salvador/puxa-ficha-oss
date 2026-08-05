@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
 import { motivoRecusaDeFonte } from "../../src/lib/public-attention-point"
@@ -102,7 +103,7 @@ async function upsertPontoAtencao(
 }
 
 export async function ingestTCU(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

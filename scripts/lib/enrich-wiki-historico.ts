@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { sleep } from "./helpers"
 import { log, warn } from "./logger"
 import { registrarColetas, type EntradaColeta } from "./coleta-log"
 import { canonicalizeEstadoForStorage } from "@/lib/br-uf"
@@ -97,7 +98,7 @@ function extractCargosFromCategories(categories: string[]): Array<{
 }
 
 export async function enrichWikiHistorico() {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
 
   // Read WIKI_TITLES inline (same map as enrich-wikipedia.ts)
   // We dynamically read the file to get the title mappings
