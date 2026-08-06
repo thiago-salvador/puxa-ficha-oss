@@ -74,19 +74,42 @@ em `coleta_log`:
 A regra é conservadora: só vira verde quando **todas** as fontes daquela coluna
 responderam. Uma fonte não consultada rebaixa o veredito, porque pode ser
 justamente a que tinha o dado. O mapa coluna → fonte está em `FONTES_POR_COLUNA`
-(`scripts/audit/lib/coverage-model.ts`) e sai de quem escreve em cada tabela, não
+(`scripts/audit/lib/coleta-proveniencia.ts`) e sai de quem escreve em cada tabela, não
 de suposição.
 
-A ausência de linha no log é o dado mais importante e não é representada como
-linha: candidato sem tentativa registrada simplesmente não traz a chave, e a
-falta é lida como "nunca verificado". Há uma diferença deliberada entre *o log
-não foi lido* (procedência desconhecida, o relatório diz isso na legenda) e *o
-log foi lido e este candidato não tem tentativa* (nunca verificado). Colapsar as
-duas repõe exatamente o bug que a tabela veio corrigir.
+A ausência de linha no log é o dado mais importante, mas só representa "nunca
+verificado" quando a fonte é aplicável ao candidato. No eixo por fonte, Câmara e
+Jarbas viram `N/A` sem ID oficial nem mandato de deputado federal; Senado e CEAPS
+viram `N/A` sem ID oficial nem mandato de senador. O histórico funciona como
+segunda prova para não esconder um ID ausente no seed. Se houver tentativa
+registrada, o desfecho real sempre prevalece sobre essa inferência.
+
+Há uma diferença deliberada entre *o log não foi lido* (procedência
+desconhecida), *a fonte não se aplica* (`N/A`) e *o log foi lido, a fonte se
+aplica e este candidato não tem tentativa* (nunca verificado). Colapsar esses
+casos repõe exatamente o bug que a tabela veio corrigir.
 
 O relatório funciona em banco **sem** `coleta_log`: a leitura é opcional e, sem a
 tabela, todo zero sai com procedência não lida. Detalhe do vocabulário de
 `resultado` na migration `coleta_log_tentativa_por_fonte`.
+
+## Eixo por fonte, por candidato
+
+Cada seção de estado mantém a tabela de cobertura e acrescenta uma segunda
+tabela: uma linha por fonte e candidato, com desfecho, volume, data da última
+tentativa e detalhe. As fontes não consultadas aparecem primeiro dentro de cada
+candidato.
+
+A lista-base vem das fontes de escopo `candidato` em `scripts/lib/coleta-log.ts`,
+mais `tse-cpf`, que já existe em `coleta_log_ultima` e é obrigatório nesta visão.
+Fonte adicional efetivamente registrada no log também aparece naquele candidato.
+Ela não é projetada como lacuna para os demais enquanto não entrar no catálogo
+canônico. Fontes territoriais ficam fora, porque o alvo delas é a UF ou um
+agregado estatístico.
+
+Este eixo não cria estado de célula nem altera o índice. A régua das 23 frentes
+continua inteira em `coverage-model.ts`; a visão por fonte só expõe o mesmo
+objeto `coleta` que já acompanha cada candidato no snapshot.
 
 ## Acesso ao banco
 

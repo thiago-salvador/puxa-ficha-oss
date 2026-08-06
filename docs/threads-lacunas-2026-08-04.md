@@ -1092,6 +1092,54 @@ não era desta sessão, e cada item já estava registrado na thread de origem:
 9. **`preta-lu`** tem candidatura de 2022 apta cujo resultado vem como `#NULO`;
    falta apurar a votação para o histórico poder ser gravado.
 
+## Thread 7 — cobertura por fonte e filtro de despublicados (05/08/2026)
+
+Base: PR #97 (`fix/cobertura-totais-legenda`, commit `1402759`), em worktree
+isolado fora de `.qwen`. A tabela original de 23 frentes foi preservada e cada
+seção ganhou um segundo eixo com uma linha por fonte e candidato: desfecho,
+volume, última tentativa e detalhe. As fontes nunca consultadas aparecem
+primeiro e são contadas no cabeçalho do candidato.
+
+A lista inclui as 17 fontes canônicas de escopo candidato e, com `tse-cpf`,
+chega a 18 fontes, além das fontes adicionais já observadas no log. Fontes fora
+do catálogo só aparecem onde há
+tentativa registrada; elas não viram lacuna inventada para os demais. Fontes
+territoriais ficam fora.
+
+O snapshot agora filtra `historico_politico.despublicado_em is null`, igual à
+ficha pública. A comparação antiga x nova rodou em uma única consulta Supabase
+com `read_only: true`, sobre o mesmo snapshot transacional: 194 candidatos antes
+e depois, **0 células alteradas em todas as 23 colunas**. O efeito visual atual é
+nulo, mas a régua deixa de depender de linhas que a ficha não publica.
+
+Verificação no relatório servido em `http://127.0.0.1:8899/`:
+
+- legenda e DOM: 4.462/4.462 células, com os cinco estados iguais;
+- `coleta_log_ultima`: Aroldo Félix 9/9, Lula 4/4 e Zé Cocá 6/6, sem divergência
+  de fonte ou desfecho;
+- viewport de 375 px: documento 360/360 px, sem rolagem horizontal da página;
+  as 58 tabelas rolam dentro do próprio container;
+- gates do job `verify`: 9/9 PASS, incluindo 1.821 testes.
+
+### Follow-up: aplicabilidade das fontes (05/08/2026)
+
+"Nunca verificado" agora significa somente fonte aplicável sem tentativa. Sem
+tentativa registrada, Câmara e Jarbas viram `N/A` quando não há ID da Câmara nem
+mandato de deputado federal; Senado e CEAPS viram `N/A` quando não há ID do
+Senado nem mandato de senador. Uma tentativa real sempre prevalece e mantém seu
+desfecho.
+
+No relatório completo, 659 linhas antes marcadas como pendentes viraram `N/A`:
+158 da Câmara, 159 do Jarbas, 171 do Senado e 171 do CEAPS. Augusto Cury caiu de
+15 para 11 fontes nunca verificadas; as quatro fontes parlamentares agora
+aparecem como `N/A`. A tabela de 23 frentes e o índice de preenchimento não
+mudaram.
+
+O relatório foi regenerado em modo somente leitura e verificado em navegador
+real. O DOM tem 4.462 células de cobertura, 3.698 linhas por fonte e 659 `N/A`;
+em 375 px, o documento mede 360/360 px e as tabelas continuam rolando dentro do
+container. Após sincronizar a PR com a `main`, os nove gates passaram novamente,
+incluindo 1.932 testes.
 ---
 
 ## Superfície de sanções na ficha (2026-08-05, 02h)
@@ -1497,5 +1545,4 @@ Revisão da PR: o `UPDATE` das duplicatas foi restringido aos dois slugs,
 anos, partidos e tipos de evento confirmados. A migration `20260805137000`
 corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
 `nome_urna`; naturalidade e profissão voltaram a `NULL`.
-
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

@@ -20,6 +20,8 @@
  *   }
  */
 
+import { FONTES } from "../../lib/coleta-log"
+
 /** O que `coleta_log` registrou para a última tentativa de uma fonte. */
 export interface UltimaColeta {
   resultado: "encontrado" | "vazio_confirmado" | "nao_aplicavel" | "erro" | "indeterminado"
@@ -30,6 +32,16 @@ export interface UltimaColeta {
 
 /** Mapa fonte -> última tentativa, como o snapshot entrega (chave `coleta`). */
 export type ColetaPorFonte = Record<string, UltimaColeta>
+
+export type ResultadoFonte = UltimaColeta["resultado"] | "nunca_verificado"
+
+export interface LinhaFonte {
+  fonte: string
+  resultado: ResultadoFonte
+  volume?: number
+  executado_em?: string
+  detalhe?: string | null
+}
 
 export type VeredictoProveniencia =
   /** Alguma fonte trouxe dado. O vazio da célula, se houver, é de outro recorte. */
@@ -109,7 +121,57 @@ export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Ob
   legexec: [],
   // Derivadas de outras colunas, não de fonte externa.
   contradicoes: [],
-  revisar: [],
+  revisar: []
+})
+
+/**
+ * Fontes cujo alvo é um candidato, conforme o registro canônico dos ingests.
+ * Fontes territoriais ficam de fora: atribuí-las a cada candidato fabricaria
+ * lacunas, porque o alvo real delas é a UF ou um agregado estatístico.
+ */
+export const FONTES_POR_CANDIDATO: readonly string[] = Object.freeze(
+  [
+    ...Object.entries(FONTES)
+      .filter(([, escopo]) => escopo === "candidato")
+      .map(([fonte]) => fonte),
+    // Já existe em coleta_log_ultima e foi pedido como eixo obrigatório, mas o
+    // ingest correspondente ainda não integra esta base de código.
+    "tse-cpf"
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"))
+)
+
+/**
+ * Uma linha por fonte canônica e por fonte adicional já observada no log.
+ * Ausência de uma fonte canônica aplicável significa literalmente nunca
+ * verificado. A régua pode declarar fontes não aplicáveis ao candidato; elas
+ * viram `nao_aplicavel`, nunca uma pendência. Uma fonte fora do catálogo só
+ * aparece onde há tentativa registrada: projetá-la nos demais candidatos
+ * fabricaria uma obrigação que `FONTES` não declarou.
+ */
+export function linhasPorFonte(
+  coleta: ColetaPorFonte,
+  naoAplicaveis: Readonly<Record<string, string>> = {}
+): LinhaFonte[] {
+  const fontes = [...new Set([...FONTES_POR_CANDIDATO, ...Object.keys(coleta)])].sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
+  )
+  return fontes.map((fonte) => {
+    const ultima = coleta[fonte]
+    if (ultima) return { fonte, ...ultima }
+    const detalhe = naoAplicaveis[fonte]
+    return detalhe
+      ? { fonte, resultado: "nao_aplicavel", detalhe }
+      : { fonte, resultado: "nunca_verificado" }
+  })
+}
+
+export const ROTULO_RESULTADO_FONTE: Readonly<Record<ResultadoFonte, string>> = Object.freeze({
+  encontrado: "encontrado",
+  vazio_confirmado: "vazio confirmado",
+  nao_aplicavel: "N/A",
+  erro: "erro",
+  indeterminado: "indeterminado",
+  nunca_verificado: "nunca verificado"
 })
 
 /**
@@ -170,5 +232,5 @@ export const ROTULO_PROVENIENCIA: Readonly<Record<VeredictoProveniencia, string>
   zero_provado: "verificado, não há",
   nunca_verificado: "nunca verificado",
   nao_sabemos: "tentado, sem resposta",
-  sem_ingest: "só por curadoria",
+  sem_ingest: "só por curadoria"
 })
