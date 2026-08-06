@@ -324,6 +324,7 @@ function createDeps(allCandidatos: FakeCandidato[]) {
         {
           accepted: true,
           alreadyAccepted: false,
+          workScheduled: true,
           state: "processing",
           executionId: headers[EXECUTION_HEADER],
           cursor: Number(requestUrl.searchParams.get("cursor")),
@@ -707,6 +708,7 @@ describe("news refresh route", () => {
         {
           accepted: true,
           alreadyAccepted: false,
+          workScheduled: true,
           state: "processing",
           executionId: headers[EXECUTION_HEADER],
           cursor: Number(requestUrl.searchParams.get("cursor")),
@@ -736,6 +738,7 @@ describe("news refresh route", () => {
         {
           accepted: true,
           alreadyAccepted: true,
+          workScheduled: false,
           state: "processing",
           executionId: headers[EXECUTION_HEADER],
           cursor: Number(requestUrl.searchParams.get("cursor")),
@@ -768,6 +771,7 @@ describe("news refresh route", () => {
         {
           accepted: true,
           alreadyAccepted: false,
+          workScheduled: true,
           state: "processing",
           executionId:
             calls === 1 ? "33333333-3333-4333-8333-333333333333" : headers[EXECUTION_HEADER],
@@ -1002,6 +1006,7 @@ describe("news refresh route", () => {
         {
           accepted: true,
           alreadyAccepted: false,
+          workScheduled: true,
           state: "processing",
           executionId: headers[EXECUTION_HEADER],
           cursor: Number(requestUrl.searchParams.get("cursor")),
@@ -1218,14 +1223,17 @@ describe("news refresh route: prazo e origem do encadeamento", () => {
 
   it("origem http fora de loopback não recebe o CRON_SECRET", async () => {
     process.env.PF_CRON_CHAIN_ORIGIN = "http://puxaficha.com.br"
-    const { deps, captured } = createDeps(makeCandidatos(10))
+    const { deps, captured, batches } = createDeps(makeCandidatos(10))
     const handler = createNewsRefreshHandler(deps)
 
-    await handler(makeRequest({ limit: "5" }))
+    const response = await handler(makeRequest({ limit: "5" }))
     for (const cb of captured.afterCallbacks) await cb()
 
-    // Falha alta: nenhum fetch, e o motivo fica no log.
+    // Falha alta, mas a cauda persiste pending para o sweeper recuperar depois.
+    assert.equal(response.status, 500)
     assert.equal(captured.fetchCalls.length, 0)
+    assert.equal(batches.get(`${ROOT_EXECUTION_ID}:0`)?.nextCursor, 5)
+    assert.equal(batches.get(`${ROOT_EXECUTION_ID}:0`)?.continuationState, "pending")
     const rejeicao = captured.logCalls.find((l) => l.event === "chain_origin_rejected")
     assert.ok(rejeicao, "esperado chain_origin_rejected")
     assert.equal(rejeicao.detail.motivo, "sem_https")

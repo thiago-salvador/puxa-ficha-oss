@@ -13,6 +13,7 @@ import {
   type NewsRefreshSummary,
   type NoticiaRow,
 } from "@/lib/news/refresh"
+import { confirmsNewsRefreshAcceptance } from "@/lib/news/refresh-ack"
 import {
   createNewsRefreshRunStore,
   NEWS_REFRESH_EXECUTION_HEADER,
@@ -124,28 +125,6 @@ function safeErrorMessage(error: unknown, secret: string | undefined): string {
   message = message.replace(/bearer\s+\S+/gi, "Bearer [REDACTED]")
   if (secret) message = message.split(secret).join("[REDACTED]")
   return message.slice(0, 300)
-}
-
-async function confirmsDurableAcceptance(
-  response: Response,
-  expectedExecutionId: string,
-  expectedCursor: number,
-): Promise<boolean> {
-  if (!response.ok) return false
-  try {
-    const body = (await response.json()) as {
-      accepted?: unknown
-      alreadyAccepted?: unknown
-      state?: unknown
-      executionId?: unknown
-      cursor?: unknown
-    }
-    if (body.accepted !== true) return false
-    if (body.executionId !== expectedExecutionId || body.cursor !== expectedCursor) return false
-    return !(body.alreadyAccepted === true && body.state === "processing")
-  } catch {
-    return false
-  }
 }
 
 async function defaultFetchCandidatoPage(args: { cursor: number; limit: number }) {
@@ -335,7 +314,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
               signal: controller.signal,
             })
             if (
-              await confirmsDurableAcceptance(res, executionId, continuation.nextCursor)
+              await confirmsNewsRefreshAcceptance(res, executionId, continuation.nextCursor)
             ) {
               accepted = true
               break
@@ -518,12 +497,13 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       deps.log("chain_origin_rejected", { origem: origemBruta, motivo: origem.motivo, nextCursor })
     }
 
-    const chainScheduled = hasMore && shouldChain && origem.ok
+    const chainRequired = hasMore && shouldChain
+    const chainScheduled = chainRequired && origem.ok
     const completed = await deps.runStore.completeBatch({
       executionId,
       cursor,
       ownerToken,
-      nextCursor: chainScheduled ? nextCursor : null,
+      nextCursor: chainRequired ? nextCursor : null,
     })
     if (!completed) throw new Error("batch_completion_fenced")
 
@@ -545,18 +525,21 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     const loteInteiroFalhou =
       summary.processed > 0 && summary.errors.length === summary.processed
     const filaTruncada = hasMore && !shouldChain
-    const degradado = loteInteiroFalhou || filaTruncada
+    const origemInvalida = chainRequired && !origem.ok
+    const degradado = loteInteiroFalhou || filaTruncada || origemInvalida
     const status = degradado ? 500 : 200
 
     if (degradado) {
-      deps.log(loteInteiroFalhou ? "lote_inteiro_falhou" : "chain_depth_exhausted", {
-        cursor,
-        nextCursor,
-        total,
-        chainDepth,
-        errorCount: summary.errors.length,
-        loteSize: summary.processed,
-      })
+      if (!origemInvalida) {
+        deps.log(loteInteiroFalhou ? "lote_inteiro_falhou" : "chain_depth_exhausted", {
+          cursor,
+          nextCursor,
+          total,
+          chainDepth,
+          errorCount: summary.errors.length,
+          loteSize: summary.processed,
+        })
+      }
     }
 
     deps.log("batch_complete", {

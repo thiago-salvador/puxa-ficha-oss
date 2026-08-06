@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { secretsMatch } from "@/lib/crypto-utils"
 import { resolveChainOrigin, validarOrigemEncadeamento } from "@/lib/cron-chain-origin"
+import { confirmsNewsRefreshAcceptance } from "@/lib/news/refresh-ack"
 import {
   createNewsRefreshRunStore,
   NEWS_REFRESH_EXECUTION_HEADER,
@@ -89,7 +90,12 @@ export function createNewsRefreshRecoveryHandler(deps: NewsRefreshRecoveryDeps =
               redirect: "manual",
               signal: controller.signal,
             })
-            if (!response.ok) {
+            const accepted = await confirmsNewsRefreshAcceptance(
+              response,
+              item.executionId,
+              item.cursor,
+            )
+            if (!accepted) {
               deps.log("recovery_redrive_failed", {
                 executionId: item.executionId,
                 cursor: item.cursor,
@@ -97,7 +103,7 @@ export function createNewsRefreshRecoveryHandler(deps: NewsRefreshRecoveryDeps =
                 status: response.status,
               })
             }
-            return response.ok
+            return accepted
           } catch (error) {
             deps.log("recovery_redrive_failed", {
               executionId: item.executionId,

@@ -86,8 +86,17 @@ describe("news refresh recovery sweeper", () => {
       },
       fetchImpl: (async (url: string | URL, init?: RequestInit) => {
         fetchCalls.push({ url: String(url), init })
+        const requestUrl = new URL(String(url))
+        const headers = init?.headers as Record<string, string>
         return Response.json(
-          { accepted: true, alreadyAccepted: false, state: "processing" },
+          {
+            accepted: true,
+            alreadyAccepted: false,
+            workScheduled: true,
+            state: "processing",
+            executionId: headers[NEWS_REFRESH_EXECUTION_HEADER],
+            cursor: Number(requestUrl.searchParams.get("cursor")),
+          },
           { status: 202 },
         )
       }) as unknown as typeof fetch,
@@ -145,12 +154,24 @@ describe("news refresh recovery sweeper", () => {
     let maxActive = 0
     const handler = createNewsRefreshRecoveryHandler({
       listRecoverable: async () => many,
-      fetchImpl: (async () => {
+      fetchImpl: (async (url: string | URL, init?: RequestInit) => {
         active += 1
         maxActive = Math.max(maxActive, active)
         await new Promise<void>((resolve) => setImmediate(resolve))
         active -= 1
-        return new Response(null, { status: 202 })
+        const requestUrl = new URL(String(url))
+        const headers = init?.headers as Record<string, string>
+        return Response.json(
+          {
+            accepted: true,
+            alreadyAccepted: false,
+            workScheduled: true,
+            state: "processing",
+            executionId: headers[NEWS_REFRESH_EXECUTION_HEADER],
+            cursor: Number(requestUrl.searchParams.get("cursor")),
+          },
+          { status: 202 },
+        )
       }) as unknown as typeof fetch,
       log: () => undefined,
     })
@@ -158,5 +179,52 @@ describe("news refresh recovery sweeper", () => {
     const response = await handler(request())
     assert.equal(response.status, 200)
     assert.equal(maxActive, 4)
+  })
+
+  it("fails visibly when a 2xx ACK does not prove scheduled work", async () => {
+    const logs: Array<{ event: string; detail: Record<string, unknown> }> = []
+    const item = recoverable[0]
+    const handler = createNewsRefreshRecoveryHandler({
+      listRecoverable: async () => [item],
+      fetchImpl: (async () =>
+        Response.json(
+          {
+            accepted: true,
+            alreadyAccepted: true,
+            workScheduled: false,
+            state: "processing",
+            executionId: item.executionId,
+            cursor: item.cursor,
+          },
+          { status: 202 },
+        )) as unknown as typeof fetch,
+      log: (event, detail) => logs.push({ event, detail }),
+    })
+
+    const response = await handler(request())
+    assert.equal(response.status, 503)
+    assert.ok(logs.some((entry) => entry.event === "recovery_redrive_failed"))
+  })
+
+  it("accepts a matching completed ACK because the duplicate route rearms its continuation", async () => {
+    const item = recoverable[1]
+    const handler = createNewsRefreshRecoveryHandler({
+      listRecoverable: async () => [item],
+      fetchImpl: (async () =>
+        Response.json(
+          {
+            accepted: true,
+            alreadyAccepted: true,
+            workScheduled: false,
+            state: "completed",
+            executionId: item.executionId,
+            cursor: item.cursor,
+          },
+          { status: 200 },
+        )) as unknown as typeof fetch,
+      log: () => undefined,
+    })
+
+    assert.equal((await handler(request())).status, 200)
   })
 })
