@@ -18,6 +18,16 @@ const base = [
   "--url=https://example.org/busca"
 ]
 
+const bloqueioSemUrl = [
+  "--slug=fulano",
+  "--frente=processos",
+  "--data=2026-08-05",
+  "--resultado=indeterminado",
+  "--detalhe=motivo: nenhuma identidade oficial compatível foi localizada; fontes consultadas: TSE; anos consultados: 2016, 2018, 2020, 2022, 2024, 2026",
+  "--identidade=nao-confirmada",
+  "--dry-run",
+]
+
 describe("registrar revisão manual valida procedência antes de escrever", () => {
   it("recusa revisão sem fonte", () => {
     assert.throws(
@@ -40,6 +50,67 @@ describe("registrar revisão manual valida procedência antes de escrever", () =
   it("recusa nome sozinho como prova de identidade", () => {
     const args = base.map((arg) => arg === "--identidade=cargo-e-uf" ? "--identidade=nome" : arg)
     assert.throws(() => validarRevisaoManual(args), /nome sozinho não prova identidade/)
+  })
+
+  it("aceita identidade nao-confirmada somente como indeterminado auditável", () => {
+    const revisao = validarRevisaoManual(bloqueioSemUrl)
+    assert.equal(revisao.resultado, "indeterminado")
+    assert.equal(revisao.identidade, "nao-confirmada")
+    assert.deepEqual(revisao.urls, [])
+    assert.deepEqual(revisao.identidadeUrls, [])
+    assert.equal(entradaDaRevisao(revisao).url, undefined)
+  })
+
+  it("recusa identidade nao-confirmada para resultado encontrado", () => {
+    const args = bloqueioSemUrl.map((arg) =>
+      arg === "--resultado=indeterminado" ? "--resultado=encontrado" : arg
+    )
+    assert.throws(() => validarRevisaoManual(args), /só é permitida para --resultado=indeterminado/)
+  })
+
+  it("recusa identidade nao-confirmada sem motivo concreto", () => {
+    const args = bloqueioSemUrl.map((arg) =>
+      arg.startsWith("--detalhe=")
+        ? "--detalhe=motivo: falhou; fontes consultadas: TSE; anos consultados: 2026"
+        : arg
+    )
+    assert.throws(() => validarRevisaoManual(args), /exige motivo concreto/)
+  })
+
+  it("sem URL exige fontes e anos consultados no detalhe", () => {
+    const args = bloqueioSemUrl.map((arg) =>
+      arg.startsWith("--detalhe=")
+        ? "--detalhe=motivo: nenhuma identidade oficial compatível foi localizada"
+        : arg
+    )
+    assert.throws(() => validarRevisaoManual(args), /sem URL de identidade exige fontes consultadas e anos consultados/)
+  })
+
+  it("URL de busca não substitui fontes e anos da tentativa de identidade", () => {
+    const args = [
+      ...bloqueioSemUrl.map((arg) =>
+        arg.startsWith("--detalhe=")
+          ? "--detalhe=motivo: nenhuma identidade oficial compatível foi localizada"
+          : arg
+      ),
+      "--url=https://comunicaapi.pje.jus.br/api/v1/comunicacao?nomeParte=Fulano",
+    ]
+    assert.throws(() => validarRevisaoManual(args), /sem URL de identidade exige fontes consultadas e anos consultados/)
+  })
+
+  it("preserva URLs de tentativas oficiais sem tratá-las como prova confirmada", () => {
+    const args = [
+      ...bloqueioSemUrl.map((arg) =>
+        arg.startsWith("--detalhe=")
+          ? "--detalhe=motivo: perfil oficial consultado pertence a homônimo de outra UF"
+          : arg
+      ),
+      "--url=https://www.tse.jus.br/eleicoes/candidatos",
+      "--identidade-url=https://www.tse.jus.br/eleicoes/candidatos",
+    ]
+    const revisao = validarRevisaoManual(args)
+    assert.equal(revisao.identidade, "nao-confirmada")
+    assert.deepEqual(revisao.identidadeUrls, ["https://www.tse.jus.br/eleicoes/candidatos"])
   })
 
   it("recusa CPF no detalhe antes de qualquer saída", () => {
