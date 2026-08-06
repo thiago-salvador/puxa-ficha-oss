@@ -214,6 +214,118 @@ describe("ingestWikidata: desfecho da coleta", () => {
     }])
   })
 
+  for (const scenario of [
+    {
+      name: "objeto com apenas followers",
+      current: { followers: 321, campo_desconhecido: "preservado" },
+      expected: {
+        followers: 321,
+        campo_desconhecido: "preservado",
+        username: "perfil_wikidata",
+        url: "https://instagram.com/perfil_wikidata",
+      },
+    },
+    {
+      name: "username preenchido e url vazia",
+      current: { username: "perfil_curado", url: "", followers: 123 },
+      expected: {
+        username: "perfil_curado",
+        url: "https://instagram.com/perfil_curado",
+        followers: 123,
+      },
+    },
+    {
+      name: "url preenchida e username vazio",
+      current: {
+        username: "",
+        url: "https://instagram.com/perfil_wikidata",
+        campo_desconhecido: true,
+      },
+      expected: {
+        username: "perfil_wikidata",
+        url: "https://instagram.com/perfil_wikidata",
+        campo_desconhecido: true,
+      },
+    },
+    {
+      name: "objeto completo preservado",
+      current: {
+        username: "perfil_curado",
+        url: "https://instagram.com/perfil_curado",
+        followers: 987,
+        campo_desconhecido: "preservado",
+      },
+      expected: null,
+    },
+    {
+      name: "campos totalmente vazios preenchidos",
+      current: { username: "", url: "" },
+      expected: {
+        username: "perfil_wikidata",
+        url: "https://instagram.com/perfil_wikidata",
+      },
+    },
+  ]) {
+    it(`faz merge do Instagram por propriedade: ${scenario.name}`, async () => {
+      const { result, updates } = await executar({
+        db: {
+          row: {
+            redes_sociais: { instagram: scenario.current },
+            wikidata_id: "Q123",
+            foto_url: null,
+            data_nascimento: null,
+            profissao_declarada: null,
+          },
+        },
+        fetch: fetchSequence({
+          results: {
+            bindings: [{
+              item: { value: "http://www.wikidata.org/entity/Q123" },
+              instagram: { value: "perfil_wikidata" },
+            }],
+          },
+        }),
+      })
+
+      assert.equal(result.coleta_resultado, "encontrado")
+      if (scenario.expected === null) {
+        assert.equal(result.rows_upserted, 0)
+        assert.deepEqual(updates, [])
+      } else {
+        assert.equal(result.rows_upserted, 1)
+        assert.deepEqual(updates, [{
+          redes_sociais: { instagram: scenario.expected },
+        }])
+      }
+    })
+  }
+
+  it("preserva Instagram legado em string quando nao vazio", async () => {
+    const { result, updates } = await executar({
+      db: {
+        row: {
+          redes_sociais: { instagram: "perfil_legado_curado" },
+          wikidata_id: "Q123",
+          foto_url: null,
+          data_nascimento: null,
+          profissao_declarada: null,
+        },
+      },
+      fetch: fetchSequence({
+        results: {
+          bindings: [{
+            item: { value: "http://www.wikidata.org/entity/Q123" },
+            instagram: { value: "perfil_wikidata" },
+          }],
+        },
+      }),
+    })
+
+    assert.equal(result.coleta_resultado, "encontrado")
+    assert.equal(result.rows_upserted, 0)
+    assert.deepEqual(updates, [])
+  })
+
   it("SPARQL valido vazio vira vazio_confirmado", async () => {
     const { result, updates } = await executar({ fetch: fetchSequence({ results: { bindings: [] } }) })
     assert.equal(result.coleta_resultado, "vazio_confirmado")

@@ -24,8 +24,14 @@ export interface SparqlBinding {
   idSenado?: { value: string }
 }
 
+type InstagramSocial = Record<string, unknown> & {
+  username?: string | null
+  url?: string | null
+  followers?: number | null
+}
+
 interface RedesSociais {
-  instagram?: { username: string; url: string; followers?: number | null }
+  instagram?: InstagramSocial | string
   twitter?: string
   facebook?: string
   site_oficial?: string
@@ -63,6 +69,28 @@ export interface IngestWikidataDependencies {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function textoSocialNaoVazio(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
+
+function mergeInstagramPorPropriedade(
+  atual: InstagramSocial | undefined,
+  usernameWikidata: string,
+): InstagramSocial {
+  const usernameFinal = textoSocialNaoVazio(atual?.username)
+    ? atual.username
+    : usernameWikidata
+  const urlFinal = textoSocialNaoVazio(atual?.url)
+    ? atual.url
+    : `https://instagram.com/${usernameFinal}`
+
+  return {
+    ...atual,
+    username: usernameFinal,
+    url: urlFinal,
+  }
 }
 
 function bindingValue(row: Record<string, unknown>, property: string, index: number): void {
@@ -264,10 +292,13 @@ export async function ingestWikidata(
         const site = binding.site?.value.trim() || null
 
         const redesUpdate: RedesSociais = { ...redesAtual }
-        if (instagram && !temValorSocial(redesAtual.instagram)) {
-          redesUpdate.instagram = {
-            username: instagram,
-            url: `https://instagram.com/${instagram}`,
+        if (instagram) {
+          const instagramAtual = redesAtual.instagram
+          if (!textoSocialNaoVazio(instagramAtual)) {
+            redesUpdate.instagram = mergeInstagramPorPropriedade(
+              isObject(instagramAtual) ? instagramAtual : undefined,
+              instagram,
+            )
           }
         }
         if (twitter && !temValorSocial(redesAtual.twitter)) {
