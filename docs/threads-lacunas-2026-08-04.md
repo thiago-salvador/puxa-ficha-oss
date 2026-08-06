@@ -1100,8 +1100,9 @@ seção ganhou um segundo eixo com uma linha por fonte e candidato: desfecho,
 volume, última tentativa e detalhe. As fontes nunca consultadas aparecem
 primeiro e são contadas no cabeçalho do candidato.
 
-A lista inclui as 18 fontes canônicas de escopo candidato, `tse-cpf` e fontes
-adicionais já observadas no log. Fontes fora do catálogo só aparecem onde há
+A lista inclui as 17 fontes canônicas de escopo candidato e, com `tse-cpf`,
+chega a 18 fontes, além das fontes adicionais já observadas no log. Fontes fora
+do catálogo só aparecem onde há
 tentativa registrada; elas não viram lacuna inventada para os demais. Fontes
 territoriais ficam fora.
 
@@ -1544,5 +1545,4 @@ Revisão da PR: o `UPDATE` das duplicatas foi restringido aos dois slugs,
 anos, partidos e tipos de evento confirmados. A migration `20260805137000`
 corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
 `nome_urna`; naturalidade e profissão voltaram a `NULL`.
-
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
