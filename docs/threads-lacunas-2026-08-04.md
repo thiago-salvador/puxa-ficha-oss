@@ -1569,3 +1569,31 @@ não foi aplicada no Supabase.
   as tabelas largas rolam dentro do container.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+---
+
+## Ingests históricos pendentes (2026-08-05)
+
+Execução em worktree isolado baseado na PR #105, com escrita no Supabase apenas
+por `scripts/ingest-all.ts`. O inventário direto no banco encontrou 194
+pendências em `tse-historico`, 194 em `filiacao`, 102 em
+`wiki-historico` e 83 em `wikidata-politico`.
+
+- `tse-historico`: 159 encontrados, 32 vazios confirmados e 3 não
+  aplicáveis; +194 linhas em `historico_politico` e +80 em
+  `mudancas_partido`.
+- `wiki-historico`: 21 vazios confirmados e 81 não aplicáveis; nenhuma
+  escrita.
+- `wikidata-politico`: 76 encontrados e 7 vazios confirmados; +12 linhas em
+  `historico_politico` e +15 em `mudancas_partido`.
+- `filiacao`: 194 indeterminados e nenhuma escrita. O arquivo oficial atual é
+  agregado por perfil e não contém filiação individual; a execução falha
+  fechada em vez de converter esse bloqueio em vazio.
+- A régua mudou 37 células, todas após TSE: 9 `zero -> ok` e 28
+  `na -> missing`. As demais fontes não mudaram células.
+
+Os nove gates locais passaram após substituir, apenas no worktree, o symlink de
+`node_modules` por uma cópia local exigida pelo Turbopack. Evidência completa:
+`~/.disposable-html/2026-08-05-puxa-ficha-ingests-historicos.evidence.json`.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

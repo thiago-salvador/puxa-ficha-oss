@@ -268,16 +268,25 @@ const SKIP_SUPLENTE_CARGOS = new Set([
 ])
 
 export async function ingestTSEHistorico(): Promise<IngestResult[]> {
-  const candidatos = await loadCandidatosPublicos()
+  const slugArg = process.argv.find((arg) => arg.startsWith("--slug="))
+  const filterSlugs = slugArg
+    ? new Set(slugArg.slice("--slug=".length).split(",").map((slug) => slug.trim()).filter(Boolean))
+    : null
+  const candidatos = (await loadCandidatosPublicos()).filter(
+    (cand) => !filterSlugs || filterSlugs.has(cand.slug)
+  )
   mkdirSync(DATA_DIR, { recursive: true })
 
   // Coleta candidaturas de todos os anos
   const allRecords: CandidacyRecord[] = []
+  const anosComFalha: number[] = []
 
   for (const ano of ANOS) {
     const { records, success } = await processAno(ano, candidatos)
     if (success) {
       allRecords.push(...records)
+    } else {
+      anosComFalha.push(ano)
     }
   }
 
@@ -299,6 +308,23 @@ export async function ingestTSEHistorico(): Promise<IngestResult[]> {
   for (const cand of candidatos) {
     const records = bySlug.get(cand.slug)
     if (!records || records.length === 0) {
+      // O candidato participou da varredura dos arquivos. Se todos os anos
+      // responderam, ausencia de casamento e um vazio confirmado; se algum ano
+      // falhou, a mesma ausencia fica indeterminada. Em ambos os casos precisa
+      // existir IngestResult para o orquestrador registrar a tentativa.
+      results.push({
+        source: "tse-historico",
+        candidato: cand.slug,
+        tables_updated: [],
+        rows_upserted: 0,
+        errors: [],
+        duration_ms: 0,
+        coleta_resultado: anosComFalha.length === 0 ? "vazio_confirmado" : "indeterminado",
+        coleta_detalhe:
+          anosComFalha.length === 0
+            ? `Nenhuma candidatura encontrada nos ${ANOS.length} anos consultados`
+            : `Nenhuma candidatura encontrada; anos com falha: ${anosComFalha.join(", ")}`,
+      })
       continue
     }
 
@@ -335,14 +361,36 @@ export async function ingestTSEHistorico(): Promise<IngestResult[]> {
         const cargoCanonico = canonicalCargo(record.cargo)
 
         // Upsert por (candidato, cargo canônico, ano) — evita Presidente vs Presidente da República duplicado
-        const { data: existingRows } = await supabase
+        const { data: existingRows, error: existingError } = await supabase
           .from("historico_politico")
           .select("id, observacoes, periodo_fim")
           .eq("candidato_id", candidatoId)
           .eq("cargo_canonico", cargoCanonico)
           .eq("periodo_inicio", record.ano)
           .limit(1)
-        const existing = existingRows?.[0]
+        if (existingError) {
+          result.errors.push(`Erro ao localizar historico ${record.cargo} ${record.ano}: ${existingError.message}`)
+          continue
+        }
+
+        // Linhas legadas podem ter cargo_canonico nulo, mas continuam cobertas
+        // pelo indice unico antigo (candidato_id, cargo, periodo_inicio). Sem o
+        // fallback, o select acima nao as ve e o insert falha por duplicidade.
+        let existing = existingRows?.[0]
+        if (!existing) {
+          const { data: legacyRows, error: legacyError } = await supabase
+            .from("historico_politico")
+            .select("id, observacoes, periodo_fim")
+            .eq("candidato_id", candidatoId)
+            .eq("cargo", record.cargo)
+            .eq("periodo_inicio", record.ano)
+            .limit(1)
+          if (legacyError) {
+            result.errors.push(`Erro ao localizar historico legado ${record.cargo} ${record.ano}: ${legacyError.message}`)
+            continue
+          }
+          existing = legacyRows?.[0]
+        }
 
         const observacoes = sanitizeTemplateText(record.eleito
           ? `${record.situacao_resultado} (TSE ${record.ano})`
@@ -578,6 +626,12 @@ export async function ingestTSEHistorico(): Promise<IngestResult[]> {
             `  ${cand.slug}: timeline corrigida [${repair.category}] ${repair.before.partido_anterior} -> ${repair.before.partido_novo} => ${repair.after.partido_anterior} -> ${repair.after.partido_novo}`
             )
         }
+      }
+
+      if (result.rows_upserted === 0 && result.errors.length === 0) {
+        result.coleta_resultado = "nao_aplicavel"
+        result.coleta_detalhe =
+          "Candidaturas encontradas, mas todas foram omitidas por regra editorial"
       }
     } catch (err) {
       result.errors.push(err instanceof Error ? err.message : String(err))
