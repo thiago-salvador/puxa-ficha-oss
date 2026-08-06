@@ -1617,6 +1617,8 @@ processos no snapshot inicial.
   `zero_provado` e 119 `nao_sabemos`. Os 204 achados permanecem sem publicação
   e dependem de aprovação editorial do Thiago; a lista separada está em
   `~/.disposable-html/2026-08-05-puxa-ficha-processos-aprovacao-thiago.csv`.
+- A PR #113 foi aberta sobre `codex/curadoria-proveniencia`; `verify`, build das
+  rotas e Vercel passaram, e o check de acessibilidade não se aplicou.
 - Gates finais: dry-run 185/185, 94 testes integrados e 60 adversariais,
   `check:scripts`, typecheck, ESLint, `git diff --check`, readback do Supabase e
   renderização real do relatório.
