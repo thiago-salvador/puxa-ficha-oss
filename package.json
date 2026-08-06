@@ -66,6 +66,8 @@
     "audit:cobertura:allowlist": "tsx scripts/audit/check-migrations-allowlist.ts",
     "audit:link-check-snapshot": "tsx scripts/audit/link-check-from-snapshot.ts",
     "audit:processos:revisao": "tsx scripts/gerar-revisao-processos-curadoria.ts",
+    "audit:processos:revisao-final:montar": "tsx scripts/montar-revisao-final-processos.ts",
+    "audit:processos:revisao-final": "tsx scripts/validar-revisao-final-processos.ts",
     "audit:cobertura:servir": "python3 scripts/audit/review-server.py 8799 ~/.disposable-html ~/.disposable-html/decisoes-revisao.jsonl"
   },
   "dependencies": {

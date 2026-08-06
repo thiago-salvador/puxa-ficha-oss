@@ -1631,3 +1631,23 @@ explicada e interativa. Nenhum processo foi publicado.
   teste não publicou ficha nem alterou dados.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+## Revisão final editorial de processos (2026-08-06)
+
+**Estado:** os 204 CNJs foram reconciliados em 56 publicáveis, 13 ligados a
+pontos de atenção aprovados, 108 não publicáveis e 27 bloqueios concretos.
+Nenhum dado foi escrito no Supabase.
+
+- Os 47 casos de pesquisa foram revisados em lotes de 20, 20 e 7, com sete
+  bloqueios por falta de prova pública suficiente. A revisão adversarial dos
+  86 descartes anteriores manteve 49, promoveu 20 e bloqueou 17.
+- Os seis processos antes publicáveis e os seis grupos de pontos de atenção
+  foram reavaliados contra as fontes oficiais. Três grupos foram aprovados,
+  dois rejeitados e um bloqueado.
+- A evidência final passou por validação estrutural, teste focado, checagem de
+  scripts, lint, `git diff --check`, 2.002 testes do repositório e teste real do
+  canal `POST /aplicar` no navegador.
+- Aplicação no banco, leitura pós-migração e liberação do deploy continuam
+  dependentes de aprovação explícita.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
