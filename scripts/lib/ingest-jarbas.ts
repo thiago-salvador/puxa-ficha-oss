@@ -66,6 +66,11 @@ export function conferirReembolsos(
   return { ok: true, reembolsos: registros }
 }
 
+export function declararJarbasNaoAplicavel(result: IngestResult): void {
+  result.coleta_resultado = "nao_aplicavel"
+  result.coleta_detalhe = "sem ID da Camara: fonte nao aplicavel ao candidato"
+}
+
 function formatValor(values: number[]): number {
   const total = values.reduce((acc, v) => acc + v, 0)
   return Math.round(total * 100) / 100
@@ -98,6 +103,7 @@ export async function ingestJarbas(): Promise<IngestResult[]> {
 
     // Jarbas cobre apenas deputados da Camara
     if (!cand.ids.camara) {
+      declararJarbasNaoAplicavel(result)
       result.duration_ms = Date.now() - start
       results.push(result)
       continue
