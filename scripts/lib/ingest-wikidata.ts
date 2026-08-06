@@ -1,6 +1,6 @@
 import { supabase } from "./supabase"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, fetchJSON, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { fetchJSON, sleep } from "./helpers"
 import { log, warn } from "./logger"
 import type { IngestResult } from "./types"
 
@@ -87,7 +87,7 @@ async function getWikidataIdFromWikipedia(wikipediaTitle: string): Promise<strin
 }
 
 export async function ingestWikidata(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos()
+  const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

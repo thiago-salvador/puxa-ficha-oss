@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, it } from "node:test"
 import { validateProductionEnvironment } from "../src/lib/production-env"
 
@@ -106,5 +107,16 @@ describe("validateProductionEnvironment", () => {
       console.error = originalConsoleError
     }
     assert.match(logs.join("\n"), /PF_ALERTS_FROM_EMAIL ou SMTP_FROM em formato invalido/)
+  })
+})
+
+describe("bypass de cache do release-verify", () => {
+  it("não existe mais no caminho de dados da ficha nem no contrato de ambiente", () => {
+    const api = readFileSync("src/lib/api.ts", "utf8")
+    const productionEnv = readFileSync("src/lib/production-env.ts", "utf8")
+
+    assert.doesNotMatch(api, /resolveReleaseVerifyCacheBypassToken/)
+    assert.doesNotMatch(api, /from\s+["']next\/headers["']/)
+    assert.doesNotMatch(productionEnv, /resolveReleaseVerifyCacheBypassToken/)
   })
 })

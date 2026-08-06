@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
-import { loadCandidatos, fetchJSON, sleep } from "./helpers"
+import { loadCandidatosPublicos } from "./helpers-db"
+import { fetchJSON, sleep } from "./helpers"
 import { log, warn } from "./logger"
 import { resolveCanonicalParty } from "./party-canonical"
 import { canonicalCargo } from "./cargo-utils"
@@ -404,7 +405,7 @@ async function upsertHistorico(
 }
 
 export async function ingestWikidataPolitico(): Promise<IngestResult[]> {
-  const candidatos = loadCandidatos().filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
+  const candidatos = (await loadCandidatosPublicos()).filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {

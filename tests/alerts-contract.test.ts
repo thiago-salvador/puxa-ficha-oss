@@ -112,6 +112,48 @@ describe("Alerts contract", () => {
       assert.match(content, /export function createVerifyHandler/, "deve exportar createVerifyHandler")
     })
 
+    test("verify/route.ts devolve um código estável em todo corpo de erro", () => {
+      const content = readFileSync("src/app/api/alerts/verify/route.ts", "utf-8")
+      const chunksAfterErrorField = content.split(/error: "/).slice(1)
+
+      assert.ok(
+        chunksAfterErrorField.length >= 4,
+        "verify deve ter pelo menos os quatro corpos de erro conhecidos",
+      )
+      for (const chunk of chunksAfterErrorField) {
+        assert.match(
+          chunk.slice(0, 200),
+          /reason:/,
+          "todo corpo de erro do verify precisa carregar o campo reason",
+        )
+      }
+    })
+
+    test("tela de confirmação nunca mostra o texto de erro cru da API", () => {
+      const content = readFileSync("src/components/alerts/AlertVerifyClient.tsx", "utf-8")
+      assert.doesNotMatch(
+        content,
+        /data\??\.error/,
+        "o campo error da API vem em inglês e não pode chegar à tela",
+      )
+    })
+
+    test("tela de confirmação tem texto em português para cada código do verify", () => {
+      const route = readFileSync("src/app/api/alerts/verify/route.ts", "utf-8")
+      const client = readFileSync("src/components/alerts/AlertVerifyClient.tsx", "utf-8")
+      const block = route.match(/VERIFY_ERROR_REASONS = \{([\s\S]*?)\n\} as const/)?.[1] ?? ""
+      const codes = [...block.matchAll(/"([a-z_]+)"/g)].map((match) => match[1])
+
+      assert.ok(codes.length >= 6, "todos os códigos de erro devem estar em VERIFY_ERROR_REASONS")
+      for (const code of codes) {
+        assert.match(
+          client,
+          new RegExp(`${code}:`),
+          `AlertVerifyClient precisa mapear o código ${code} para uma frase em português`,
+        )
+      }
+    })
+
     test("toggle/route.ts exporta createToggleHandler", () => {
       const content = readFileSync("src/app/api/alerts/toggle/route.ts", "utf-8")
       assert.match(content, /export function createToggleHandler/, "deve exportar createToggleHandler")

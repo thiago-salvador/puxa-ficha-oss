@@ -59,18 +59,16 @@ export async function POST(req: NextRequest) {
     body,
     providedSecret,
     envSecret: process.env.PF_REVALIDATE_SECRET,
-    // O segundo argumento e OMITIDO de proposito, e isso e o oposto do que o
-    // comentario anterior aqui afirmava. Ele dizia que `"max"` era "equivalente
-    // ao comportamento legado de revalidateTag(tag)". Nao e, e a diferenca
+    // O profile `"max"` foi substituido por `{ expire: 0 }`. A diferenca
     // importa num site de checagem:
     //
     //   revalidateTag(tag, "max") -> marca como stale. A PROXIMA requisicao
     //     ainda recebe a versao ANTIGA, e so a seguinte ve a corrigida.
-    //   revalidateTag(tag)        -> expira de imediato. A proxima requisicao e
-    //     um miss bloqueante e ja devolve a versao corrigida.
+    //   revalidateTag(tag, { expire: 0 }) -> expira de imediato. A proxima
+    //     requisicao e um miss bloqueante e ja devolve a versao corrigida.
     //
     // Depois de corrigir um erro factual numa ficha, servir a versao errada mais
-    // uma vez e inaceitavel aqui. Por isso a forma sem profile.
+    // uma vez e inaceitavel aqui. Por isso o profile de expiracao imediata.
     //
     // `updateTag(tag)` seria a API nova para expiracao imediata, mas ela LANCA
     // fora de Server Action: o proprio Next checa `workStore.page.endsWith("/route")`

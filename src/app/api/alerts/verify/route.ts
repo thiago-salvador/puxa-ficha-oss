@@ -33,8 +33,28 @@ export const dynamic = "force-dynamic"
  * permitindo a um atacante que possuísse um manage token enumerar seu estado sem conhecer
  * o verify token correspondente. Agora a distinção fica apenas no log interno (`reason`).
  */
-const INVALID_VERIFICATION_BODY = { error: "Invalid or expired verification link" } as const
+const INVALID_VERIFICATION_BODY = {
+  error: "Invalid or expired verification link",
+  reason: "link_invalido_ou_expirado",
+} as const
 const INVALID_VERIFICATION_STATUS = 410
+
+/**
+ * Códigos estáveis de erro do verify.
+ *
+ * O campo `error` continua em inglês por compatibilidade com quem já lê o corpo,
+ * mas nenhuma interface deve exibi-lo: o cliente traduz `reason` para uma frase
+ * em português com saída acionável, e cai num texto genérico quando o código
+ * for desconhecido.
+ */
+const VERIFY_ERROR_REASONS = {
+  bodyTooLarge: "payload_grande",
+  invalidJson: "json_invalido",
+  invalidPayload: "payload_invalido",
+  invalidVerification: "link_invalido_ou_expirado",
+  crossSiteBlocked: "origem_bloqueada",
+  updateFailed: "falha_ao_confirmar",
+} as const
 
 interface VerifyDeps {
   createAlertsServiceRoleClient: typeof createAlertsServiceRoleClient
@@ -58,10 +78,23 @@ function invalidVerificationResponse(): NextResponse {
   )
 }
 
+/** Reemite a resposta acrescentando o código estável, preservando corpo e status originais. */
+async function withErrorReason(response: NextResponse, reason: string): Promise<NextResponse> {
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>
+  return NextResponse.json(
+    { ...body, reason },
+    { status: response.status, headers: response.headers },
+  )
+}
+
 export function createVerifyHandler(deps: VerifyDeps = defaultVerifyDeps) {
   return async function POST(req: NextRequest) {
     const csrfResponse = rejectCrossSiteAlertsMutation(req, "verify", deps.logAlertsApiExit)
-    if (csrfResponse) return applyAlertsNoStoreHeaders(csrfResponse)
+    if (csrfResponse) {
+      return applyAlertsNoStoreHeaders(
+        await withErrorReason(csrfResponse, VERIFY_ERROR_REASONS.crossSiteBlocked),
+      )
+    }
 
     let body: unknown
     try {
@@ -70,12 +103,18 @@ export function createVerifyHandler(deps: VerifyDeps = defaultVerifyDeps) {
       if (isRequestBodyTooLargeError(error)) {
         deps.logAlertsApiExit("verify", 413, "body_too_large")
         return applyAlertsNoStoreHeaders(
-          NextResponse.json({ error: "Payload too large" }, { status: 413 }),
+          NextResponse.json(
+            { error: "Payload too large", reason: VERIFY_ERROR_REASONS.bodyTooLarge },
+            { status: 413 },
+          ),
         )
       }
       deps.logAlertsApiExit("verify", 400, "invalid_json")
       return applyAlertsNoStoreHeaders(
-        NextResponse.json({ error: "Invalid JSON" }, { status: 400 }),
+        NextResponse.json(
+          { error: "Invalid JSON", reason: VERIFY_ERROR_REASONS.invalidJson },
+          { status: 400 },
+        ),
       )
     }
 
@@ -87,7 +126,10 @@ export function createVerifyHandler(deps: VerifyDeps = defaultVerifyDeps) {
     if (!verifyToken || !manageToken) {
       deps.logAlertsApiExit("verify", 400, "invalid_payload")
       return applyAlertsNoStoreHeaders(
-        NextResponse.json({ error: "Invalid payload" }, { status: 400 }),
+        NextResponse.json(
+          { error: "Invalid payload", reason: VERIFY_ERROR_REASONS.invalidPayload },
+          { status: 400 },
+        ),
       )
     }
 
@@ -124,7 +166,10 @@ export function createVerifyHandler(deps: VerifyDeps = defaultVerifyDeps) {
     if (error) {
       deps.logAlertsApiExit("verify", 503, "db_verify_update_failed")
       return applyAlertsNoStoreHeaders(
-        NextResponse.json({ error: "Could not verify subscriber" }, { status: 503 }),
+        NextResponse.json(
+          { error: "Could not verify subscriber", reason: VERIFY_ERROR_REASONS.updateFailed },
+          { status: 503 },
+        ),
       )
     }
 

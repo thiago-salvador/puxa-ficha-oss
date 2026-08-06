@@ -1,6 +1,6 @@
 import "server-only"
 import { cache } from "react"
-import { unstable_cache } from "next/cache"
+import { unstable_cache, unstable_noStore as noStore } from "next/cache"
 import { collectQuizVotacaoTitulos, QUIZ_PERGUNTAS } from "@/data/quiz/perguntas"
 import {
   buildFinanciamentoContexto,
@@ -34,6 +34,7 @@ import type {
   MudancaPartido,
   Patrimonio,
   ProjetoLei,
+  SancoesVerificacao,
   SectionFreshnessInfo,
   SectionFreshnessKey,
   VotoCandidato,
@@ -78,7 +79,10 @@ import {
   classifyAttentionPoints,
   isNegativeHighestSeverityAttentionPoint,
 } from "@/lib/attention-points"
-import { withSupabaseRetry } from "@/lib/supabase-retry"
+import {
+  SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS,
+  withSupabaseRetry,
+} from "@/lib/supabase-retry"
 import { getCanonicalPerson } from "@/lib/canonical-person-map"
 import { formatDate } from "@/lib/utils"
 import { buildVotacaoPublicUrl } from "@/lib/quiz-votacao-url"
@@ -195,8 +199,72 @@ class DegradedDataError extends Error {
   }
 }
 
+/**
+ * Degradação PARCIAL: há dado verdadeiro para servir (os nomes da lista), mas
+ * parte dos números veio zerada. Diferente da falha total, o payload precisa
+ * chegar ao usuário; o que não pode é entrar no Data Cache, porque congela os
+ * zeros por APP_DATA_REVALIDATE_SECONDS. Incidente 2026-08-04, véspera do
+ * lançamento: um timeout de segundos em `v_comparador` deixou a home uma hora
+ * inteira com processos, patrimônio e pontos de atenção zerados, que é
+ * justamente o conteúdo que dá sentido ao site.
+ */
+class PartialDegradedDataError<T> extends Error {
+  readonly sourceMessage: string | null
+  readonly partialData: T
+
+  constructor(partialData: T, sourceMessage: string | null | undefined) {
+    super(sourceMessage ?? "recurso parcialmente degradado")
+    this.name = "PartialDegradedDataError"
+    this.sourceMessage = sourceMessage ?? null
+    this.partialData = partialData
+  }
+}
+
+/**
+ * Executa o recurso fora do cache e, se ele voltar degradado, rejeita com o
+ * payload em mãos. Rejeição não entra no `unstable_cache`, então a próxima
+ * requisição tenta de novo em vez de servir o estado ruim congelado.
+ */
+async function rejectPartialForCache<T>(
+  resource: Promise<DataResource<T>>
+): Promise<DataResource<T>> {
+  const resolved = await resource
+  if (resolved.sourceStatus !== "live") {
+    throw new PartialDegradedDataError(resolved.data, resolved.sourceMessage)
+  }
+  return resolved
+}
+
+type ResumoEnriquecimento = {
+  patrimonio: number | null
+  processos: number
+  pontosAtencao: number
+}
+
+/**
+ * Último enriquecimento bem-sucedido por candidato, na memória da instância.
+ * Serve de rede quando `v_comparador` não responde: em vez de publicar "0
+ * processos" para quem tem processo, o card repete o número que já era
+ * verdadeiro. Some quando a instância morre, e isso é aceitável: o pior caso
+ * volta a ser o zero de hoje, nunca um número inventado.
+ */
+const ULTIMO_ENRIQUECIMENTO = new Map<string, ResumoEnriquecimento>()
+
+function lembrarEnriquecimento(mapa: Map<string, ResumoEnriquecimento>): void {
+  for (const [id, valores] of mapa) {
+    ULTIMO_ENRIQUECIMENTO.set(id, valores)
+  }
+}
+
+function ultimoEnriquecimento(id: string): ResumoEnriquecimento | undefined {
+  return ULTIMO_ENRIQUECIMENTO.get(id)
+}
+
 /** Converte o throw da camada de cache no degradedResource de sempre; o resto sobe. */
 function degradedFromError<T>(error: unknown, fallbackData: T): DataResource<T> {
+  if (error instanceof PartialDegradedDataError) {
+    return degradedResource(error.partialData as T, error.sourceMessage)
+  }
   if (error instanceof DegradedDataError) {
     return degradedResource(fallbackData, error.sourceMessage)
   }
@@ -381,7 +449,7 @@ function buildSectionFreshness(
           !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
           !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS
             ? `Perfil atual consolidado em ${formatDate(updatedAt)}.`
-            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Revalide este bloco antes de tratá-lo como atual.`,
+            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Pode não refletir mudanças recentes.`,
           updatedAt.toISOString(),
           updatedAt.getFullYear(),
           updatedAt.toISOString(),
@@ -556,7 +624,7 @@ async function getCandidatosResourceUncached(
     }
 
     return query.order("nome_urna").abortSignal(signal)
-  })
+  }, { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS })
 
   if (error || !data) {
     if (IS_DEV) {
@@ -768,7 +836,7 @@ async function getGlobalSearchIndexResourceUncached(): Promise<
 }
 
 const getCachedGlobalSearchIndexResource = unstable_cache(
-  async () => getGlobalSearchIndexResourceUncached(),
+  async () => rejectPartialForCache(getGlobalSearchIndexResourceUncached()),
   // Bumped 2026-04-26 (Bloco 1 review 2026-04-24): force one-time bust of Vercel
   // Data Cache so the new subtitle/searchText (without raw 'incerto') is exercised.
   //
@@ -779,7 +847,7 @@ const getCachedGlobalSearchIndexResource = unstable_cache(
   // sobrevive a deploy, e a rota de revalidacao por tag depende de
   // PF_REVALIDATE_SECRET, entao o bump da chave e o caminho que funciona sem
   // segredo. Mesma chave aplicada a todos os resources que listam candidatos.
-  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+  ["global-search-index", "bloco1-incerto-suppress", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos"],
@@ -923,6 +991,62 @@ export async function getCandidatoMetadataResource(
   }
 }
 
+const COLETA_RESULTADOS_VALIDOS = new Set<SancoesVerificacao["resultado"]>([
+  "encontrado",
+  "vazio_confirmado",
+  "nao_aplicavel",
+  "erro",
+  "indeterminado",
+])
+
+/**
+ * Lê em `coleta_log_ultima` a última tentativa de coleta de sanções para o
+ * slug. É o que permite à ficha separar o zero provado ("consultamos CEIS,
+ * CNEP e CEAF e veio vazio") do zero presumido ("nunca fomos lá").
+ *
+ * Caminho de acesso, decidido em 2026-08-05: a view não tem grant para `anon`
+ * nem `authenticated` de propósito (migration 20260804160000), então a leitura
+ * usa o client de service role, que só existe neste módulo server-only e roda
+ * no build/ISR junto com as demais consultas da ficha. A alternativa (grant de
+ * SELECT para `anon` na view) mudaria a postura de segurança do log inteiro
+ * por causa de um campo de exibição, e foi descartada.
+ *
+ * Falha aqui NUNCA degrada a ficha: sem credencial ou com erro de rede o campo
+ * vira `null`, que a UI renderiza como estado neutro (sem afirmação de
+ * limpeza). O único estado que esta função pode "perder" com isso é um selo de
+ * verificação, nunca um dado do candidato.
+ */
+async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  try {
+    const admin = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
+    const { data, error } = await withSupabaseRetry(
+      `coleta_log_ultima(${slug})`,
+      async (signal) =>
+        admin
+          .from("coleta_log_ultima")
+          .select("resultado, executado_em")
+          .eq("fonte", "transparencia-sanctions")
+          .eq("escopo", "candidato")
+          .eq("alvo", slug)
+          .abortSignal(signal)
+          .maybeSingle()
+    )
+
+    if (error || !data) return null
+    // O client não tem schema tipado para a view; validamos o shape em runtime.
+    const row = data as { resultado?: unknown; executado_em?: unknown }
+    const resultado = row.resultado as SancoesVerificacao["resultado"]
+    if (!COLETA_RESULTADOS_VALIDOS.has(resultado)) return null
+    if (typeof row.executado_em !== "string" || row.executado_em.length === 0) return null
+    return { resultado, executado_em: row.executado_em }
+  } catch {
+    // Sem SUPABASE_SERVICE_ROLE_KEY (dev local, fork) ou view ausente: estado
+    // neutro. Não entra em relatedErrors porque é metadado de proveniência, não
+    // seção da ficha.
+    return null
+  }
+}
+
 async function getCandidatoBySlugFromRelationResource(
   slug: string,
   relation: string,
@@ -1018,7 +1142,7 @@ async function getCandidatoBySlugFromRelationResource(
     }
   }
 
-  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores] =
+  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao] =
     await Promise.all([
       // `despublicado_em` filtra candidatura atribuida por homonimo (migration
       // 20260726160000). O CPF divergente no cadastro desliga o casamento por
@@ -1142,6 +1266,9 @@ async function getCandidatoBySlugFromRelationResource(
               .abortSignal(signal)
           )
         : Promise.resolve({ data: [] as IndicadorEstadual[] }),
+      // Proveniência do zero de sanções (coleta_log_ultima, service role).
+      // Nunca rejeita: degrada para null, que a UI lê como "não verificado".
+      fetchSancoesVerificacao(slug),
     ])
 
   const relatedErrors = [
@@ -1217,6 +1344,7 @@ async function getCandidatoBySlugFromRelationResource(
       (legislacaoExecutivo.count ?? 0) > legislacaoExecutivoOrdenado.length,
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
+    sancoes_verificacao: sancoesVerificacao,
     // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
     // 1C). A ingestao passou a descartar item cujo titulo nao cita o candidato,
     // mas as linhas ja gravadas continuam no banco: 3.984 de 17.498 (22,77%)
@@ -1273,28 +1401,24 @@ async function getCandidatoBySlugFromRelationResource(
   return liveResource(ficha)
 }
 
-// `PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS` foi REMOVIDA daqui.
-//
-// Era um conjunto de 6 slugs (augusto-cury, cabo-daciolo, edmilson-costa,
-// marcelo-brigadeiro, natasha-slhessarenko, renan-santos) que chamavam
-// `noStore()` para nunca serem cacheados. Com a rota servida do cache, uma
-// chamada a `noStore()` em runtime dispara `app-static-to-dynamic-error`: as
-// seis fichas respondiam HTTP 500, e duas delas sao presidenciaveis. Medido
-// antes desta remocao, no build desta branch.
-//
-// Com ISR nao existe render sem cache por slug na mesma rota: ou a chamada sai,
-// ou a ficha inteira volta a ser dinamica. O frescor daquelas fichas passa a vir
-// de `POST /api/revalidate` com a tag `public-candidato-ficha`, que neste mesmo
-// PR passou a expirar de imediato. O proprio doc daquela rota ja a descreve como
-// o caminho para "apply factual, edicao manual".
-//
-// Diferenca pratica assumida: edicao feita direto no banco, sem chamar o
-// revalidate, leva ate 1h para aparecer nessas fichas, como ja acontece com
-// todas as outras.
+// Contrato editorial preservado: estas fichas não entram no Data Cache.
+const PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS = new Set([
+  "augusto-cury",
+  "cabo-daciolo",
+  "edmilson-costa",
+  "marcelo-brigadeiro",
+  "natasha-slhessarenko",
+  "renan-santos",
+])
 
 export async function getCandidatoBySlugResource(
   slug: string
 ): Promise<DataResource<FichaCandidato | null>> {
+  if (PUBLIC_PROFILE_DENSITY_BYPASS_SLUGS.has(slug)) {
+    noStore()
+    return getCandidatoBySlugResourceUncached(slug)
+  }
+
   // O bypass por header `x-pf-release-verify-cache-bypass` foi REMOVIDO daqui.
   //
   // Ele lia `headers()` a cada ficha sempre que `PF_RELEASE_VERIFY_CACHE_BYPASS`
@@ -1441,7 +1565,7 @@ const getCachedCandidatoBySlugResource = unstable_cache(
   // do Vercel Data Cache (Build warning 25202862956 em /candidato/[slug] e
   // /embed/[slug] com slugs de inventario completo). Suffix invalida cache antigo
   // com o payload pre-trim.
-  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803"],
+  ["public-candidato-ficha-resource", "central-party-sanitize", "no-cache-degraded-v1", "legislacao-paged-v4", "lme-trim-2mb-20260501", "pl-lazy-preview-20260711", "presidential-cohort-20260515", "editorial-full-closure-20260518", "pre-candidates-lote12-20260522", "photos-names-20260610", "raw-empty-core-lote2-20260630", "raw-empty-core-lote3-20260630", "raw-empty-core-lote4-20260630", "raw-empty-core-news-lote5-20260630", "raw-empty-core-lote6-20260630", "raw-empty-core-lote7-20260630", "raw-empty-core-lote8-20260630", "raw-empty-core-lote9-20260630", "raw-empty-core-lote10-20260630", "raw-empty-core-lote11-20260630", "pe-state-html-gaps-20260708", "rr-state-completion-20260710-v2", "reescrita-claims-homonimo-20260726", "consolidacao-mapa-fome-20260726", "lme-preview-lazy-20260803", "density-bypass-clear-20260804", "sancoes-proveniencia-20260805"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidato-ficha"],
@@ -1500,13 +1624,11 @@ async function getCandidatosComResumoResourceUncached(
       }
 
       return query.abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
 
-  const compareMap = new Map<
-    string,
-    { patrimonio: number | null; processos: number; pontosAtencao: number }
-  >()
+  const compareMap = new Map<string, ResumoEnriquecimento>()
   for (const row of compareRows ?? []) {
     compareMap.set(row.id, {
       patrimonio: row.patrimonio_declarado ?? null,
@@ -1515,12 +1637,21 @@ async function getCandidatosComResumoResourceUncached(
     })
   }
 
-  const data = candidatos.map((c) => ({
-    candidato: c,
-    patrimonio: compareMap.get(c.id)?.patrimonio ?? null,
-    processos: compareMap.get(c.id)?.processos ?? 0,
-    pontos_atencao: compareMap.get(c.id)?.pontosAtencao ?? 0,
-  }))
+  if (!compareError) {
+    lembrarEnriquecimento(compareMap)
+  }
+
+  const data = candidatos.map((c) => {
+    // Sem enriquecimento vivo, o último valor conhecido vale mais do que zero:
+    // "0 processos" é uma afirmação falsa sobre um candidato, "sem dado" não.
+    const enriquecimento = compareMap.get(c.id) ?? ultimoEnriquecimento(c.id)
+    return {
+      candidato: c,
+      patrimonio: enriquecimento?.patrimonio ?? null,
+      processos: enriquecimento?.processos ?? 0,
+      pontos_atencao: enriquecimento?.pontosAtencao ?? 0,
+    }
+  })
 
   if (compareError) {
     return degradedResource(
@@ -1534,10 +1665,10 @@ async function getCandidatosComResumoResourceUncached(
 
 const getCachedCandidatosComResumoResource = unstable_cache(
   async (cargo?: string, estado?: string) =>
-    getCandidatosComResumoResourceUncached(cargo, estado),
+    rejectPartialForCache(getCandidatosComResumoResourceUncached(cargo, estado)),
   // Bumped 2026-04-26: dados de candidato vem ja sanitizados via getCandidatosResource;
   // o suffix forca bust de cache antigo do Bloco 1.
-  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+  ["public-candidatos-resumo-resource", "central-party-sanitize", "presidential-cohort-20260515", "public-profile-density-20260517", "pre-candidates-lote12-20260522", "photos-names-20260610", "andre-portugues-lote8-20260630", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["public-candidatos-resumo"],
@@ -1578,7 +1709,8 @@ async function getCandidatosComparaveisResourceUncached(
       }
 
       return query.order("nome_urna").abortSignal(signal)
-    }
+    },
+    { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS }
   )
   if (compareError) {
     if (IS_DEV) {
@@ -2181,8 +2313,8 @@ async function getQuizAlignmentDatasetResourceUncached(
 
 const getCachedQuizAlignmentDatasetResource = unstable_cache(
   async (cargo: string, estado: string) =>
-    getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined),
-  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726", "cache-poison-fix-20260802"],
+    rejectPartialForCache(getQuizAlignmentDatasetResourceUncached(cargo, estado || undefined)),
+  ["quiz-alignment-dataset-resource", "fase2", "escopo-executivo-20260726", "cache-poison-fix-20260802", "no-cache-resumo-parcial-20260804"],
   {
     revalidate: APP_DATA_REVALIDATE_SECONDS,
     tags: ["quiz-dataset"],

@@ -8,7 +8,27 @@ const SUPABASE_RETRY_ATTEMPTS = 3
 // serverless function until the platform limit (~300s) and returning a 504. Worst-case total
 // across retries (timeout + backoff per attempt) stays well under that limit; on a healthy
 // query the timeout never fires, so behavior is unchanged.
-const SUPABASE_ATTEMPT_TIMEOUT_MS = 15_000
+// Overridable via env (sem redeploy) desde 2026-08-04: os timeouts diários de
+// produção mostraram que 3 x 15s + backoff = ~45s de espera antes do banner
+// degradado, e um pico pode exigir baixar isso na hora pelo painel da Vercel.
+function readAttemptTimeoutFromEnv(): number | null {
+  const raw = process.env.SUPABASE_ATTEMPT_TIMEOUT_MS?.trim()
+  if (!raw) return null
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed >= 1_000 ? parsed : null
+}
+const SUPABASE_ATTEMPT_TIMEOUT_MS = readAttemptTimeoutFromEnv() ?? 15_000
+
+/**
+ * Timeout por tentativa das consultas de primeira dobra (lista da home, /uf e
+ * comparador). Elas respondem em bem menos de 1s quando saudáveis; 5s por
+ * tentativa mantém as 3 retentativas em ~15,75s no pior caso, em vez dos ~45s
+ * que o default de 15s impunha antes do estado degradado aparecer.
+ */
+export const SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS = Math.min(
+  5_000,
+  SUPABASE_ATTEMPT_TIMEOUT_MS
+)
 
 export type SupabaseRunResult<T> = {
   data: T | null

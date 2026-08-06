@@ -6,18 +6,11 @@
     "shadcn",
     "react-devtools-core"
   ],
-  "ignorePatterns": [
-    "tests/**"
+  "entry": [
+    "tests/visual/**/*.spec.ts"
   ],
-  "ignoreExports": [
-    {
-      "file": "scripts/lib/historico-manual-fix-contract.ts",
-      "exports": [
-        "SENSITIVE_MAJORITARIAN_CANDIDATURA_CARGOS",
-        "hasCandidaturaMarker"
-      ]
-    }
-  ],
+  "ignorePatterns": [],
+  "ignoreExports": [],
   "rules": {
     "test-only-dependencies": "off"
   }

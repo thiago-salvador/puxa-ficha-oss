@@ -45,7 +45,11 @@
   --secondary: #f5f5f5;
   --secondary-foreground: #171717;
   --muted: #fafafa;
-  --muted-foreground: #737373;
+  /* #737373 dava só 4,74:1 sobre o branco, folga quase nula sobre o mínimo de
+     4,5:1. Qualquer composição (fade de entrada, camada translúcida) empurrava
+     o texto secundário para baixo do limite. #666666 sobe para 5,74:1 e mantém
+     o par semântico bg-muted + text-muted-foreground acessível em todo o site. */
+  --muted-foreground: #666666;
   --accent: #f0f0f0;
   --accent-foreground: #0a0a0a;
   --destructive: #dc2626;

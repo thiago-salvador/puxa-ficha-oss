@@ -61,6 +61,9 @@ export function QuizResult({ datasetResource }: QuizResultProps) {
   if (!r || !respostas || respostas.size === 0) {
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-16 text-center">
+        {/* O estado vazio não tem título visível, então o nível 1 fica oculto
+            para que a página continue tendo uma âncora de documento. */}
+        <h1 className="sr-only">Resultado do quiz</h1>
         <p className="text-muted-foreground">Nenhum resultado no link. Faça o quiz para ver a comparação.</p>
         <Link href={refazerHref} className="font-medium text-foreground underline-offset-4 hover:underline">
           Ir para o quiz

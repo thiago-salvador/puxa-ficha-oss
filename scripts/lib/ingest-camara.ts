@@ -6,8 +6,8 @@ import {
   hasGastosRecentYearsComplete,
   projetosLeiMeetsIngestCap,
 } from "./camara-incremental-guards"
-import { resolveCandidatoId } from "./helpers-db"
-import { loadCandidatos, fetchJSON, normalizeForMatch, sleep } from "./helpers"
+import { loadCandidatosPublicos, resolveCandidatoId } from "./helpers-db"
+import { fetchJSON, normalizeForMatch, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
 import type { IngestResult } from "./types"
 
@@ -418,7 +418,7 @@ export async function ingestCamara(options?: IngestCamaraOptions | string[]): Pr
     )
   }
 
-  const candidatos = loadCandidatos().filter((cand) =>
+  const candidatos = (await loadCandidatosPublicos()).filter((cand) =>
     selectedSlugs ? selectedSlugs.has(cand.slug) : true
   )
   const results: IngestResult[] = []

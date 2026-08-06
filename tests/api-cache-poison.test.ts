@@ -13,9 +13,15 @@
  * 1. Falha transiente REJEITA dentro da camada de cache (nada cacheável é
  *    produzido) e o wrapper exportado degrada fora do cache, com a MESMA
  *    mensagem de antes (contrato dos callers preservado, zero mudança de UI).
- * 2. Fail-soft legítimo continua cacheável: lista vazia real é live, e
- *    degradação PARCIAL com dados reais (votos do índice de busca, resumo sem
- *    enriquecimento, quiz sem mapa de votações) continua retornando resource.
+ * 2. Fail-soft legítimo continua cacheável: lista vazia real é live.
+ * 3. Degradação PARCIAL com dados reais (votos do índice de busca, resumo sem
+ *    enriquecimento, quiz sem mapa de votações) CHEGA ao usuário com o payload
+ *    intacto, mas também NÃO entra no cache. Revisto em 2026-08-04, véspera do
+ *    lançamento: a versão anterior deixava o parcial cacheável de propósito, e
+ *    um timeout de segundos em `v_comparador` congelou a home por uma hora com
+ *    processos, patrimônio e pontos de atenção zerados, que é exatamente o
+ *    conteúdo que dá sentido ao site. Servir zero por uma hora é pior do que
+ *    tentar de novo na requisição seguinte.
  *
  * O mock de `unstable_cache` é um pass-through que REGISTRA se o callback
  * resolveu ou rejeitou: é essa a fronteira exata do envenenamento, porque só
@@ -307,7 +313,7 @@ describe("fail-soft legítimo continua cacheável", () => {
     assert.equal(call?.sourceStatus, "live")
   })
 
-  it("degradação parcial COM dados segue cacheável: busca sem temas de votação", async () => {
+  it("degradação parcial entrega o payload e NÃO cacheia: busca sem temas de votação", async () => {
     const api = await loadApi()
     stubFetchByTable({ candidatos_publico: () => okJson([CANDIDATO_ROW]) }, failResponse)
 
@@ -319,10 +325,10 @@ describe("fail-soft legítimo continua cacheável", () => {
       "Temas de votação não puderam ser carregados; a busca usa só nome, partido e estado."
     )
     assert.equal(resource.data.length, 1)
-    assert.equal(lastCacheCall("global-search-index")?.outcome, "resolved")
+    assert.equal(lastCacheCall("global-search-index")?.outcome, "rejected")
   })
 
-  it("degradação parcial COM dados segue cacheável: resumo sem enriquecimento", async () => {
+  it("degradação parcial entrega o payload e NÃO cacheia: resumo sem enriquecimento", async () => {
     const api = await loadApi()
     stubFetchByTable({ candidatos_publico: () => okJson([CANDIDATO_ROW]) }, failResponse)
 
@@ -334,10 +340,48 @@ describe("fail-soft legítimo continua cacheável", () => {
       "Nem todos os resumos puderam ser enriquecidos. Alguns totais podem estar zerados temporariamente."
     )
     assert.equal(resource.data.length, 1)
-    assert.equal(lastCacheCall("public-candidatos-resumo-resource")?.outcome, "resolved")
+    assert.equal(lastCacheCall("public-candidatos-resumo-resource")?.outcome, "rejected")
   })
 
-  it("degradação parcial COM dados segue cacheável: quiz sem mapa de votações", async () => {
+  it("resumo degradado repete o último número conhecido em vez de publicar zero", async () => {
+    const api = await loadApi()
+
+    // 1. Rodada saudável: o enriquecimento responde e fica na memória.
+    stubFetchByTable(
+      {
+        candidatos_publico: () => okJson([CANDIDATO_ROW]),
+        v_comparador: () =>
+          okJson([
+            {
+              id: CANDIDATO_ROW.id,
+              cargo_disputado: "Presidente",
+              estado: null,
+              total_processos: 3,
+              patrimonio_declarado: 1234.56,
+              pontos_atencao: [{ titulo: "a" }, { titulo: "b" }],
+            },
+          ]),
+      },
+      failResponse
+    )
+
+    const vivo = await api.getCandidatosComResumoResource()
+    assert.equal(vivo.sourceStatus, "live")
+    assert.equal(vivo.data[0].processos, 3)
+    assert.equal(vivo.data[0].pontos_atencao, 2)
+
+    // 2. Enriquecimento cai; a lista de candidatos continua de pé.
+    stubFetchByTable({ candidatos_publico: () => okJson([CANDIDATO_ROW]) }, failResponse)
+
+    const degradado = await api.getCandidatosComResumoResource()
+    assert.equal(degradado.sourceStatus, "degraded")
+    assert.equal(degradado.data[0].processos, 3, "não pode zerar quem tem 3 processos")
+    assert.equal(degradado.data[0].pontos_atencao, 2)
+    assert.equal(degradado.data[0].patrimonio, 1234.56)
+    assert.equal(lastCacheCall("public-candidatos-resumo-resource")?.outcome, "rejected")
+  })
+
+  it("degradação parcial entrega o payload e NÃO cacheia: quiz sem mapa de votações", async () => {
     const api = await loadApi()
     stubFetchByTable({ candidatos_publico: () => okJson([CANDIDATO_ROW]) }, failResponse)
 
@@ -345,6 +389,6 @@ describe("fail-soft legítimo continua cacheável", () => {
 
     assert.equal(resource.sourceStatus, "degraded")
     assert.equal(resource.data.candidatos.length, 1)
-    assert.equal(lastCacheCall("quiz-alignment-dataset-resource")?.outcome, "resolved")
+    assert.equal(lastCacheCall("quiz-alignment-dataset-resource")?.outcome, "rejected")
   })
 })

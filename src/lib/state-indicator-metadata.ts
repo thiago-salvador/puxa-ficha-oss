@@ -1,3 +1,5 @@
+import { formatCompactNumber, formatDecimal, formatPercent } from "@/lib/utils"
+
 export interface StateIndicatorConfig {
   label: string
   format: (value: number) => string
@@ -8,41 +10,38 @@ export interface StateIndicatorConfig {
 export const STATE_INDICATOR_CONFIG: Record<string, StateIndicatorConfig> = {
   homicidios_100k: {
     label: "Homicídios por 100k hab.",
-    format: (v) => v.toFixed(1),
+    format: (v) => formatDecimal(v, 1),
     lowerIsBetter: true,
   },
   pib_total: {
     label: "PIB Total",
+    // O valor da fonte vem em milhares de reais.
     format: (v) => {
       const billions = v / 1_000_000
-      if (billions >= 1) return `R$ ${billions.toFixed(0)} bi`
+      if (billions >= 1) return `R$ ${formatDecimal(billions, 0)} bi`
       const millions = v / 1_000
-      return `R$ ${millions.toFixed(0)} mi`
+      return `R$ ${formatDecimal(millions, 0)} mi`
     },
     lowerIsBetter: false,
   },
   populacao_estimada: {
     label: "População",
-    format: (v) => {
-      if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)} mi`
-      if (v >= 1_000) return `${(v / 1_000).toFixed(0)} mil`
-      return v.toFixed(0)
-    },
+    format: (v) => formatCompactNumber(v),
     lowerIsBetter: false,
   },
   gini: {
     label: "Índice de Gini",
-    format: (v) => v.toFixed(3),
+    format: (v) => formatDecimal(v, 3),
     lowerIsBetter: true,
   },
   taxa_desemprego: {
     label: "Taxa de Desemprego",
-    format: (v) => `${v.toFixed(1)}%`,
+    format: (v) => formatPercent(v, 1),
     lowerIsBetter: true,
   },
   taxa_pobreza: {
     label: "Taxa de Pobreza",
-    format: (v) => `${v.toFixed(1)}%`,
+    format: (v) => formatPercent(v, 1),
     lowerIsBetter: true,
   },
 }

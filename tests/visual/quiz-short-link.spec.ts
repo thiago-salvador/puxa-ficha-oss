@@ -47,12 +47,18 @@ test.describe("Quiz short-link roundtrip", () => {
     await expect(page.getByRole("button", { name: /link curto/i })).toBeVisible()
   })
 
-  test("invalid token returns real HTTP 404", async ({ request }) => {
+  test("invalid token redirects to quiz landing with noindex", async ({ request }) => {
     const invalidPath = `/quiz/r/${`missing${Date.now().toString(36)}`.slice(0, 14)}`
 
-    // Contrato HTTP: token inválido precisa devolver 404 real, sem seguir redirect,
-    // sem depender de boundary visual "404 surface" (que retorna HTTP 200).
+    // Contrato HTTP: token inválido ou expirado redireciona 307 para a landing
+    // do quiz (que explica o link expirado e oferece refazer), sem cache e sem
+    // indexação. O 404 cru era beco sem saída para link compartilhado.
     const response = await request.get(invalidPath, { maxRedirects: 0 })
-    expect(response.status()).toBe(404)
+    expect(response.status()).toBe(307)
+    const location = new URL(response.headers()["location"], "http://127.0.0.1")
+    expect(location.pathname).toBe("/quiz")
+    expect(location.searchParams.get("erro")).toBe("link-expirado")
+    expect(response.headers()["cache-control"]).toBe("no-store")
+    expect(response.headers()["x-robots-tag"]).toBe("noindex, nofollow")
   })
 })

@@ -119,12 +119,17 @@ export const puxaFichaNextConfig: NextConfig = {
   },
   async headers() {
     return [
+      // ":path+" (um ou mais segmentos) casa so o widget /embed/[slug]. Com ":path*"
+      // a rota nua /embed, que e a pagina publica geradora do codigo de embed,
+      // tambem recebia noindex e ficava fora do indice sem necessidade.
       {
-        source: "/embed/:path*",
+        source: "/embed/:path+",
         headers: embedFramingHeaders,
       },
+      // Espelha a regra acima: so o widget fica de fora dos headers padrao do site.
+      // A pagina nua /embed volta a receber securityHeaders e a ser indexavel.
       {
-        source: "/((?!embed/|embed$).*)",
+        source: "/((?!embed/).*)",
         headers: securityHeaders,
       },
       {

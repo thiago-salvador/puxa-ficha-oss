@@ -27,6 +27,7 @@ next-env.d.ts
 
 # production data downloads (large, regenerable via the ingest pipeline)
 data/tse/
+data/tse-cpf/
 data/operations/
 tmp/
 
@@ -45,6 +46,9 @@ logs/
 # local script state (regenerable)
 scripts/audit-factual-*.json
 scripts/tse-situacao-audit.json
+
+# dumps do banco (PII de assinantes; nunca versionar, ver scripts/backup-supabase.sh)
+backups/
 
 # typescript
 *.tsbuildinfo

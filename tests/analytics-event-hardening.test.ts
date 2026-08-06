@@ -19,6 +19,9 @@ const { createAnalyticsEventPostHandler } = require(
 const { hashTrustedClientIp } = require(
   "../src/lib/client-ip",
 ) as typeof import("../src/lib/client-ip")
+const { ANALYTICS_LAUNCH_RETENTION_DAYS, analyticsLaunchRetentionCutoffIso } = require(
+  "../src/lib/analytics-launch-store",
+) as typeof import("../src/lib/analytics-launch-store")
 
 type AnalyticsIpHashCount =
   | { status: "ok"; count: number }
@@ -224,5 +227,19 @@ describe("hashTrustedClientIp", () => {
       hashTrustedClientIp(headers, "analytics-event"),
       hashTrustedClientIp(new Headers({ "x-vercel-forwarded-for": "198.51.100.7" }), "analytics-event"),
     )
+  })
+})
+
+describe("retencao de analytics_launch_events", () => {
+  it("a janela e de 90 dias, a mesma declarada na politica de privacidade e no comentario da tabela", () => {
+    // Se este numero mudar, a secao 06 de /privacidade e o COMMENT ON TABLE da
+    // migration de retencao viram promessa falsa: os tres precisam andar juntos.
+    assert.equal(ANALYTICS_LAUNCH_RETENTION_DAYS, 90)
+  })
+
+  it("o corte cai exatamente 90 dias antes do instante informado", () => {
+    const agora = new Date("2026-08-04T12:00:00.000Z")
+
+    assert.equal(analyticsLaunchRetentionCutoffIso(agora), "2026-05-06T12:00:00.000Z")
   })
 })

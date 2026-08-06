@@ -29,6 +29,31 @@ from (
     'naturalidade', c.naturalidade,
     'formacao', c.formacao,
     'profissao', c.profissao_declarada,
+    -- Ultima tentativa de coleta por fonte, de public.coleta_log_ultima. E o que
+    -- permite separar "verificamos e nao ha" de "nunca fomos buscar" nas 954
+    -- celulas que hoje caem no estado `zero`. Ausencia de chave para uma fonte
+    -- significa nunca verificado, e e leitura pela negativa de proposito: nao
+    -- existe momento em que gravar "nunca fui la". Ver
+    -- scripts/audit/lib/coleta-proveniencia.ts.
+    --
+    -- BLOCO OPCIONAL, delimitado pelos marcadores abaixo. Em banco sem a
+    -- migration `coleta_log`, `lib/snapshot-fetch.ts` remove daqui ate o
+    -- marcador de fim antes de enviar a consulta, e o snapshot sai sem a chave
+    -- `coleta` (que o modelo le como procedencia nao lida). Nao da para
+    -- resolver isso com `to_regclass` dentro do proprio SELECT: a relacao e
+    -- resolvida na analise do comando, entao a consulta inteira falharia antes
+    -- de qualquer guarda em tempo de execucao rodar. Mexer nos marcadores exige
+    -- mexer no strip; `tests/coverage-proveniencia.test.ts` cobre os dois.
+    -- @coleta-opcional-inicio
+    'coleta', coalesce((
+      select jsonb_object_agg(u.fonte, jsonb_build_object(
+        'resultado', u.resultado,
+        'volume', u.volume,
+        'executado_em', u.executado_em,
+        'detalhe', u.detalhe))
+      from coleta_log_ultima u
+      where u.escopo = 'candidato' and u.alvo = c.slug), '{}'::jsonb),
+    -- @coleta-opcional-fim
     'historico', coalesce((
       select jsonb_agg(jsonb_build_object(
         'cargo_canonico', h.cargo_canonico,

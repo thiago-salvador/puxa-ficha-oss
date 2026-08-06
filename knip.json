@@ -4,7 +4,8 @@
     "sentry.*.config.ts",
     "playwright*.config.ts",
     "src/app/**/*.{ts,tsx}",
-    "scripts/**/*.ts",
+    "scripts/*.ts",
+    "scripts/audit/*.ts",
     "tests/**/*.test.{ts,tsx}",
     "tests/visual/**/*.spec.ts"
   ],
@@ -15,5 +16,9 @@
     "*.config.{ts,mjs,js}"
   ],
   "ignore": [],
+  "ignoreIssues": {
+    "scripts/lib/**": ["exports"],
+    "scripts/audit/lib/**": ["exports"]
+  },
   "ignoreDependencies": ["fallow", "shadcn", "tailwindcss"]
 }

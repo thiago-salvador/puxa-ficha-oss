@@ -18,6 +18,12 @@ import {
 
 import { CandidatePhoto } from "@/components/CandidatePhoto"
 import { formatCompact } from "@/lib/utils"
+import {
+  processosMaiorVerificadoNaComparacao,
+  processosNaoVerificado,
+  processosOverviewDisplay,
+  processosResumoLabel,
+} from "@/lib/processos-display"
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion"
 import { formatPartyPublicLabel } from "@/lib/party-utils"
 import type { CandidatoComparavel } from "@/lib/types"
@@ -246,9 +252,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                 type="button"
                 onClick={() => toggle(candidato.id)}
                 aria-pressed={selected}
-                aria-label={selected
+                aria-label={`${selected
                   ? `Remover ${candidato.nome_urna} da comparação`
-                  : `Adicionar ${candidato.nome_urna} à comparação`}
+                  : `Adicionar ${candidato.nome_urna} à comparação`}. ${
+                  candidato.idade ? `${candidato.idade} anos, ` : ""
+                }${processosResumoLabel(candidato.total_processos)}, ${candidato.total_votos_mapeados} votações mapeadas`}
                 className={`flex w-full items-center gap-3 rounded-[12px] border px-4 py-3.5 text-left transition-all ${
                   selected
                     ? "border-foreground bg-foreground/[0.03]"
@@ -286,11 +294,11 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                 </div>
                 <div
                   aria-hidden="true"
-                  className="flex flex-wrap gap-2 text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
+                  className="flex shrink-0 flex-col items-end gap-0.5 text-right text-[length:var(--text-eyebrow)] font-bold text-muted-foreground"
                 >
-                  {candidato.idade && <span>{candidato.idade}</span>}
-                  <span>{candidato.total_processos}p</span>
-                  <span>{candidato.total_votos_mapeados}v</span>
+                  {candidato.idade && <span>{candidato.idade} anos</span>}
+                  <span>{processosResumoLabel(candidato.total_processos)}</span>
+                  <span>{candidato.total_votos_mapeados} votações</span>
                 </div>
               </button>
             )
@@ -306,19 +314,21 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                     <span className="sr-only">Selecionar</span>
                   </th>
                   {[
-                    "Candidato",
-                    "Partido",
-                    "Idade",
-                    "Formação",
-                    "Patrimônio",
-                    "Votações",
-                    "Gastos",
-                    "Processos",
-                    "Alertas",
-                  ].map((heading) => (
+                    { heading: "Candidato", numeric: false },
+                    { heading: "Partido", numeric: false },
+                    { heading: "Idade", numeric: true },
+                    { heading: "Formação", numeric: false },
+                    { heading: "Patrimônio", numeric: true },
+                    { heading: "Votações", numeric: true },
+                    { heading: "Gastos", numeric: true },
+                    { heading: "Processos", numeric: true },
+                    { heading: "Alertas", numeric: true },
+                  ].map(({ heading, numeric }) => (
                     <th
                       key={heading}
-                      className="pb-3 text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.08em] text-foreground"
+                      className={`pb-3 text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.08em] text-foreground ${
+                        numeric ? "text-right" : ""
+                      }`}
                     >
                       {heading}
                     </th>
@@ -395,7 +405,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                       <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold text-foreground">
                         {formatPartyPublicLabel(candidato.partido_sigla)}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-semibold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-semibold tabular-nums text-foreground">
                         {candidato.idade != null ? (
                           candidato.idade
                         ) : (
@@ -407,27 +417,31 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                           <span className="text-muted-foreground">não informada</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.patrimonio_declarado != null ? (
                           formatCompact(candidato.patrimonio_declarado)
                         ) : (
                           <span className="font-medium text-muted-foreground">sem declaração</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.total_votos_mapeados}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.total_gasto_parlamentar != null ? (
                           formatCompact(candidato.total_gasto_parlamentar)
                         ) : (
                           <span className="font-medium text-muted-foreground">sem gasto mapeado</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
-                        {candidato.total_processos}
+                      <td className="py-3 pr-4 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                        {processosNaoVerificado(candidato.total_processos) ? (
+                          <span className="font-medium text-muted-foreground">não verificado</span>
+                        ) : (
+                          candidato.total_processos
+                        )}
                       </td>
-                      <td className="py-3 text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
+                      <td className="py-3 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
                         {candidato.alertas_graves}
                       </td>
                     </tr>
@@ -675,18 +689,23 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                   <CompRow label="Processos" icon={<Scale className="size-3.5" />} highlight={false}>
                     {selectedCandidatos.map((candidato) => {
                       const values = selectedCandidatos.map((item) => item.total_processos)
-                      const max = Math.max(...values)
-                      const allEqual = values.every((item) => item === max)
-                      const isMax =
-                        candidato.total_processos === max &&
-                        candidato.total_processos > 0 &&
-                        !allEqual
+                      const isMax = processosMaiorVerificadoNaComparacao(
+                        candidato.total_processos,
+                        values,
+                      )
+
+                      const display = processosOverviewDisplay(candidato.total_processos)
 
                       return (
                         <td key={candidato.id} className="py-3 text-center">
                           <span className="text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
-                            {candidato.total_processos}
+                            {display.value}
                           </span>
+                          {display.sub && (
+                            <span className="mt-0.5 block text-[10px] font-semibold text-muted-foreground">
+                              {display.sub}
+                            </span>
+                          )}
                           {isMax && (
                             <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-destructive">
                               maior

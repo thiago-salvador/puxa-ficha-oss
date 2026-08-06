@@ -66,7 +66,7 @@ describe("selo de frescor: default seguro e janela unica", () => {
     assert.match(apiSrc, /\? "current" : "stale"/, "o ramo 'stale' sumiu do selo")
     assert.match(
       apiSrc,
-      /Revalide este bloco antes de trata-lo como atual|Revalide este bloco antes de tratá-lo como atual/,
+      /Pode nao refletir mudancas recentes|Pode não refletir mudanças recentes/,
       "a mensagem de bloco defasado sumiu",
     )
   })

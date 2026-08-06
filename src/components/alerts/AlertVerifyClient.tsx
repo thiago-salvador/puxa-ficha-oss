@@ -11,6 +11,40 @@ interface AlertVerifyClientProps {
   initialToken: string | null
 }
 
+const GENERIC_VERIFY_ERROR = "Não foi possível validar seu link agora. Tente de novo em alguns minutos."
+
+/**
+ * A API responde com `error` em inglês (mantido por compatibilidade) e um código
+ * estável em `reason`. A tela nunca mostra o `error` cru: traduz o código para
+ * uma frase em português com saída acionável e cai no texto genérico quando o
+ * código for desconhecido ou ausente.
+ */
+const VERIFY_ERROR_MESSAGES: Record<string, string> = {
+  link_invalido_ou_expirado:
+    "Este link já foi usado ou expirou. Peça um novo email de confirmação na página do candidato.",
+  payload_invalido:
+    "Não conseguimos identificar seu pedido neste navegador. Abra o link de confirmação no mesmo navegador em que você pediu os alertas, ou peça um novo email na página do candidato.",
+  payload_grande:
+    "O link de confirmação chegou maior do que o esperado. Copie o endereço direto do email e abra de novo.",
+  json_invalido:
+    "Houve um erro ao enviar seu pedido. Recarregue esta página e abra o link do email de novo.",
+  origem_bloqueada:
+    "Por segurança, só aceitamos a confirmação aberta direto do email. Abra o link no seu navegador, sem passar por outro site.",
+  falha_ao_confirmar:
+    "Nosso sistema não conseguiu registrar a confirmação agora. Tente de novo em alguns minutos.",
+}
+
+/**
+ * Só o texto desta classe vai para a tela. Erro de rede do próprio `fetch`
+ * chega com mensagem em inglês do navegador, então esses caem no genérico.
+ */
+class VerifyMessageError extends Error {}
+
+function verifyErrorMessage(reason: unknown): string {
+  if (typeof reason !== "string") return GENERIC_VERIFY_ERROR
+  return VERIFY_ERROR_MESSAGES[reason] ?? GENERIC_VERIFY_ERROR
+}
+
 export function AlertVerifyClient({ initialToken }: AlertVerifyClientProps) {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
   const [message, setMessage] = useState("Validando seu link...")
@@ -37,10 +71,10 @@ export function AlertVerifyClient({ initialToken }: AlertVerifyClientProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: initialToken }),
         })
-        const data = (await response.json().catch(() => null)) as { error?: string } | null
+        const data = (await response.json().catch(() => null)) as { reason?: string } | null
 
         if (!response.ok) {
-          throw new Error(data?.error || "Não foi possível validar seu link agora.")
+          throw new VerifyMessageError(verifyErrorMessage(data?.reason))
         }
 
         clearStoredAlertManageToken()
@@ -64,7 +98,7 @@ export function AlertVerifyClient({ initialToken }: AlertVerifyClientProps) {
       } catch (error) {
         if (!cancelled) {
           setStatus("error")
-          setMessage(error instanceof Error ? error.message : "Não foi possível validar seu link agora.")
+          setMessage(error instanceof VerifyMessageError ? error.message : GENERIC_VERIFY_ERROR)
         }
       }
     }
