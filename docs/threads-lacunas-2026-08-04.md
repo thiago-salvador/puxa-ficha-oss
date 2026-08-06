@@ -1670,8 +1670,9 @@ Nenhum dado foi escrito no Supabase.
   foram reavaliados contra as fontes oficiais. Três grupos foram aprovados,
   dois rejeitados e um bloqueado.
 - A evidência final passou por validação estrutural, teste focado, checagem de
-  scripts, lint, `git diff --check`, 2.002 testes do repositório e teste real do
-  canal `POST /aplicar` no navegador.
+  scripts, lint, `git diff --check`, 2.002 testes do repositório naquela execução
+  e teste real do canal `POST /aplicar` no navegador. A sucessora integrada
+  revalidou o conjunto com 2.013 testes.
 - Aplicação no banco, leitura pós-migração e liberação do deploy continuam
   dependentes de aprovação explícita.
 
@@ -1679,9 +1680,10 @@ Nenhum dado foi escrito no Supabase.
 
 ## Aprovação editorial da revisão final (2026-08-06)
 
-**Estado:** Thiago aprovou a classificação editorial dos 204 CNJs pelo canal
-local `POST /aplicar` às 00:48 BRT. O payload registrou `decisao: aprovar` e não
-continha instruções adicionais.
+**Estado:** a classificação editorial dos 204 CNJs foi aprovada na task de
+Thiago. O canal local `POST /aplicar` registrou o payload às 00:48 BRT, com
+`decisao: aprovar` e sem instruções adicionais; esse endpoint local registra a
+decisão, mas não funciona como prova de autenticação de identidade.
 
 - A aprovação alcança somente a classificação editorial documentada na PR
   #115.

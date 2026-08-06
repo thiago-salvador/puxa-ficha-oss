@@ -7,6 +7,7 @@ import {
   type EvidenciaFinal,
   type ItemFinal,
 } from "../scripts/validar-revisao-final-processos"
+import { exigirItemFinal } from "../scripts/montar-revisao-final-processos"
 
 const fonte = {
   url: "https://comunicaapi.pje.jus.br/api/v1/comunicacao?numeroProcesso=1",
@@ -95,6 +96,14 @@ function cenario(): { evidencia: EvidenciaFinal; base: { itens: Array<{ numero_c
 }
 
 describe("revisão final de processos", () => {
+  it("falha com contexto quando um CNJ não existe na decisão final", () => {
+    const mapa = new Map<string, ItemFinal>()
+    assert.throws(
+      () => exigirItemFinal(mapa, "0000000-00.2026.8.00.0000", "lote-2"),
+      /ausente na decisao final \(lote-2\)/,
+    )
+  })
+
   it("reconcilia 204 CNJs e os lotes 20, 20 e 7", () => {
     const { evidencia, base } = cenario()
     assert.deepEqual(validarRevisaoFinal(evidencia, base), evidencia.resumo)
