@@ -235,17 +235,26 @@ describe("ingestWikidata: desfecho da coleta", () => {
       },
     },
     {
-      name: "url preenchida e username vazio",
+      name: "url de perfil coincidente preenche username sem diferenciar maiusculas",
+      current: {
+        username: "",
+        url: "https://instagram.com/Perfil_Wikidata",
+        campo_desconhecido: true,
+      },
+      expected: {
+        username: "Perfil_Wikidata",
+        url: "https://instagram.com/Perfil_Wikidata",
+        campo_desconhecido: true,
+      },
+    },
+    {
+      name: "url de perfil divergente preserva username vazio",
       current: {
         username: "",
         url: "https://instagram.com/perfil_curado_por_url",
         campo_desconhecido: true,
       },
-      expected: {
-        username: "perfil_curado_por_url",
-        url: "https://instagram.com/perfil_curado_por_url",
-        campo_desconhecido: true,
-      },
+      expected: null,
     },
     {
       name: "url local nao reconhecivel nao recebe username remoto",
@@ -255,6 +264,21 @@ describe("ingestWikidata: desfecho da coleta", () => {
         followers: 456,
         campo_desconhecido: "preservado",
       },
+      expected: null,
+    },
+    {
+      name: "rota institucional about nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/about" },
+      expected: null,
+    },
+    {
+      name: "rota institucional terms nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/terms" },
+      expected: null,
+    },
+    {
+      name: "rota institucional privacy nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/privacy" },
       expected: null,
     },
     {

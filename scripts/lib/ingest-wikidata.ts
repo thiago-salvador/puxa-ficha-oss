@@ -88,7 +88,8 @@ function usernameInstagramDaUrl(value: string): string | null {
 
     const username = decodeURIComponent(segmentos[0])
     const caminhosReservados = new Set([
-      "accounts", "direct", "explore", "p", "reel", "reels", "stories", "tv",
+      "about", "accounts", "direct", "explore", "p", "privacy", "reel", "reels",
+      "stories", "terms", "tv",
     ])
     if (caminhosReservados.has(username.toLowerCase())) return null
     return /^[A-Za-z0-9._]+$/.test(username) ? username : null
@@ -114,7 +115,8 @@ function mergeInstagramPorPropriedade(
 
   if (urlLocal) {
     const usernameDaUrl = usernameInstagramDaUrl(urlLocal)
-    return usernameDaUrl
+    const identidadeCoincide = usernameDaUrl?.toLowerCase() === usernameWikidata.toLowerCase()
+    return usernameDaUrl && identidadeCoincide
       ? { ...atual, username: usernameDaUrl, url: urlLocal }
       : { ...atual }
   }
