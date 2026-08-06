@@ -31,6 +31,13 @@ interface RedesSociais {
   site_oficial?: string
 }
 
+function temValorSocial(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  if (typeof value === "object") return Object.values(value).some(temValorSocial)
+  return true
+}
+
 const OPTIONAL_PROPS = `
   OPTIONAL { ?item wdt:P2003 ?instagram }
   OPTIONAL { ?item wdt:P2002 ?twitter }
@@ -251,25 +258,26 @@ export async function ingestWikidata(
 
       // Redes sociais: merge preservando o que ja existe
         const redesAtual: RedesSociais = (dbCand?.redes_sociais as RedesSociais) ?? {}
-        const instagram = binding.instagram?.value ?? null
-        const twitter = binding.twitter?.value ?? null
-        const facebook = binding.facebook?.value ?? null
-        const site = binding.site?.value ?? null
+        const instagram = binding.instagram?.value.trim() || null
+        const twitter = binding.twitter?.value.trim() || null
+        const facebook = binding.facebook?.value.trim() || null
+        const site = binding.site?.value.trim() || null
 
-        const redesUpdate: RedesSociais = {
-        ...redesAtual,
-        ...(instagram
-          ? {
-              instagram: {
-                username: instagram,
-                url: `https://instagram.com/${instagram}`,
-                followers: redesAtual.instagram?.followers ?? null,
-              },
-            }
-          : {}),
-        ...(twitter ? { twitter } : {}),
-        ...(facebook ? { facebook } : {}),
-        ...(site ? { site_oficial: site } : {}),
+        const redesUpdate: RedesSociais = { ...redesAtual }
+        if (instagram && !temValorSocial(redesAtual.instagram)) {
+          redesUpdate.instagram = {
+            username: instagram,
+            url: `https://instagram.com/${instagram}`,
+          }
+        }
+        if (twitter && !temValorSocial(redesAtual.twitter)) {
+          redesUpdate.twitter = twitter
+        }
+        if (facebook && !temValorSocial(redesAtual.facebook)) {
+          redesUpdate.facebook = facebook
+        }
+        if (site && !temValorSocial(redesAtual.site_oficial)) {
+          redesUpdate.site_oficial = site
         }
 
       // So atualiza redes se mudou algo
