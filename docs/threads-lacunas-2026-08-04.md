@@ -1564,11 +1564,15 @@ migration e sem executar ingest.
   volume e erros de persistência separados.
 - HTTP não-2xx, timeout, parse, schema remoto inválido e falha de banco viram
   `erro`. O mapper de `coleta_log` preserva volume parcial em erro declarado.
+- Dois achados acionáveis do CodeRabbit foram validados e corrigidos: o
+  `Retry-After` de `wiki-historico` agora respeita o teto de 60 segundos, e
+  `wikidata-politico` preserva `rows_upserted` e `tables_updated` quando uma
+  escrita posterior falha depois de linhas já persistidas.
 - Projeção sobre o último retrato documentado: 49 indeterminados resolvíveis
   após nova coleta autorizada, sendo 23 de `wikipedia` e 26 de `wikidata`. O
   número é projeção; não houve readback nem nova linha em produção.
-- Verificação local: 63 testes focados, `check:scripts`, typecheck, lint sem
-  erros, 2.082 testes completos e `git diff --check`. O aviso de lint em
+- Verificação local após o review: 66 testes focados, `check:scripts`,
+  typecheck, lint sem erros, 2.085 testes completos e `git diff --check`. O aviso de lint em
   `scripts/audit/coverage-report.ts` já existia e está fora do diff.
 - Não houve migration, escrita de dados editoriais, ingest de produção, merge
   ou deploy.

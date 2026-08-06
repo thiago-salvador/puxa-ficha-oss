@@ -23,12 +23,17 @@ type DbOptions = {
   mudancaExisting?: boolean
   mudancaSelectError?: string
   mudancaInsertError?: string
+  mudancaInsertErrorAfter?: number
   historicoExisting?: { id: string; observacoes: string | null } | null
   historicoExactError?: string
   historicoNearby?: Record<string, unknown>[]
   historicoNearbyError?: string
   historicoInsertError?: string
   historicoUpdateError?: string
+}
+
+type DbState = {
+  mudancaInsertCalls: number
 }
 
 class MockQuery implements PromiseLike<DbResponse> {
@@ -38,6 +43,7 @@ class MockQuery implements PromiseLike<DbResponse> {
   constructor(
     private readonly table: string,
     private readonly options: DbOptions,
+    private readonly state: DbState,
   ) {}
 
   select(columns: string): this {
@@ -93,9 +99,13 @@ class MockQuery implements PromiseLike<DbResponse> {
           error: this.options.mudancaSelectError ? { message: this.options.mudancaSelectError } : null,
         }
       }
+      this.state.mudancaInsertCalls++
+      const shouldFail = this.options.mudancaInsertError
+        && (this.options.mudancaInsertErrorAfter === undefined
+          || this.state.mudancaInsertCalls > this.options.mudancaInsertErrorAfter)
       return {
         data: null,
-        error: this.options.mudancaInsertError ? { message: this.options.mudancaInsertError } : null,
+        error: shouldFail ? { message: this.options.mudancaInsertError! } : null,
       }
     }
 
@@ -129,8 +139,9 @@ class MockQuery implements PromiseLike<DbResponse> {
 }
 
 function database(options: DbOptions = {}): IngestWikidataPoliticoDependencies["database"] {
+  const state: DbState = { mudancaInsertCalls: 0 }
   return {
-    from: (table: string) => new MockQuery(table, options),
+    from: (table: string) => new MockQuery(table, options, state),
   } as unknown as IngestWikidataPoliticoDependencies["database"]
 }
 
@@ -242,6 +253,66 @@ describe("ingestWikidataPolitico: desfecho da coleta", () => {
     )
     assert.equal(insert.result.coleta_resultado, "erro")
     assert.match(insert.result.errors.join(" "), /insert filiacao falhou/)
+  })
+
+  it("preserva escrita parcial quando uma filiacao posterior falha", async () => {
+    const partyPayload = {
+      results: {
+        bindings: [
+          {
+            party: { value: "http://www.wikidata.org/entity/Q987" },
+            partyLabel: { value: "Partido dos Trabalhadores" },
+            partyStart: { value: "+2020-01-01T00:00:00Z" },
+          },
+          {
+            party: { value: "http://www.wikidata.org/entity/Q888" },
+            partyLabel: { value: "Partido Socialista Brasileiro" },
+            partyStart: { value: "+2022-01-01T00:00:00Z" },
+          },
+        ],
+      },
+    }
+
+    const { result } = await executar(
+      { mudancaInsertError: "segunda filiacao falhou", mudancaInsertErrorAfter: 1 },
+      fetchSequence(partyPayload, { results: { bindings: [] } }),
+    )
+
+    assert.equal(result.coleta_resultado, "erro")
+    assert.equal(result.rows_upserted, 1)
+    assert.deepEqual(result.tables_updated, ["mudancas_partido"])
+    assert.match(result.errors.join(" "), /segunda filiacao falhou/)
+  })
+
+  it("preserva filiacao gravada quando historico posterior falha", async () => {
+    const partyPayload = {
+      results: {
+        bindings: [{
+          party: { value: "http://www.wikidata.org/entity/Q987" },
+          partyLabel: { value: "Partido dos Trabalhadores" },
+          partyStart: { value: "+2020-01-01T00:00:00Z" },
+        }],
+      },
+    }
+    const officePayload = {
+      results: {
+        bindings: [{
+          office: { value: "http://www.wikidata.org/entity/Q111" },
+          officeLabel: { value: "Governador de Sao Paulo" },
+          officeStart: { value: "+2022-01-01T00:00:00Z" },
+        }],
+      },
+    }
+
+    const { result } = await executar(
+      { historicoInsertError: "historico posterior falhou" },
+      fetchSequence(partyPayload, officePayload),
+    )
+
+    assert.equal(result.coleta_resultado, "erro")
+    assert.equal(result.rows_upserted, 1)
+    assert.deepEqual(result.tables_updated, ["mudancas_partido"])
+    assert.match(result.errors.join(" "), /historico posterior falhou/)
   })
 
   it("erros de SELECT, UPDATE e INSERT do historico viram erro", async () => {

@@ -124,7 +124,7 @@ export async function fetchWikiCategories(
         if ((res.status === 429 || res.status >= 500) && tentativa < tentativas) {
           const retryAfter = Number.parseInt(res.headers.get("retry-after") ?? "", 10)
           const esperaMs = Number.isFinite(retryAfter)
-            ? Math.max(1_000, retryAfter * 1_000)
+            ? Math.min(60_000, Math.max(1_000, retryAfter * 1_000))
             : Math.min(60_000, 5_000 * 2 ** (tentativa - 1))
           await sleepImpl(esperaMs)
           continue

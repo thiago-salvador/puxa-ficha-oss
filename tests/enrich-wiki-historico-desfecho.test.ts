@@ -64,6 +64,28 @@ describe("wiki-historico: desfecho explicito", () => {
     assert.match(resposta.error ?? "", /HTTP 503/)
   })
 
+  it("limita Retry-After ao mesmo teto do backoff", async () => {
+    const delays: number[] = []
+    let chamadas = 0
+    const resposta = await fetchWikiCategories("Teste", {
+      fetchImpl: async () => {
+        chamadas++
+        if (chamadas === 1) {
+          return new Response("", {
+            status: 429,
+            headers: { "Retry-After": "86400" },
+          })
+        }
+        return Response.json({ query: { pages: { "1": { title: "Teste" } } } })
+      },
+      sleepImpl: async (ms) => { delays.push(ms) },
+      tentativas: 2,
+    })
+
+    assert.deepEqual(delays, [60_000])
+    assert.deepEqual(resposta, { categories: [], error: null })
+  })
+
   it("timeout vira erro", async () => {
     const abortError = new Error("aborted")
     abortError.name = "AbortError"

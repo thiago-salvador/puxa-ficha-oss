@@ -282,7 +282,8 @@ async function upsertMudancas(
   candidatoId: string,
   slug: string,
   parties: PartyMembership[],
-  currentParty: string | null
+  currentParty: string | null,
+  onWrite: () => void,
 ): Promise<number> {
   let inserted = 0
   let previousParty: string | null = null
@@ -316,6 +317,7 @@ async function upsertMudancas(
           throw new Error(`Erro inserindo filiacao inicial: ${error.message}`)
         } else {
           inserted++
+          onWrite()
         }
       }
 
@@ -346,6 +348,7 @@ async function upsertMudancas(
         throw new Error(`Erro inserindo mudanca de partido: ${error.message}`)
       } else {
         inserted++
+        onWrite()
       }
     }
 
@@ -372,7 +375,8 @@ async function upsertHistorico(
   candidatoId: string,
   slug: string,
   offices: OfficeHeld[],
-  parties: PartyMembership[]
+  parties: PartyMembership[],
+  onWrite: () => void,
 ): Promise<number> {
   let inserted = 0
 
@@ -418,6 +422,7 @@ async function upsertHistorico(
         throw new Error(`Erro atualizando historico: ${error.message}`)
       }
       inserted++
+      onWrite()
       continue
     }
 
@@ -457,6 +462,7 @@ async function upsertHistorico(
       throw new Error(`Erro inserindo historico: ${error.message}`)
     }
     inserted++
+    onWrite()
   }
 
   return inserted
@@ -513,12 +519,27 @@ export async function ingestWikidataPolitico(
       const parties = partySource.items
       const offices = officeSource.items
 
-      const mudancas = await upsertMudancas(deps.database, dbCandidate.id, cand.slug, parties, dbCandidate.partido_sigla)
-      const historico = await upsertHistorico(deps.database, dbCandidate.id, cand.slug, offices, parties)
+      const registrarEscrita = (table: "mudancas_partido" | "historico_politico") => {
+        result.rows_upserted++
+        if (!result.tables_updated.includes(table)) result.tables_updated.push(table)
+      }
+      const mudancas = await upsertMudancas(
+        deps.database,
+        dbCandidate.id,
+        cand.slug,
+        parties,
+        dbCandidate.partido_sigla,
+        () => registrarEscrita("mudancas_partido"),
+      )
+      const historico = await upsertHistorico(
+        deps.database,
+        dbCandidate.id,
+        cand.slug,
+        offices,
+        parties,
+        () => registrarEscrita("historico_politico"),
+      )
 
-      if (mudancas > 0) result.tables_updated.push("mudancas_partido")
-      if (historico > 0) result.tables_updated.push("historico_politico")
-      result.rows_upserted = mudancas + historico
       const sourceRows = partySource.sourceRows + officeSource.sourceRows
       finalizarColeta(result, {
         aplicavel: true,
