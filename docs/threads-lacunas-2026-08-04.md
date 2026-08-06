@@ -1652,3 +1652,16 @@ Nenhum dado foi escrito no Supabase.
   dependentes de aprovação explícita.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+## Aprovação editorial da revisão final (2026-08-06)
+
+**Estado:** Thiago aprovou a classificação editorial dos 204 CNJs pelo canal
+local `POST /aplicar` às 00:48 BRT. O payload registrou `decisao: aprovar` e não
+continha instruções adicionais.
+
+- A aprovação alcança somente a classificação editorial documentada na PR
+  #115.
+- Preparação e aplicação de migrations, escrita no Supabase, merge, métricas
+  finais e deploy de produção continuam sem autorização.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
