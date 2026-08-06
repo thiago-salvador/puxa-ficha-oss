@@ -60,6 +60,7 @@
     "data:link-check-fontes:revalidar": "tsx scripts/link-check-pontos-atencao.ts --dry-run --fail-on-dead --fail-on-sem-substancia --fail-on-morte-suspeita --gate-somente-publicos",
     "data:link-check-fontes": "tsx scripts/link-check-pontos-atencao.ts --apply",
     "data:curadoria:registrar": "tsx scripts/registrar-revisao-curadoria.ts",
+    "data:curadoria:processos:lote": "tsx scripts/curadoria-processos-lote.ts",
     "audit:cobertura": "tsx scripts/audit/coverage-report.ts",
     "audit:cobertura:check": "tsx scripts/audit/check-report.ts",
     "audit:cobertura:allowlist": "tsx scripts/audit/check-migrations-allowlist.ts",
