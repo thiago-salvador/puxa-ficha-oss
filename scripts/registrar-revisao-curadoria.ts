@@ -23,7 +23,7 @@ import {
 import { supabase } from "./lib/supabase"
 
 export type FrenteCuradoria = "processos" | "contradicoes"
-export type ProvaIdentidade = "id-oficial" | "cargo-e-uf"
+export type ProvaIdentidade = "id-oficial" | "cargo-e-uf" | "nao-confirmada"
 
 export interface RevisaoManual {
   slug: string
@@ -67,10 +67,16 @@ function lerFlagUnica(argv: string[], nome: string): string {
 }
 
 function lerFlagsRepetiveis(argv: string[], nome: string): string[] {
+  const valores = lerFlagsRepetiveisOpcionais(argv, nome)
+  if (valores.length === 0) throw new Error(`--${nome} exige ao menos uma fonte não vazia`)
+  return valores
+}
+
+function lerFlagsRepetiveisOpcionais(argv: string[], nome: string): string[] {
   const valores = argv
     .filter((arg) => arg.startsWith(`--${nome}=`))
     .map((arg) => arg.slice(nome.length + 3).trim())
-  if (valores.length === 0 || valores.some((valor) => !valor)) {
+  if (valores.some((valor) => !valor)) {
     throw new Error(`--${nome} exige ao menos uma fonte não vazia`)
   }
   return [...new Set(valores)]
@@ -99,13 +105,17 @@ function validarData(valor: string): void {
   if (valor > hoje) throw new Error("--data não pode estar no futuro")
 }
 
-function validarEscopoProcessos(detalhe: string): void {
-  const campos = new Map(
+function camposDoDetalhe(detalhe: string): Map<string, string> {
+  return new Map(
     detalhe.split(";").map((parte) => {
       const [chave, ...resto] = parte.split(":")
       return [semAcentos(chave.trim()), resto.join(":").trim()]
     })
   )
+}
+
+function validarEscopoProcessos(detalhe: string): void {
+  const campos = camposDoDetalhe(detalhe)
   const obrigatorios = ["orgaos", "jurisdicao", "periodo", "termos"]
   const faltando = obrigatorios.filter((campo) => !campos.get(campo))
   if (faltando.length > 0) {
@@ -151,14 +161,36 @@ export function validarRevisaoManual(argv: string[]): RevisaoManual {
     validarEscopoProcessos(detalhe)
   }
 
-  const urls = lerFlagsRepetiveis(argv, "url")
+  const identidade = lerFlagUnica(argv, "identidade") as ProvaIdentidade
+  if (!new Set<ProvaIdentidade>(["id-oficial", "cargo-e-uf", "nao-confirmada"]).has(identidade)) {
+    throw new Error("nome sozinho não prova identidade; use id-oficial, cargo-e-uf ou nao-confirmada")
+  }
+  if (identidade === "nao-confirmada" && resultado !== "indeterminado") {
+    throw new Error("--identidade=nao-confirmada só é permitida para --resultado=indeterminado")
+  }
+
+  const urls = identidade === "nao-confirmada"
+    ? lerFlagsRepetiveisOpcionais(argv, "url")
+    : lerFlagsRepetiveis(argv, "url")
   urls.forEach((url) => validarUrl(url, "url"))
 
-  const identidade = lerFlagUnica(argv, "identidade") as ProvaIdentidade
-  if (!new Set<ProvaIdentidade>(["id-oficial", "cargo-e-uf"]).has(identidade)) {
-    throw new Error("nome sozinho não prova identidade; use id-oficial ou cargo-e-uf")
+  const identidadeUrls = identidade === "nao-confirmada"
+    ? lerFlagsRepetiveisOpcionais(argv, "identidade-url")
+    : lerFlagsRepetiveis(argv, "identidade-url")
+  if (identidade === "nao-confirmada") {
+    const campos = camposDoDetalhe(detalhe)
+    const motivo = campos.get("motivo") ?? ""
+    if (motivo.length < 12) {
+      throw new Error("identidade nao-confirmada exige motivo concreto no detalhe")
+    }
+    if (identidadeUrls.length === 0) {
+      const fontes = campos.get("fontes consultadas") ?? ""
+      const anos = campos.get("anos consultados") ?? ""
+      if (!fontes || !/\b(?:19|20)\d{2}\b/.test(anos)) {
+        throw new Error("identidade nao-confirmada sem URL de identidade exige fontes consultadas e anos consultados no detalhe")
+      }
+    }
   }
-  const identidadeUrls = lerFlagsRepetiveis(argv, "identidade-url")
   identidadeUrls.forEach((url) => validarUrl(url, "identidade-url"))
   if (identidadeUrls.some((url) => !urls.includes(url))) {
     throw new Error("toda --identidade-url também precisa constar em --url")

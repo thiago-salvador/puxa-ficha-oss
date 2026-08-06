@@ -1595,5 +1595,29 @@ pendências em `tse-historico`, 194 em `filiacao`, 102 em
 Os nove gates locais passaram após substituir, apenas no worktree, o symlink de
 `node_modules` por uma cópia local exigida pelo Turbopack. Evidência completa:
 `~/.disposable-html/2026-08-05-puxa-ficha-ingests-historicos.evidence.json`.
+---
 
+## Busca ativa de processos da coorte pública (2026-08-05)
+
+**Estado:** C7 aplicado no Supabase a partir da branch
+`codex/processos-curadoria-20260805`, baseada exatamente no commit `022d3ed`
+da PR #108. A coorte foi recalculada no banco: 194 fichas públicas, 185 sem
+processos no snapshot inicial.
+
+- Os 185 candidatos foram pesquisados em 10 lotes atômicos: 50 `encontrado`,
+  16 `vazio_confirmado` e 119 `indeterminado` por bloqueio concreto.
+- A evidência canônica registra 204 números CNJ atribuíveis e 3.558 ocorrências
+  ambíguas descartadas da publicação. DataJud ficou indisponível por timeout em
+  204/204 conferências auxiliares; nenhum achado dependeu dele para identificar
+  a pessoa.
+- O aplicador gravou 185 linhas em `coleta_log` (`processos-curadoria`) e não
+  alterou `processos` nem `pontos_atencao`; os checksums antes/depois ficaram
+  idênticos.
+- O relatório final mostra, na coluna Processos, 50 `coletado`, 16
+  `zero_provado` e 119 `nao_sabemos`. Os 204 achados permanecem sem publicação
+  e dependem de aprovação editorial do Thiago; a lista separada está em
+  `~/.disposable-html/2026-08-05-puxa-ficha-processos-aprovacao-thiago.csv`.
+- Gates finais: dry-run 185/185, 94 testes integrados e 60 adversariais,
+  `check:scripts`, typecheck, ESLint, `git diff --check`, readback do Supabase e
+  renderização real do relatório.
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
