@@ -124,6 +124,20 @@ describe("entradaDeResultado nao inventa veredito", () => {
     assert.equal(entrada.resultado, "encontrado")
     assert.equal(entrada.volume, 7)
   })
+
+  it("erro declarado preserva volume parcial e nunca vira vazio_confirmado", () => {
+    const entrada = entradaDeResultado(
+      resultado({
+        rows_upserted: 2,
+        coleta_resultado: "erro",
+        coleta_detalhe: "HTTP 500 depois de duas linhas",
+      }),
+    )
+    assert.ok(entrada)
+    assert.equal(entrada.resultado, "erro")
+    assert.equal(entrada.volume, 2)
+    assert.equal(entrada.detalhe, "HTTP 500 depois de duas linhas")
+  })
 })
 
 describe("normalizarEntrada respeita a constraint coleta_log_volume_coerente", () => {
@@ -287,16 +301,19 @@ describe("FONTES cobre todo source declarado pelos ingests", () => {
     assert.match(filiacao, /Arquivo oficial nao contem filiacao individual/)
     assert.match(pipeline, /let taskFailures = 0/)
     assert.match(pipeline, /totalErrors > 0 \|\| taskFailures > 0/)
+    assert.match(
+      pipeline,
+      /try \{\s*task\.before\?\.\(\)\s*const results = await task\.run\(\)/,
+      "falha no before precisa entrar no mesmo caminho de erro global da tarefa",
+    )
   })
 
   it("wikidata-politico distingue candidato sem QID de resposta vazia", () => {
     const src = readFileSync(join(libDir, "ingest-wikidata-politico.ts"), "utf8")
-    assert.match(src, /result\.coleta_resultado = "nao_aplicavel"/)
+    assert.match(src, /finalizarColeta\(result, \{\s*aplicavel: false/)
     assert.match(src, /sem wikidata_id: nenhuma consulta remota foi executada/)
-    assert.match(src, /const sourceRows = parties\.length \+ offices\.length/)
-    assert.match(src, /sourceRows === 0/)
-    assert.match(src, /result\.coleta_resultado = "vazio_confirmado"/)
-    assert.match(src, /result\.coleta_volume = sourceRows/)
+    assert.match(src, /const sourceRows = partySource\.sourceRows \+ officeSource\.sourceRows/)
+    assert.match(src, /volumeFonte: sourceRows/)
     assert.match(src, /arg\.startsWith\("--slug="\)/)
   })
 

@@ -6,6 +6,7 @@ import { resolveCanonicalParty } from "./party-canonical"
 import { canonicalCargo } from "./cargo-utils"
 import { sanitizeTemplateText } from "./ptbr-sanitize"
 import { extractEstadoFromText } from "@/lib/br-uf"
+import { finalizarColeta, registrarErroColeta } from "./coleta-resultado"
 import type { IngestResult } from "./types"
 
 const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
@@ -21,7 +22,7 @@ const slugArgs = args
   .filter(Boolean)
 const filterSlugs = slugArgs.length > 0 ? new Set(slugArgs) : null
 
-interface SparqlBinding {
+export interface SparqlBinding {
   party?: { value: string }
   partyLabel?: { value: string }
   partyStart?: { value: string }
@@ -34,23 +35,62 @@ interface SparqlBinding {
   officeEnd?: { value: string }
 }
 
-interface SparqlResponse {
-  results?: {
-    bindings?: SparqlBinding[]
-  }
-}
-
-interface PartyMembership {
+export interface PartyMembership {
   sigla: string
   label: string
   startDate: string | null
   endDate: string | null
 }
 
-interface OfficeHeld {
+export interface OfficeHeld {
   label: string
   startDate: string | null
   endDate: string | null
+}
+
+type JsonFetcher = typeof fetchJSON
+
+export interface IngestWikidataPoliticoDependencies {
+  database: typeof supabase
+  loadCandidates: typeof loadCandidatosPublicos
+  fetchJson: JsonFetcher
+  wait: typeof sleep
+}
+
+export interface FonteWikidata<T> {
+  items: T[]
+  sourceRows: number
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export function validarBindingsPoliticos(
+  payload: unknown,
+  obrigatorios: readonly (keyof SparqlBinding)[],
+): SparqlBinding[] {
+  if (!isObject(payload) || !isObject(payload.results) || !Array.isArray(payload.results.bindings)) {
+    throw new Error("Resposta SPARQL invalida: results.bindings ausente ou nao e array")
+  }
+
+  return payload.results.bindings.map((raw, index) => {
+    if (!isObject(raw)) {
+      throw new Error(`Resposta SPARQL invalida: binding ${index} nao e objeto`)
+    }
+    for (const property of obrigatorios) {
+      const field = raw[property]
+      if (!isObject(field) || typeof field.value !== "string" || field.value.trim() === "") {
+        throw new Error(`Resposta SPARQL invalida: binding ${index}.${String(property)} sem value string`)
+      }
+    }
+    for (const [property, field] of Object.entries(raw)) {
+      if (!isObject(field) || typeof field.value !== "string") {
+        throw new Error(`Resposta SPARQL invalida: binding ${index}.${property} sem value string`)
+      }
+    }
+    return raw as SparqlBinding
+  })
 }
 
 function normalizeText(value: string): string {
@@ -133,7 +173,11 @@ function currentPartyForYear(parties: PartyMembership[], year: number | null): s
   return active[0]?.sigla ?? null
 }
 
-async function fetchPartyMemberships(qid: string): Promise<PartyMembership[]> {
+export async function fetchPartyMemberships(
+  qid: string,
+  fetcher: JsonFetcher = fetchJSON,
+): Promise<FonteWikidata<PartyMembership>> {
+  if (!/^Q[1-9]\d*$/.test(qid)) throw new Error(`wikidata_id invalido: ${qid}`)
   const query = `
 SELECT ?party ?partyLabel ?partyStart ?partyEnd WHERE {
   wd:${qid} p:P102 ?partyStmt .
@@ -145,8 +189,8 @@ SELECT ?party ?partyLabel ?partyStart ?partyEnd WHERE {
 ORDER BY ?partyStart
 `
   const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(query)}`
-  const json = await fetchJSON<SparqlResponse>(url, HEADERS, 3, 20000)
-  const bindings = json.results?.bindings ?? []
+  const json = await fetcher<unknown>(url, HEADERS, 3, 20000)
+  const bindings = validarBindingsPoliticos(json, ["party", "partyLabel"])
   const deduped = new Map<string, PartyMembership>()
 
   for (const row of bindings) {
@@ -165,14 +209,19 @@ ORDER BY ?partyStart
     })
   }
 
-  return [...deduped.values()].sort((left, right) => {
+  const items = [...deduped.values()].sort((left, right) => {
     const leftDate = left.startDate ?? "9999-12-31"
     const rightDate = right.startDate ?? "9999-12-31"
     return leftDate.localeCompare(rightDate)
   })
+  return { items, sourceRows: bindings.length }
 }
 
-async function fetchOffices(qid: string): Promise<OfficeHeld[]> {
+export async function fetchOffices(
+  qid: string,
+  fetcher: JsonFetcher = fetchJSON,
+): Promise<FonteWikidata<OfficeHeld>> {
+  if (!/^Q[1-9]\d*$/.test(qid)) throw new Error(`wikidata_id invalido: ${qid}`)
   const query = `
 SELECT ?office ?officeLabel ?officeStart ?officePoint ?officeEnd WHERE {
   wd:${qid} p:P39 ?officeStmt .
@@ -185,8 +234,8 @@ SELECT ?office ?officeLabel ?officeStart ?officePoint ?officeEnd WHERE {
 ORDER BY ?officeStart ?officePoint
 `
   const url = `${SPARQL_ENDPOINT}?query=${encodeURIComponent(query)}`
-  const json = await fetchJSON<SparqlResponse>(url, HEADERS, 3, 20000)
-  const bindings = json.results?.bindings ?? []
+  const json = await fetcher<unknown>(url, HEADERS, 3, 20000)
+  const bindings = validarBindingsPoliticos(json, ["office", "officeLabel"])
   const deduped = new Map<string, OfficeHeld>()
 
   for (const row of bindings) {
@@ -204,32 +253,37 @@ ORDER BY ?officeStart ?officePoint
     })
   }
 
-  return [...deduped.values()].sort((left, right) => {
+  const items = [...deduped.values()].sort((left, right) => {
     const leftDate = left.startDate ?? "9999-12-31"
     const rightDate = right.startDate ?? "9999-12-31"
     return leftDate.localeCompare(rightDate)
   })
+  return { items, sourceRows: bindings.length }
 }
 
-async function resolveCandidate(slug: string): Promise<{
+async function resolveCandidate(database: typeof supabase, slug: string): Promise<{
   id: string
   wikidata_id: string | null
   partido_sigla: string | null
 } | null> {
-  const { data } = await supabase
+  const { data, error } = await database
     .from("candidatos")
     .select("id, wikidata_id, partido_sigla")
     .eq("slug", slug)
     .single()
 
+  if (error) throw new Error(`Erro lendo candidato: ${error.message}`)
+
   return data ?? null
 }
 
 async function upsertMudancas(
+  database: typeof supabase,
   candidatoId: string,
   slug: string,
   parties: PartyMembership[],
-  currentParty: string | null
+  currentParty: string | null,
+  onWrite: () => void,
 ): Promise<number> {
   let inserted = 0
   let previousParty: string | null = null
@@ -241,16 +295,17 @@ async function upsertMudancas(
     if (previousParty === null) {
       previousParty = party.sigla
 
-      const { data: existing } = await supabase
+      const { data: existing, error: selectError } = await database
         .from("mudancas_partido")
         .select("id")
         .eq("candidato_id", candidatoId)
         .eq("ano", ano)
         .eq("partido_novo", party.sigla)
-        .single()
+        .maybeSingle()
+      if (selectError) throw new Error(`Erro consultando filiacao inicial: ${selectError.message}`)
 
       if (!existing) {
-        const { error } = await supabase.from("mudancas_partido").insert({
+        const { error } = await database.from("mudancas_partido").insert({
           candidato_id: candidatoId,
           partido_anterior: "Sem partido",
           partido_novo: party.sigla,
@@ -259,9 +314,10 @@ async function upsertMudancas(
           contexto: "Wikidata P102 (filiação inicial conhecida)",
         })
         if (error) {
-          warn("wikidata-politico", `  ${slug}: erro filiacao inicial ${error.message}`)
+          throw new Error(`Erro inserindo filiacao inicial: ${error.message}`)
         } else {
           inserted++
+          onWrite()
         }
       }
 
@@ -270,16 +326,17 @@ async function upsertMudancas(
 
     if (previousParty === party.sigla) continue
 
-    const { data: existing } = await supabase
+    const { data: existing, error: selectError } = await database
       .from("mudancas_partido")
       .select("id")
       .eq("candidato_id", candidatoId)
       .eq("ano", ano)
       .eq("partido_novo", party.sigla)
-      .single()
+      .maybeSingle()
+    if (selectError) throw new Error(`Erro consultando mudanca de partido: ${selectError.message}`)
 
     if (!existing) {
-      const { error } = await supabase.from("mudancas_partido").insert({
+      const { error } = await database.from("mudancas_partido").insert({
         candidato_id: candidatoId,
         partido_anterior: previousParty,
         partido_novo: party.sigla,
@@ -288,9 +345,10 @@ async function upsertMudancas(
         contexto: "Wikidata P102",
       })
       if (error) {
-        warn("wikidata-politico", `  ${slug}: erro mudanca partido ${error.message}`)
+        throw new Error(`Erro inserindo mudanca de partido: ${error.message}`)
       } else {
         inserted++
+        onWrite()
       }
     }
 
@@ -313,10 +371,12 @@ async function upsertMudancas(
 }
 
 async function upsertHistorico(
+  database: typeof supabase,
   candidatoId: string,
   slug: string,
   offices: OfficeHeld[],
-  parties: PartyMembership[]
+  parties: PartyMembership[],
+  onWrite: () => void,
 ): Promise<number> {
   let inserted = 0
 
@@ -332,13 +392,14 @@ async function upsertHistorico(
     // -----------------------------------------------------------------------
     // Guard 1: match on (candidato_id, cargo_canonico, periodo_inicio)
     // -----------------------------------------------------------------------
-    const { data: existingRows } = await supabase
+    const { data: existingRows, error: existingError } = await database
       .from("historico_politico")
       .select("id, observacoes")
       .eq("candidato_id", candidatoId)
       .eq("cargo_canonico", cargoCanonico)
       .eq("periodo_inicio", inicio)
       .limit(1)
+    if (existingError) throw new Error(`Erro consultando historico existente: ${existingError.message}`)
     const existing = existingRows?.[0]
 
     if (existing) {
@@ -356,22 +417,25 @@ async function upsertHistorico(
         observacoes: sanitizeTemplateText(`Importado automaticamente de Wikidata P39 em ${new Date().toISOString().slice(0, 10)}`),
         proveniencia: "wikidata" as const,
       }
-      const { error } = await supabase.from("historico_politico").update(row).eq("id", existing.id)
+      const { error } = await database.from("historico_politico").update(row).eq("id", existing.id)
       if (error) {
-        warn("wikidata-politico", `  ${slug}: erro atualizando historico ${error.message}`)
+        throw new Error(`Erro atualizando historico: ${error.message}`)
       }
+      inserted++
+      onWrite()
       continue
     }
 
     // -----------------------------------------------------------------------
     // Guard 2: ano ±1 com mesmo cargo canônico (TSE âncora vs posse Wikidata)
     // -----------------------------------------------------------------------
-    const { data: nearby } = await supabase
+    const { data: nearby, error: nearbyError } = await database
       .from("historico_politico")
       .select("id, cargo, cargo_canonico, observacoes")
       .eq("candidato_id", candidatoId)
       .gte("periodo_inicio", inicio - 1)
       .lte("periodo_inicio", inicio + 1)
+    if (nearbyError) throw new Error(`Erro consultando historico proximo: ${nearbyError.message}`)
 
     const hasNearbySameCanon = (nearby || []).some((r) => {
       const existingCanon = (r.cargo_canonico && r.cargo_canonico.trim()) || canonicalCargo(r.cargo)
@@ -393,19 +457,28 @@ async function upsertHistorico(
       proveniencia: "wikidata" as const,
     }
 
-    const { error } = await supabase.from("historico_politico").insert(row)
+    const { error } = await database.from("historico_politico").insert(row)
     if (error) {
-      warn("wikidata-politico", `  ${slug}: erro inserindo historico ${error.message}`)
-      continue
+      throw new Error(`Erro inserindo historico: ${error.message}`)
     }
     inserted++
+    onWrite()
   }
 
   return inserted
 }
 
-export async function ingestWikidataPolitico(): Promise<IngestResult[]> {
-  const candidatos = (await loadCandidatosPublicos()).filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
+export async function ingestWikidataPolitico(
+  overrides: Partial<IngestWikidataPoliticoDependencies> = {},
+): Promise<IngestResult[]> {
+  const deps: IngestWikidataPoliticoDependencies = {
+    database: supabase,
+    loadCandidates: loadCandidatosPublicos,
+    fetchJson: fetchJSON,
+    wait: sleep,
+    ...overrides,
+  }
+  const candidatos = (await deps.loadCandidates()).filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
   const results: IngestResult[] = []
 
   for (const cand of candidatos) {
@@ -420,56 +493,71 @@ export async function ingestWikidataPolitico(): Promise<IngestResult[]> {
     const start = Date.now()
 
     try {
-      const dbCandidate = await resolveCandidate(cand.slug)
+      const dbCandidate = await resolveCandidate(deps.database, cand.slug)
       if (!dbCandidate?.id) {
-        result.errors.push("Candidato nao encontrado no banco")
-        results.push(result)
-        continue
+        throw new Error("Candidato nao encontrado no banco")
       }
 
       if (!dbCandidate.wikidata_id) {
         log("wikidata-politico", `  ${cand.slug}: sem wikidata_id, pulando`)
         result.skipped = true
         result.skip_reason = "sem wikidata_id"
-        result.coleta_resultado = "nao_aplicavel"
-        result.coleta_detalhe = "sem wikidata_id: nenhuma consulta remota foi executada"
+        finalizarColeta(result, {
+          aplicavel: false,
+          volumeFonte: 0,
+          detalhe: "sem wikidata_id: nenhuma consulta remota foi executada",
+        })
         result.duration_ms = Date.now() - start
         results.push(result)
         continue
       }
 
-      const parties = await fetchPartyMemberships(dbCandidate.wikidata_id)
-      await sleep(250)
-      const offices = await fetchOffices(dbCandidate.wikidata_id)
-      await sleep(250)
+      const partySource = await fetchPartyMemberships(dbCandidate.wikidata_id, deps.fetchJson)
+      await deps.wait(250)
+      const officeSource = await fetchOffices(dbCandidate.wikidata_id, deps.fetchJson)
+      await deps.wait(250)
+      const parties = partySource.items
+      const offices = officeSource.items
 
-      const mudancas = await upsertMudancas(dbCandidate.id, cand.slug, parties, dbCandidate.partido_sigla)
-      const historico = await upsertHistorico(dbCandidate.id, cand.slug, offices, parties)
-
-      if (mudancas > 0) result.tables_updated.push("mudancas_partido")
-      if (historico > 0) result.tables_updated.push("historico_politico")
-      result.rows_upserted = mudancas + historico
-      const sourceRows = parties.length + offices.length
-      result.coleta_detalhe = `${parties.length} filiacao(oes) e ${offices.length} cargo(s) retornados pela fonte`
-      if (sourceRows === 0) {
-        result.coleta_resultado = "vazio_confirmado"
-      } else {
-        result.coleta_resultado = "encontrado"
-        result.coleta_volume = sourceRows
+      const registrarEscrita = (table: "mudancas_partido" | "historico_politico") => {
+        result.rows_upserted++
+        if (!result.tables_updated.includes(table)) result.tables_updated.push(table)
       }
+      const mudancas = await upsertMudancas(
+        deps.database,
+        dbCandidate.id,
+        cand.slug,
+        parties,
+        dbCandidate.partido_sigla,
+        () => registrarEscrita("mudancas_partido"),
+      )
+      const historico = await upsertHistorico(
+        deps.database,
+        dbCandidate.id,
+        cand.slug,
+        offices,
+        parties,
+        () => registrarEscrita("historico_politico"),
+      )
 
+      const sourceRows = partySource.sourceRows + officeSource.sourceRows
+      finalizarColeta(result, {
+        aplicavel: true,
+        volumeFonte: sourceRows,
+        detalhe: `${partySource.sourceRows} binding(s) de filiacao e ${officeSource.sourceRows} binding(s) de cargo retornados pela fonte`,
+      })
       log(
         "wikidata-politico",
         `  ${cand.slug}: +${mudancas} mudancas_partido, +${historico} historico_politico`
       )
     } catch (err) {
-      result.errors.push(err instanceof Error ? err.message : String(err))
+      registrarErroColeta(result, err)
       warn("wikidata-politico", `  ${cand.slug}: ${err instanceof Error ? err.message : String(err)}`)
     }
 
     result.duration_ms = Date.now() - start
     results.push(result)
-    await sleep(750)
+    await deps.wait(750)
   }
 
   return results

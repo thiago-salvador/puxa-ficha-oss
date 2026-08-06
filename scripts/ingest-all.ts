@@ -212,9 +212,9 @@ const INGEST_TASKS: IngestTask[] = [
  */
 async function runIngestTask(task: IngestTask, allResults: IngestResult[]): Promise<boolean> {
   log("pipeline", task.heading)
-  task.before?.()
 
   try {
+    task.before?.()
     const results = await task.run()
     if (results) {
       allResults.push(...results)

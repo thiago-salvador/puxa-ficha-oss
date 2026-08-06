@@ -1547,6 +1547,38 @@ corrigiu no banco o detalhe de auditoria de Renato: `nome_completo` recuou para
 `nome_urna`; naturalidade e profissão voltaram a `NULL`.
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
 
+## N9 — desfecho explícito de Wikipedia e Wikidata (2026-08-06)
+
+**Estado:** os quatro ingests de Wiki agora devolvem `encontrado`,
+`vazio_confirmado`, `nao_aplicavel` ou `erro` com detalhe explícito, sem
+migration e sem executar ingest.
+
+- `wikipedia` confirma verbete mesmo quando os dados já estavam no banco;
+  título ausente fica `nao_aplicavel`, e fallback local não é atribuído à
+  consulta remota.
+- `wiki-historico` registra candidato sem título, separa payload inválido de
+  resposta vazia e considera cargos retornados como encontrados mesmo sem data
+  gravável.
+- `wikidata` distingue QID ausente de consulta SPARQL vazia e preserva o
+  fallback seguro de QID via Wikipedia. `wikidata-politico` mantém fonte,
+  volume e erros de persistência separados.
+- HTTP não-2xx, timeout, parse, schema remoto inválido e falha de banco viram
+  `erro`. O mapper de `coleta_log` preserva volume parcial em erro declarado.
+- Dois achados acionáveis do CodeRabbit foram validados e corrigidos: o
+  `Retry-After` de `wiki-historico` agora respeita o teto de 60 segundos, e
+  `wikidata-politico` preserva `rows_upserted` e `tables_updated` quando uma
+  escrita posterior falha depois de linhas já persistidas.
+- Projeção sobre o último retrato documentado: 49 indeterminados resolvíveis
+  após nova coleta autorizada, sendo 23 de `wikipedia` e 26 de `wikidata`. O
+  número é projeção; não houve readback nem nova linha em produção.
+- Verificação local após o review: 66 testes focados, `check:scripts`,
+  typecheck, lint sem erros, 2.085 testes completos e `git diff --check`. O aviso de lint em
+  `scripts/audit/coverage-report.ts` já existia e está fora do diff.
+- Não houve migration, escrita de dados editoriais, ingest de produção, merge
+  ou deploy.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
 ---
 
 ## Infraestrutura de procedência da curadoria (2026-08-05)

@@ -3,6 +3,7 @@ import { loadCandidatosPublicos } from "./helpers-db"
 import { sleep } from "./helpers"
 import { log, warn } from "./logger"
 import { canonicalizeEstadoForStorage } from "@/lib/br-uf"
+import { finalizarColeta, registrarErroColeta } from "./coleta-resultado"
 import type { IngestResult } from "./types"
 
 // Slug → Portuguese Wikipedia article title (reuse from enrich-wikipedia.ts)
@@ -41,20 +42,6 @@ const CARGO_PATTERNS: Array<{
 
 // State name normalization delegated to br-uf.ts (single source of truth)
 
-interface WikiCategory {
-  title?: string
-}
-
-interface WikiPage {
-  categories?: WikiCategory[]
-}
-
-interface WikiQueryResponse {
-  query?: {
-    pages?: Record<string, WikiPage>
-  }
-}
-
 function normalizeEstado(name: string): string {
   return canonicalizeEstadoForStorage(name) ?? name
 }
@@ -63,7 +50,53 @@ type WikiCategoriesResult =
   | { categories: string[]; error: null }
   | { categories: []; error: string }
 
-async function fetchWikiCategories(title: string): Promise<WikiCategoriesResult> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/** Test seam: `missing` e lista vazia sao zeros validos; schema quebrado e erro. */
+export function interpretarWikiCategoriesPayload(payload: unknown): WikiCategoriesResult {
+  if (!isRecord(payload) || !isRecord(payload.query) || !isRecord(payload.query.pages)) {
+    return { categories: [], error: "payload Wikipedia invalido: query.pages ausente" }
+  }
+  const pages = Object.values(payload.query.pages)
+  if (pages.length !== 1 || !isRecord(pages[0])) {
+    return { categories: [], error: "payload Wikipedia invalido: pagina unica ausente" }
+  }
+  const page = pages[0]
+  if (Object.prototype.hasOwnProperty.call(page, "missing")) {
+    return { categories: [], error: null }
+  }
+  if (typeof page.title !== "string" || page.title.trim() === "") {
+    return { categories: [], error: "payload Wikipedia invalido: title da pagina ausente" }
+  }
+  if (page.categories === undefined) return { categories: [], error: null }
+  if (!Array.isArray(page.categories)) {
+    return { categories: [], error: "payload Wikipedia invalido: categories nao e lista" }
+  }
+
+  const categories: string[] = []
+  for (const category of page.categories) {
+    if (!isRecord(category) || typeof category.title !== "string") {
+      return { categories: [], error: "payload Wikipedia invalido: categoria sem title" }
+    }
+    const title = category.title.replace("Categoria:", "").trim()
+    if (title) categories.push(title)
+  }
+  return { categories, error: null }
+}
+
+interface WikiCategoriesFetchOptions {
+  fetchImpl?: (input: string, init?: RequestInit) => Promise<Response>
+  sleepImpl?: (ms: number) => Promise<void>
+  tentativas?: number
+  timeoutMs?: number
+}
+
+export async function fetchWikiCategories(
+  title: string,
+  options: WikiCategoriesFetchOptions = {},
+): Promise<WikiCategoriesResult> {
   const params = new URLSearchParams({
     action: "query",
     titles: title,
@@ -73,39 +106,43 @@ async function fetchWikiCategories(title: string): Promise<WikiCategoriesResult>
     origin: "*",
   })
 
+  const fetchImpl = options.fetchImpl ?? fetch
+  const sleepImpl = options.sleepImpl ?? sleep
+  const tentativas = options.tentativas ?? 5
+  const timeoutMs = options.timeoutMs ?? 15_000
   let ultimoErro = "erro desconhecido"
-  for (let tentativa = 1; tentativa <= 5; tentativa++) {
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const res = await fetch(`${WIKI_API}?${params}`, {
+      const res = await fetchImpl(`${WIKI_API}?${params}`, {
         headers: { "User-Agent": "PuxaFicha/1.0 (puxaficha.com.br)" },
+        signal: controller.signal,
       })
       if (!res.ok) {
         ultimoErro = `HTTP ${res.status}`
-        if ((res.status === 429 || res.status >= 500) && tentativa < 5) {
+        if ((res.status === 429 || res.status >= 500) && tentativa < tentativas) {
           const retryAfter = Number.parseInt(res.headers.get("retry-after") ?? "", 10)
           const esperaMs = Number.isFinite(retryAfter)
-            ? Math.max(1_000, retryAfter * 1_000)
+            ? Math.min(60_000, Math.max(1_000, retryAfter * 1_000))
             : Math.min(60_000, 5_000 * 2 ** (tentativa - 1))
-          await sleep(esperaMs)
+          await sleepImpl(esperaMs)
           continue
         }
         return { categories: [], error: ultimoErro }
       }
-      const json = (await res.json()) as WikiQueryResponse
-      const pages = json.query?.pages ?? {}
-      const page = Object.values(pages)[0]
-      return {
-        categories: (page?.categories ?? [])
-          .map((c) => c.title?.replace("Categoria:", "") ?? "")
-          .filter(Boolean),
-        error: null,
-      }
+      const json = await res.json() as unknown
+      return interpretarWikiCategoriesPayload(json)
     } catch (err) {
-      ultimoErro = err instanceof Error ? err.message : String(err)
-      if (tentativa < 5) {
-        await sleep(Math.min(60_000, 5_000 * 2 ** (tentativa - 1)))
+      ultimoErro = err instanceof Error && err.name === "AbortError"
+        ? `Timeout (${timeoutMs}ms)`
+        : err instanceof Error ? err.message : String(err)
+      if (tentativa < tentativas) {
+        await sleepImpl(Math.min(60_000, 5_000 * 2 ** (tentativa - 1)))
         continue
       }
+    } finally {
+      clearTimeout(timeout)
     }
   }
   return { categories: [], error: ultimoErro }
@@ -133,14 +170,28 @@ function extractCargosFromCategories(categories: string[]): Array<{
   return cargos
 }
 
+export function finalizarCategoriasWikiHistorico(
+  resultado: IngestResult,
+  categories: string[],
+): Array<{ cargo: string; estado: string }> {
+  const cargos = extractCargosFromCategories(categories)
+  finalizarColeta(resultado, {
+    aplicavel: true,
+    volumeFonte: cargos.length,
+    detalhe: categories.length === 0
+      ? "Wikipedia respondeu sem categorias"
+      : cargos.length === 0
+        ? `${categories.length} categoria(s), nenhuma categoria de cargo reconhecida`
+        : `${cargos.length} cargo(s) na categoria, nenhum com periodo_inicio utilizavel`,
+  })
+  return cargos
+}
+
 export async function enrichWikiHistorico(): Promise<IngestResult[]> {
   const candidatos = await loadCandidatosPublicos()
   const results: IngestResult[] = []
-  const comTitulo = candidatos.filter(
-    (cand) =>
-      Boolean(cand.wikipedia_title?.trim()) &&
-      (!filterSlugs || filterSlugs.has(cand.slug)),
-  )
+  const selecionados = candidatos.filter((cand) => !filterSlugs || filterSlugs.has(cand.slug))
+  const comTitulo = selecionados.filter((cand) => Boolean(cand.wikipedia_title?.trim()))
 
   log("wiki-historico", `Titulos Wikipedia carregados: ${comTitulo.length}`)
 
@@ -152,8 +203,7 @@ export async function enrichWikiHistorico(): Promise<IngestResult[]> {
   // explicar por que nao existe escrita. O desfecho fica no IngestResult para o
   // orquestrador registrar toda consulta aplicavel, inclusive resposta vazia e
   // falha de rede, sem confundir as duas.
-  for (const cand of comTitulo) {
-    const wikiTitle = cand.wikipedia_title!.trim()
+  for (const cand of selecionados) {
     const result: IngestResult = {
       source: "wiki-historico",
       candidato: cand.slug,
@@ -163,41 +213,56 @@ export async function enrichWikiHistorico(): Promise<IngestResult[]> {
       duration_ms: 0,
     }
     const start = Date.now()
+    const wikiTitle = cand.wikipedia_title?.trim()
+
+    if (!wikiTitle) {
+      finalizarColeta(result, {
+        aplicavel: false,
+        volumeFonte: 0,
+        detalhe: "candidato sem wikipedia_title; nenhuma consulta de historico realizada",
+      })
+      result.duration_ms = Date.now() - start
+      results.push(result)
+      continue
+    }
 
     // Get candidate ID from DB
-    const { data: dbCand, error: dbCandError } = await supabase
-      .from("candidatos")
-      .select("id, partido_sigla")
-      .eq("slug", cand.slug)
-      .single()
-
-    if (dbCandError || !dbCand) {
-      const detalhe = dbCandError?.message ?? "candidato nao encontrado no banco"
-      result.errors.push(detalhe)
-      result.coleta_resultado = "erro"
-      result.coleta_detalhe = detalhe
+    let dbCand: { id: string; partido_sigla?: string | null } | null = null
+    try {
+      const consulta = await supabase
+        .from("candidatos")
+        .select("id, partido_sigla")
+        .eq("slug", cand.slug)
+        .single()
+      if (consulta.error || !consulta.data) {
+        throw new Error(consulta.error?.message ?? "candidato nao encontrado no banco")
+      }
+      dbCand = consulta.data as { id: string; partido_sigla?: string | null }
+    } catch (err) {
+      registrarErroColeta(result, err, "consulta do candidato no banco")
       result.duration_ms = Date.now() - start
       results.push(result)
       continue
     }
 
     // Check existing historico
-    const { data: existing, error: existingError } = await supabase
-      .from("historico_politico")
-      .select("cargo, estado")
-      .eq("candidato_id", dbCand.id)
-
-    if (existingError) {
-      result.errors.push(existingError.message)
-      result.coleta_resultado = "erro"
-      result.coleta_detalhe = existingError.message
+    let existing: Array<{ cargo: string; estado: string }> = []
+    try {
+      const consulta = await supabase
+        .from("historico_politico")
+        .select("cargo, estado")
+        .eq("candidato_id", dbCand.id)
+      if (consulta.error) throw new Error(consulta.error.message)
+      existing = (consulta.data ?? []) as Array<{ cargo: string; estado: string }>
+    } catch (err) {
+      registrarErroColeta(result, err, "consulta do historico no banco")
       result.duration_ms = Date.now() - start
       results.push(result)
       continue
     }
 
     const existingSet = new Set(
-      (existing ?? []).map((h) => `${h.cargo}|${h.estado}`)
+      existing.map((h) => `${h.cargo}|${h.estado}`)
     )
 
     // Fetch Wikipedia categories
@@ -205,28 +270,13 @@ export async function enrichWikiHistorico(): Promise<IngestResult[]> {
     await sleep(1_100)
 
     if (resposta.error) {
-      result.errors.push(resposta.error)
-      result.coleta_resultado = "erro"
-      result.coleta_detalhe = resposta.error
+      registrarErroColeta(result, resposta.error, "consulta de categorias Wikipedia")
       result.duration_ms = Date.now() - start
       results.push(result)
       continue
     }
 
-    if (resposta.categories.length === 0) {
-      result.coleta_resultado = "vazio_confirmado"
-      result.coleta_detalhe = "Wikipedia respondeu sem categorias"
-      result.duration_ms = Date.now() - start
-      results.push(result)
-      continue
-    }
-
-    const cargos = extractCargosFromCategories(resposta.categories)
-    result.coleta_resultado = "nao_aplicavel"
-    result.coleta_detalhe =
-      cargos.length === 0
-        ? `${resposta.categories.length} categoria(s), nenhuma categoria de cargo reconhecida`
-        : `${cargos.length} cargo(s) na categoria, nenhum com periodo_inicio utilizavel`
+    const cargos = finalizarCategoriasWikiHistorico(result, resposta.categories)
 
     log("wiki-historico", `${cand.slug}: ${cargos.length} cargos encontrados via categorias`)
 

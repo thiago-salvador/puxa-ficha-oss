@@ -2,6 +2,7 @@ import { supabase } from "./supabase"
 import { loadCandidatosPublicos } from "./helpers-db"
 import { fetchJSON, sleep } from "./helpers"
 import { log, warn, error } from "./logger"
+import { finalizarColeta, registrarErroColeta } from "./coleta-resultado"
 import type { IngestResult } from "./types"
 
 const args = process.argv.slice(2)
@@ -115,46 +116,110 @@ const FALLBACK_DATA: Record<string, {
 const WIKI_API = "https://pt.wikipedia.org/w/api.php"
 const WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 
-interface WikiPage {
-  pageid?: number
-  title: string
-  thumbnail?: { source: string; width: number; height: number }
-  original?: { source: string; width: number; height: number }
-  pageimage?: string
-  pageprops?: { wikibase_item?: string }
-  missing?: string
-}
-
-interface WikiExtLinkEntry {
-  "*": string
-  url?: string
-}
-
-interface WikiExtLinksResponse {
-  query?: {
-    pages?: Record<string, { extlinks?: WikiExtLinkEntry[] }>
-  }
-}
-
 interface WikiStructuredFallback {
   dataNascimento: string | null
   naturalidade: string | null
   formacao: string | null
 }
 
+export type WikiPageLookup =
+  | { status: "encontrado"; photoUrl: string | null; wikidataId: string | null }
+  | { status: "vazio_confirmado"; photoUrl: null; wikidataId: null }
+  | { status: "erro"; erro: string; photoUrl: null; wikidataId: null }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function mensagemErro(erro: unknown): string {
+  return erro instanceof Error ? erro.message : String(erro)
+}
+
+/** Test seam: separa verbete ausente de payload corrompido ou incompleto. */
+export function interpretarWikiPagePayload(payload: unknown): WikiPageLookup {
+  if (!isRecord(payload) || !isRecord(payload.query) || !isRecord(payload.query.pages)) {
+    return {
+      status: "erro",
+      erro: "payload Wikipedia invalido: query.pages ausente",
+      photoUrl: null,
+      wikidataId: null,
+    }
+  }
+
+  const pages = Object.values(payload.query.pages)
+  if (pages.length !== 1 || !isRecord(pages[0])) {
+    return {
+      status: "erro",
+      erro: "payload Wikipedia invalido: pagina unica ausente",
+      photoUrl: null,
+      wikidataId: null,
+    }
+  }
+
+  const page = pages[0]
+  if (Object.prototype.hasOwnProperty.call(page, "missing")) {
+    return { status: "vazio_confirmado", photoUrl: null, wikidataId: null }
+  }
+  if (typeof page.title !== "string" || page.title.trim() === "") {
+    return {
+      status: "erro",
+      erro: "payload Wikipedia invalido: title da pagina ausente",
+      photoUrl: null,
+      wikidataId: null,
+    }
+  }
+
+  const thumbnail = isRecord(page.thumbnail) ? page.thumbnail : null
+  const original = isRecord(page.original) ? page.original : null
+  const pageprops = isRecord(page.pageprops) ? page.pageprops : null
+  const photoCandidate = thumbnail?.source ?? original?.source
+  const wikidataCandidate = pageprops?.wikibase_item
+  if (photoCandidate !== undefined && typeof photoCandidate !== "string") {
+    return {
+      status: "erro",
+      erro: "payload Wikipedia invalido: URL de imagem nao textual",
+      photoUrl: null,
+      wikidataId: null,
+    }
+  }
+  if (wikidataCandidate !== undefined && typeof wikidataCandidate !== "string") {
+    return {
+      status: "erro",
+      erro: "payload Wikipedia invalido: wikibase_item nao textual",
+      photoUrl: null,
+      wikidataId: null,
+    }
+  }
+
+  return {
+    status: "encontrado",
+    photoUrl: photoCandidate ?? null,
+    wikidataId: wikidataCandidate ?? null,
+  }
+}
+
+export function finalizarResultadoWikipedia(
+  resultado: IngestResult,
+  status: "encontrado" | "vazio_confirmado" | "nao_aplicavel",
+  detalhe: string,
+): void {
+  finalizarColeta(resultado, {
+    aplicavel: status !== "nao_aplicavel",
+    volumeFonte: status === "encontrado" ? 1 : 0,
+    detalhe,
+  })
+}
+
 // Fetch article summary/biography via Wikipedia REST API
 async function fetchWikiSummary(title: string): Promise<string | null> {
-  try {
-    const url = `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
-    const res = await fetch(url, {
-      headers: { "User-Agent": "PuxaFicha/1.0 (puxaficha.com.br)" },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.extract || null // 1-2 paragraphs of article intro
-  } catch {
-    return null
-  }
+  const url = `https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
+  const data = await fetchJSON<unknown>(url, {
+    "User-Agent": "PuxaFicha/1.0 (puxaficha.com.br)",
+  })
+  if (!isRecord(data)) throw new Error("payload de resumo Wikipedia invalido")
+  if (data.extract === undefined || data.extract === null || data.extract === "") return null
+  if (typeof data.extract !== "string") throw new Error("payload de resumo Wikipedia: extract nao textual")
+  return data.extract // 1-2 paragraphs of article intro
 }
 
 // Fetch social media links from Wikipedia external links
@@ -168,18 +233,27 @@ async function fetchWikiSocialLinks(title: string): Promise<Record<string, strin
     origin: "*",
   })
 
-  try {
-    const json = await fetchJSON<WikiExtLinksResponse>(`${WIKI_API}?${params}`)
-    const pages = json.query?.pages ?? {}
-    const page = Object.values(pages)[0]
-    const links: string[] = (page?.extlinks ?? []).map((link) => link["*"] || link.url || "")
+  const json = await fetchJSON<unknown>(`${WIKI_API}?${params}`)
+  if (!isRecord(json) || !isRecord(json.query) || !isRecord(json.query.pages)) {
+    throw new Error("payload de links Wikipedia invalido: query.pages ausente")
+  }
+  const page = Object.values(json.query.pages)[0]
+  if (!isRecord(page)) throw new Error("payload de links Wikipedia invalido: pagina ausente")
+  const rawLinks = page.extlinks ?? []
+  if (!Array.isArray(rawLinks)) throw new Error("payload de links Wikipedia invalido: extlinks nao e lista")
+  const links = rawLinks.map((entry) => {
+    if (!isRecord(entry)) throw new Error("payload de links Wikipedia invalido: item nao e objeto")
+    const link = entry["*"] ?? entry.url
+    if (typeof link !== "string") throw new Error("payload de links Wikipedia invalido: URL ausente")
+    return link
+  })
 
-    const socials: Record<string, string> = {}
+  const socials: Record<string, string> = {}
     // Classifica pelo hostname real do link, não por substring (que aceitaria
     // um domínio trapaceiro como evil.com/instagram.com/).
     const hostMatches = (host: string, domain: string) =>
       host === domain || host.endsWith(`.${domain}`)
-    for (const link of links) {
+  for (const link of links) {
       let host: string
       try {
         host = new URL(link).hostname.toLowerCase()
@@ -202,15 +276,15 @@ async function fetchWikiSocialLinks(title: string): Promise<Record<string, strin
         const match = link.match(/tiktok\.com\/@?([^/?]+)/)
         if (match) socials.tiktok = match[1]
       }
-    }
-    return socials
-  } catch {
-    return {}
   }
+  return socials
 }
 
 // Fetch photo URL (800px) + Wikidata QID from Wikipedia in a single API call
-async function fetchWikiPage(title: string): Promise<{ photoUrl: string | null; wikidataId: string | null }> {
+export async function fetchWikiPage(
+  title: string,
+  fetchJSONImpl: (url: string) => Promise<unknown> = (url) => fetchJSON<unknown>(url),
+): Promise<WikiPageLookup> {
   const params = new URLSearchParams({
     action: "query",
     titles: title,
@@ -223,29 +297,18 @@ async function fetchWikiPage(title: string): Promise<{ photoUrl: string | null; 
   })
 
   try {
-    const json = await fetchJSON<{ query: { pages: Record<string, WikiPage> } }>(`${WIKI_API}?${params}`)
-    const page = Object.values(json.query?.pages ?? {})[0]
-
-    if (!page || page.missing !== undefined) {
-      return { photoUrl: null, wikidataId: null }
-    }
-
-    // Prefer 800px thumbnail (properly sized); fall back to original
-    const photoUrl = page.thumbnail?.source ?? page.original?.source ?? null
-
-    return {
-      photoUrl,
-      wikidataId: page.pageprops?.wikibase_item ?? null,
-    }
-  } catch {
-    warn("wikipedia", `  fetchWikiPage failed for ${title}`)
-    return { photoUrl: null, wikidataId: null }
+    const json = await fetchJSONImpl(`${WIKI_API}?${params}`)
+    return interpretarWikiPagePayload(json)
+  } catch (err) {
+    const detalhe = `consulta Wikipedia falhou: ${mensagemErro(err)}`
+    warn("wikipedia", `  fetchWikiPage failed for ${title}: ${mensagemErro(err)}`)
+    return { status: "erro", erro: detalhe, photoUrl: null, wikidataId: null }
   }
 }
 
 function stripWikiMarkup(value: string): string {
   let text = value
-    .replace(/<ref[^>]*>.*?<\/ref>/gis, "")
+    .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "")
     .replace(/<ref[^/]*\/>/gi, "")
     .replace(/<br\s*\/?>/gi, "; ")
     .replace(/&nbsp;/gi, " ")
@@ -365,34 +428,36 @@ async function fetchWikiWikitextStructured(title: string, summary: string | null
     origin: "*",
   })
 
-  try {
-    const json = await fetchJSON<{
-      query?: {
-        pages?: Record<string, {
-          revisions?: Array<{ slots?: { main?: { "*": string } } }>
-        }>
-      }
-    }>(`${WIKI_API}?${params}`)
+  const json = await fetchJSON<unknown>(`${WIKI_API}?${params}`)
+  if (!isRecord(json) || !isRecord(json.query) || !isRecord(json.query.pages)) {
+    throw new Error("payload de wikitext Wikipedia invalido: query.pages ausente")
+  }
+  const page = Object.values(json.query.pages)[0]
+  if (!isRecord(page)) throw new Error("payload de wikitext Wikipedia invalido: pagina ausente")
 
-    const page = Object.values(json.query?.pages ?? {})[0]
-    const content = page?.revisions?.[0]?.slots?.main?.["*"] ?? ""
-
-    if (!content) {
-      return { dataNascimento: null, naturalidade: null, formacao: extractFormacaoFromSummary(summary) }
-    }
-
-    const birthRaw = extractWikitextField(content, ["data_nascimento"])
-    const placeRaw = extractWikitextField(content, ["local_nascimento"])
-    const educationRaw = extractWikitextField(content, ["alma_mater", "formação", "instituição"])
-
-    return {
-      dataNascimento: parseWikiBirthDate(birthRaw),
-      naturalidade: placeRaw ? stripWikiMarkup(placeRaw) : null,
-      formacao: educationRaw ? stripWikiMarkup(educationRaw) : extractFormacaoFromSummary(summary),
-    }
-  } catch (err) {
-    warn("wikipedia", `  Wikitext parse error for ${title}: ${err instanceof Error ? err.message : err}`)
+  const revisions = page.revisions
+  if (revisions === undefined) {
     return { dataNascimento: null, naturalidade: null, formacao: extractFormacaoFromSummary(summary) }
+  }
+  if (!Array.isArray(revisions)) throw new Error("payload de wikitext Wikipedia invalido: revisions nao e lista")
+  const revision = revisions[0]
+  if (!isRecord(revision) || !isRecord(revision.slots) || !isRecord(revision.slots.main)) {
+    throw new Error("payload de wikitext Wikipedia invalido: slot main ausente")
+  }
+  const content = revision.slots.main["*"]
+  if (content === undefined || content === "") {
+    return { dataNascimento: null, naturalidade: null, formacao: extractFormacaoFromSummary(summary) }
+  }
+  if (typeof content !== "string") throw new Error("payload de wikitext Wikipedia invalido: conteudo nao textual")
+
+  const birthRaw = extractWikitextField(content, ["data_nascimento"])
+  const placeRaw = extractWikitextField(content, ["local_nascimento"])
+  const educationRaw = extractWikitextField(content, ["alma_mater", "formação", "instituição"])
+
+  return {
+    dataNascimento: parseWikiBirthDate(birthRaw),
+    naturalidade: placeRaw ? stripWikiMarkup(placeRaw) : null,
+    formacao: educationRaw ? stripWikiMarkup(educationRaw) : extractFormacaoFromSummary(summary),
   }
 }
 
@@ -438,36 +503,31 @@ async function fetchWikidataStructured(qid: string): Promise<{
     LIMIT 1
   `
 
-  try {
-    const params = new URLSearchParams({ query: sparql, format: "json" })
-    const res = await fetch(`${WIKIDATA_SPARQL}?${params}`, {
-      headers: {
-        Accept: "application/sparql-results+json",
-        "User-Agent": "PuxaFicha/1.0 (https://puxaficha.com.br; contact@puxaficha.com.br)",
-      },
-    })
-
-    if (!res.ok) {
-      warn("wikipedia", `  Wikidata SPARQL HTTP ${res.status}`)
-      return { dataNascimento: null, naturalidade: null, formacao: null }
-    }
-
-    const json = (await res.json()) as {
-      results: { bindings: Array<Record<string, { value: string }>> }
-    }
-    const row = json.results?.bindings?.[0]
-    if (!row) return { dataNascimento: null, naturalidade: null, formacao: null }
-
-    const birthRaw = row.birthDate?.value
-    const dataNascimento = birthRaw ? birthRaw.split("T")[0] : null
-    const naturalidade = row.birthPlaceLabel?.value ?? null
-    const formacao = row.educationLabel?.value ?? null
-
-    return { dataNascimento, naturalidade, formacao }
-  } catch (err) {
-    warn("wikipedia", `  Wikidata SPARQL error: ${err instanceof Error ? err.message : err}`)
-    return { dataNascimento: null, naturalidade: null, formacao: null }
+  const params = new URLSearchParams({ query: sparql, format: "json" })
+  const json = await fetchJSON<unknown>(`${WIKIDATA_SPARQL}?${params}`, {
+    Accept: "application/sparql-results+json",
+    "User-Agent": "PuxaFicha/1.0 (https://puxaficha.com.br; contact@puxaficha.com.br)",
+  })
+  if (!isRecord(json) || !isRecord(json.results) || !Array.isArray(json.results.bindings)) {
+    throw new Error("payload Wikidata invalido: results.bindings ausente")
   }
+  const row = json.results.bindings[0]
+  if (row === undefined) return { dataNascimento: null, naturalidade: null, formacao: null }
+  if (!isRecord(row)) throw new Error("payload Wikidata invalido: binding nao e objeto")
+
+  const valueOf = (field: unknown, name: string): string | null => {
+    if (field === undefined) return null
+    if (!isRecord(field) || typeof field.value !== "string") {
+      throw new Error(`payload Wikidata invalido: ${name}.value ausente`)
+    }
+    return field.value
+  }
+  const birthRaw = valueOf(row.birthDate, "birthDate")
+  const dataNascimento = birthRaw ? birthRaw.split("T")[0] : null
+  const naturalidade = valueOf(row.birthPlaceLabel, "birthPlaceLabel")
+  const formacao = valueOf(row.educationLabel, "educationLabel")
+
+  return { dataNascimento, naturalidade, formacao }
 }
 
 // Apply fallback data for candidates without Wikipedia pages
@@ -493,7 +553,7 @@ async function applyFallback(slug: string, candidatoId: string, existing: Record
 
   if (err) {
     error("wikipedia", `  ${slug}: fallback erro: ${err.message}`)
-    return 0
+    throw new Error(`fallback local: ${err.message}`)
   }
 
   const fields = Object.keys(updates).filter((k) => k !== "ultima_atualizacao")
@@ -515,17 +575,26 @@ export async function enrichWikipedia(): Promise<IngestResult[]> {
       errors: [],
       duration_ms: 0,
     }
+    let desfechoBase: "encontrado" | "vazio_confirmado" | "nao_aplicavel" = "nao_aplicavel"
+    let detalheBase = "candidato sem wikipedia_title; nenhuma consulta Wikipedia realizada"
 
     // Check current state of candidate in DB
-    const { data: existing, error: dbErr } = await supabase
-      .from("candidatos")
-      .select("id, foto_url, data_nascimento, naturalidade, formacao, profissao_declarada, biografia, redes_sociais, wikidata_id")
-      .eq("slug", cand.slug)
-      .single()
+    let existing: Record<string, unknown> | null = null
+    try {
+      const consultaDb = await supabase
+        .from("candidatos")
+        .select("id, foto_url, data_nascimento, naturalidade, formacao, profissao_declarada, biografia, redes_sociais, wikidata_id")
+        .eq("slug", cand.slug)
+        .single()
 
-    if (dbErr || !existing) {
-      result.errors.push(`Candidato ${cand.slug} nao encontrado no Supabase`)
+      if (consultaDb.error || !consultaDb.data) {
+        throw new Error(consultaDb.error?.message ?? `Candidato ${cand.slug} nao encontrado no Supabase`)
+      }
+      existing = consultaDb.data as Record<string, unknown>
+    } catch (err) {
+      registrarErroColeta(result, err, "consulta do candidato no banco")
       error("wikipedia", `  ${cand.slug}: nao encontrado no banco`)
+      result.duration_ms = Date.now() - start
       results.push(result)
       continue
     }
@@ -536,51 +605,73 @@ export async function enrichWikipedia(): Promise<IngestResult[]> {
     if (wikiTitle) {
       log("wikipedia", `Processando ${cand.slug} → ${wikiTitle}`)
 
-      const { photoUrl, wikidataId } = await fetchWikiPage(wikiTitle)
+      const pageLookup = await fetchWikiPage(wikiTitle)
       await sleep(300)
 
       const updates: Record<string, unknown> = {}
       let summary: string | null = null
 
-      // 1F fix: save wikidata_id from Wikipedia (most reliable source, prevents homonym contamination)
-      // Guard: don't overwrite existing wikidata_id (may have been manually corrected)
-      if (wikidataId && !existing.wikidata_id) {
-        updates.wikidata_id = wikidataId
-      }
-
-      if (photoUrl) {
-        updates.foto_url = photoUrl
-        log("wikipedia", `  ${cand.slug}: foto OK`)
+      if (pageLookup.status === "erro") {
+        registrarErroColeta(result, pageLookup.erro)
+        detalheBase = pageLookup.erro
+      } else if (pageLookup.status === "vazio_confirmado") {
+        desfechoBase = "vazio_confirmado"
+        detalheBase = `Wikipedia confirmou ausencia do verbete ${wikiTitle}`
       } else {
-        warn("wikipedia", `  ${cand.slug}: sem foto na Wikipedia`)
-      }
+        desfechoBase = "encontrado"
+        detalheBase = `verbete Wikipedia encontrado: ${wikiTitle}`
+        const { photoUrl, wikidataId } = pageLookup
 
-      if (!existing.biografia || !existing.data_nascimento || !existing.naturalidade || !existing.formacao) {
-        summary = await fetchWikiSummary(wikiTitle)
-        await sleep(300)
-      }
+        // 1F fix: save wikidata_id from Wikipedia (most reliable source, prevents homonym contamination)
+        // Guard: don't overwrite existing wikidata_id (may have been manually corrected)
+        if (wikidataId && !existing.wikidata_id) updates.wikidata_id = wikidataId
 
-      // Fetch structured data from Wikidata (only if fields are missing)
-      const needsStructured = !existing.data_nascimento || !existing.naturalidade || !existing.formacao
-      if (wikidataId && needsStructured) {
-        log("wikipedia", `  ${cand.slug}: buscando Wikidata ${wikidataId}`)
-        const wd = await fetchWikidataStructured(wikidataId)
-        await sleep(500)
+        if (photoUrl) {
+          updates.foto_url = photoUrl
+          log("wikipedia", `  ${cand.slug}: foto OK`)
+        } else {
+          warn("wikipedia", `  ${cand.slug}: sem foto na Wikipedia`)
+        }
 
+        if (!existing.biografia || !existing.data_nascimento || !existing.naturalidade || !existing.formacao) {
+          try {
+            summary = await fetchWikiSummary(wikiTitle)
+          } catch (err) {
+            registrarErroColeta(result, err, "resumo Wikipedia")
+          }
+          await sleep(300)
+        }
+
+        const needsStructured = !existing.data_nascimento || !existing.naturalidade || !existing.formacao
+        let wd: WikiStructuredFallback = { dataNascimento: null, naturalidade: null, formacao: null }
         let wikiStructured: WikiStructuredFallback = { dataNascimento: null, naturalidade: null, formacao: null }
-        if (
+        if (wikidataId && needsStructured) {
+          log("wikipedia", `  ${cand.slug}: buscando Wikidata ${wikidataId}`)
+          try {
+            wd = await fetchWikidataStructured(wikidataId)
+          } catch (err) {
+            registrarErroColeta(result, err, "dados estruturados Wikidata")
+          }
+          await sleep(500)
+        }
+
+        if (needsStructured && (
+          !wikidataId ||
           (!existing.data_nascimento && !wd.dataNascimento) ||
           (!existing.naturalidade && !wd.naturalidade) ||
           (!existing.formacao && !wd.formacao)
-        ) {
-          wikiStructured = await fetchWikiWikitextStructured(wikiTitle, summary)
+        )) {
+          try {
+            wikiStructured = await fetchWikiWikitextStructured(wikiTitle, summary)
+          } catch (err) {
+            registrarErroColeta(result, err, "wikitext Wikipedia")
+          }
           await sleep(300)
         }
 
         const dataNascimento = pickBestBirthDate(wd.dataNascimento, wikiStructured.dataNascimento)
         const naturalidade = wd.naturalidade ?? wikiStructured.naturalidade
         const formacao = wd.formacao ?? wikiStructured.formacao
-
         if (!existing.data_nascimento && dataNascimento) {
           updates.data_nascimento = dataNascimento
           log("wikipedia", `  ${cand.slug}: data_nascimento = ${dataNascimento}`)
@@ -593,65 +684,49 @@ export async function enrichWikipedia(): Promise<IngestResult[]> {
           updates.formacao = formacao
           log("wikipedia", `  ${cand.slug}: formacao = ${formacao}`)
         }
-      } else if (needsStructured) {
-        const wikiStructured = await fetchWikiWikitextStructured(wikiTitle, summary)
-        await sleep(300)
 
-        if (!existing.data_nascimento && wikiStructured.dataNascimento) {
-          updates.data_nascimento = wikiStructured.dataNascimento
-          log("wikipedia", `  ${cand.slug}: data_nascimento = ${wikiStructured.dataNascimento}`)
-        }
-        if (!existing.naturalidade && wikiStructured.naturalidade) {
-          updates.naturalidade = wikiStructured.naturalidade
-          log("wikipedia", `  ${cand.slug}: naturalidade = ${wikiStructured.naturalidade}`)
-        }
-        if (!existing.formacao && wikiStructured.formacao) {
-          updates.formacao = wikiStructured.formacao
-          log("wikipedia", `  ${cand.slug}: formacao = ${wikiStructured.formacao}`)
-        }
-      }
-
-      // Fetch article summary for biography (only if biografia is null)
-      if (!existing.biografia) {
-        if (summary) {
+        if (!existing.biografia && summary) {
           updates.biografia = summary
           log("wikipedia", `  ${cand.slug}: biografia OK (${summary.length} chars)`)
         }
-      }
 
-      // Fetch social links from Wikipedia external links
-      const currentRedes = (existing.redes_sociais as Record<string, unknown>) ?? {}
-      const isEmpty = Object.keys(currentRedes).length === 0
-      if (isEmpty || !currentRedes.instagram) {
-        const wikiSocials = await fetchWikiSocialLinks(wikiTitle)
-        if (Object.keys(wikiSocials).length > 0) {
-          // Merge: don't overwrite existing social links
-          // Handle nested objects (instagram can be { username, url, followers } from Wikidata)
-          const merged: Record<string, unknown> = { ...wikiSocials }
-          for (const [k, v] of Object.entries(currentRedes)) {
-            if (v) merged[k] = v // Existing data takes priority
+        const currentRedes = isRecord(existing.redes_sociais) ? existing.redes_sociais : {}
+        const isEmpty = Object.keys(currentRedes).length === 0
+        if (isEmpty || !currentRedes.instagram) {
+          try {
+            const wikiSocials = await fetchWikiSocialLinks(wikiTitle)
+            if (Object.keys(wikiSocials).length > 0) {
+              // Existing editorial data keeps priority over automatically found links.
+              const merged: Record<string, unknown> = { ...wikiSocials }
+              for (const [k, v] of Object.entries(currentRedes)) {
+                if (v) merged[k] = v
+              }
+              updates.redes_sociais = merged
+              log("wikipedia", `  ${cand.slug}: redes sociais (${Object.keys(wikiSocials).join(", ")})`)
+            }
+          } catch (err) {
+            registrarErroColeta(result, err, "links externos Wikipedia")
           }
-          updates.redes_sociais = merged
-          log("wikipedia", `  ${cand.slug}: redes sociais (${Object.keys(wikiSocials).join(", ")})`)
+          await sleep(300)
         }
-        await sleep(300)
       }
 
-      mergeFallbackUpdates(cand.slug, existing as Record<string, unknown>, updates)
+      mergeFallbackUpdates(cand.slug, existing, updates)
 
       if (Object.keys(updates).length > 0) {
         updates.ultima_atualizacao = new Date().toISOString()
-        const { error: updateErr } = await supabase
-          .from("candidatos")
-          .update(updates)
-          .eq("id", existing.id)
+        try {
+          const { error: updateErr } = await supabase
+            .from("candidatos")
+            .update(updates)
+            .eq("id", existing.id)
 
-        if (updateErr) {
-          result.errors.push(updateErr.message)
-          error("wikipedia", `  ${cand.slug}: erro ao atualizar: ${updateErr.message}`)
-        } else {
+          if (updateErr) throw new Error(updateErr.message)
           result.tables_updated.push("candidatos")
           result.rows_upserted++
+        } catch (err) {
+          registrarErroColeta(result, err, "atualizacao do candidato no banco")
+          error("wikipedia", `  ${cand.slug}: erro ao atualizar: ${mensagemErro(err)}`)
         }
       } else {
         log("wikipedia", `  ${cand.slug}: nada para atualizar`)
@@ -660,10 +735,15 @@ export async function enrichWikipedia(): Promise<IngestResult[]> {
     // --- Path B: Fallback for candidates without Wikipedia ---
     } else if (FALLBACK_DATA[cand.slug]) {
       log("wikipedia", `${cand.slug}: sem Wikipedia, usando fallback`)
-      const updated = await applyFallback(cand.slug, existing.id as string, existing as Record<string, unknown>)
-      if (updated > 0) {
-        result.tables_updated.push("candidatos")
-        result.rows_upserted++
+      detalheBase = "candidato sem wikipedia_title; fallback local aplicado sem consulta externa"
+      try {
+        const updated = await applyFallback(cand.slug, existing.id as string, existing)
+        if (updated > 0) {
+          result.tables_updated.push("candidatos")
+          result.rows_upserted++
+        }
+      } catch (err) {
+        registrarErroColeta(result, err)
       }
 
     } else {
@@ -673,29 +753,36 @@ export async function enrichWikipedia(): Promise<IngestResult[]> {
     // Photo priority rule: never leave a candidate without a photo.
     // After all sources tried, check if candidate still has no foto_url.
     // Priority: 1) Wikipedia, 2) local fallback, 3) Câmara/Senado API, 4) Wikidata, 5) generated placeholder
-    const { data: afterUpdate } = await supabase
-      .from("candidatos")
-      .select("foto_url")
-      .eq("id", existing.id)
-      .single()
-
-    if (!afterUpdate?.foto_url) {
-      // Last resort: UI Avatars placeholder with candidate initials
-      const initials = cand.nome_urna
-        .split(/\s+/)
-        .filter((w: string) => w.length > 2)
-        .slice(0, 2)
-        .map((w: string) => w[0])
-        .join("")
-        .toUpperCase()
-      const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=400&background=1e293b&color=fff&bold=true`
-      await supabase
+    try {
+      const { data: afterUpdate, error: afterUpdateError } = await supabase
         .from("candidatos")
-        .update({ foto_url: placeholderUrl, ultima_atualizacao: new Date().toISOString() })
+        .select("foto_url")
         .eq("id", existing.id)
-      warn("wikipedia", `  ${cand.slug}: sem foto em nenhuma fonte, usando placeholder (${initials})`)
+        .single()
+      if (afterUpdateError) throw new Error(afterUpdateError.message)
+
+      if (!afterUpdate?.foto_url) {
+        // Last resort: UI Avatars placeholder with candidate initials
+        const initials = cand.nome_urna
+          .split(/\s+/)
+          .filter((w: string) => w.length > 2)
+          .slice(0, 2)
+          .map((w: string) => w[0])
+          .join("")
+          .toUpperCase()
+        const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=400&background=1e293b&color=fff&bold=true`
+        const { error: placeholderError } = await supabase
+          .from("candidatos")
+          .update({ foto_url: placeholderUrl, ultima_atualizacao: new Date().toISOString() })
+          .eq("id", existing.id)
+        if (placeholderError) throw new Error(`placeholder: ${placeholderError.message}`)
+        warn("wikipedia", `  ${cand.slug}: sem foto em nenhuma fonte, usando placeholder (${initials})`)
+      }
+    } catch (err) {
+      registrarErroColeta(result, err, "verificacao/escrita de foto no banco")
     }
 
+    finalizarResultadoWikipedia(result, desfechoBase, detalheBase)
     result.duration_ms = Date.now() - start
     results.push(result)
     await sleep(500)
