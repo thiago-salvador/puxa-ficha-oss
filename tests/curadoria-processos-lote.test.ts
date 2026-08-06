@@ -13,6 +13,8 @@ import {
   executarLotesEmOrdem,
   filtrarHomonimosDescartados,
   gravarCheckpointConcorrente,
+  identidadeTseInvalidada,
+  identidadeTseNominalCompativel,
   instituicoesAtivas,
   lotesSolicitados,
   ordenar,
@@ -49,6 +51,31 @@ function candidato(overrides: Partial<Candidato> = {}): Candidato {
 }
 
 describe("curadoria de processos em lote", () => {
+  it("falha fechado para identidades removidas por homônimo", () => {
+    for (const slug of ["cadu-xavier", "jarbas-soares", "renato-gomes"]) {
+      assert.equal(identidadeTseInvalidada(slug), true)
+      assert.equal(identidadeTseNominalCompativel(candidato({ slug }), {
+        NM_CANDIDATO: "Carlos da Silva Teste",
+        NM_URNA_CANDIDATO: "Carlos Teste",
+        SG_UF: "MG",
+        SG_PARTIDO: "PSD",
+      }), false)
+    }
+  })
+
+  it("fallback TSE nominal exige nome, urna, partido e UF simultaneamente", () => {
+    const row = {
+      NM_CANDIDATO: "Carlos da Silva Teste",
+      NM_URNA_CANDIDATO: "Carlos Teste",
+      SG_UF: "MG",
+      SG_PARTIDO: "PSD",
+    }
+    assert.equal(identidadeTseNominalCompativel(candidato(), row), true)
+    assert.equal(identidadeTseNominalCompativel(candidato(), { ...row, SG_PARTIDO: "PL" }), false)
+    assert.equal(identidadeTseNominalCompativel(candidato(), { ...row, NM_URNA_CANDIDATO: "Homônimo" }), false)
+    assert.equal(identidadeTseNominalCompativel(candidato(), { ...row, SG_UF: "SP" }), false)
+  })
+
   it("aceita lote único e faixa inclusiva de lotes", () => {
     assert.deepEqual(lotesSolicitados(["--lote=4"]), [4])
     assert.deepEqual(lotesSolicitados(["--lotes=1-10"]), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
@@ -334,7 +361,7 @@ describe("curadoria de processos em lote", () => {
       uf: "MG",
       partido: "PSD",
       prioridade: 4 as const,
-      identidade: {},
+      identidade: { cpf: "12345678901" },
       busca: {},
       ocorrencias_ambiguas: [],
       homonimos_descartados: [],
@@ -397,6 +424,7 @@ describe("curadoria de processos em lote", () => {
       assert.deepEqual(final.lotes.map((lote) => lote.numero), [1, 2])
       assert.equal(final.resumo.classificados, 2)
       assert.equal(final.resumo.vazio_confirmado, 2)
+      assert.doesNotMatch(readFileSync(evidenciaPath, "utf8"), /12345678901|"cpf"/)
     } finally {
       rmSync(diretorio, { recursive: true, force: true })
     }

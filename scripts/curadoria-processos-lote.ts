@@ -33,6 +33,16 @@ const DATAJUD = "https://api-publica.datajud.cnj.jus.br"
 const TSE_CDN = "https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand"
 const TAMANHO_LOTE = 20
 
+const IDENTIDADES_TSE_INVALIDADAS = new Set([
+  "cadu-xavier",
+  "jarbas-soares",
+  "renato-gomes",
+])
+
+export function identidadeTseInvalidada(slug: string): boolean {
+  return IDENTIDADES_TSE_INVALIDADAS.has(slug)
+}
+
 type Prioridade = 1 | 2 | 3 | 4
 type Classificacao = "encontrado" | "vazio_confirmado" | "bloqueado"
 
@@ -155,6 +165,17 @@ interface CheckpointEvidenciaOpcoes {
 interface InventarioTribunais {
   uf: string
   instituicoes: Array<{ sigla: string; active?: boolean }>
+}
+
+export function identidadeTseNominalCompativel(
+  candidato: Pick<CandidatoBanco, "slug" | "nome_completo" | "nome_urna" | "estado" | "partido_sigla">,
+  row: Record<string, string>,
+): boolean {
+  if (identidadeTseInvalidada(candidato.slug)) return false
+  return normalizar(row.NM_CANDIDATO) === normalizar(candidato.nome_completo)
+    && normalizar(row.SG_UF) === normalizar(candidato.estado)
+    && normalizar(row.NM_URNA_CANDIDATO) === normalizar(candidato.nome_urna)
+    && normalizar(row.SG_PARTIDO) === normalizar(candidato.partido_sigla)
 }
 
 const IDENTIDADE_OVERRIDES: Record<string, {
@@ -384,15 +405,24 @@ async function carregarIdentidadesTse(
   seeds: Map<string, SeedCandidato>,
   cache: string,
 ): Promise<Map<string, Record<string, unknown>>> {
+  const resultado = new Map<string, Record<string, unknown>>()
+  for (const candidato of candidatos) {
+    if (!identidadeTseInvalidada(candidato.slug)) continue
+    resultado.set(candidato.slug, {
+      status: "bloqueada",
+      metodo: "tse-identidade-invalidada-por-homonimo",
+      motivo: "identificador TSE removido pela curadoria de homonimos; falta ponte oficial nova para confirmar a identidade",
+    })
+  }
   const porAno = new Map<string, Array<{ candidato: CandidatoBanco; sq: string }>>()
   for (const candidato of candidatos) {
+    if (identidadeTseInvalidada(candidato.slug)) continue
     const ids = Object.entries(seeds.get(candidato.slug)?.ids?.tse_sq_candidato ?? {})
       .sort((a, b) => Number(b[0]) - Number(a[0]))
     const latest = ids[0]
     if (!latest) continue
     porAno.set(latest[0], [...(porAno.get(latest[0]) ?? []), { candidato, sq: latest[1] }])
   }
-  const resultado = new Map<string, Record<string, unknown>>()
   for (const [ano, alvos] of porAno) {
     const url = `${TSE_CDN}/consulta_cand_${ano}.zip`
     const zip = join(cache, `consulta_cand_${ano}.zip`)
@@ -448,30 +478,36 @@ async function carregarIdentidadesTse(
     }
     const arquivos = execFileSync("find", [extraido, "-type", "f", "-name", "*.csv"], { encoding: "utf8" })
       .trim().split("\n").filter(Boolean)
+    const correspondencias = new Map<string, Array<Record<string, string>>>()
     for (const arquivo of arquivos) {
       await parseCSV(arquivo, (row) => {
-        const alvo = (pendentesPorNome.get(normalizar(row.NM_CANDIDATO)) ?? []).find((c) => {
-          if (resultado.has(c.slug)) return false
-          if (normalizar(row.SG_UF) !== normalizar(c.estado)) return false
-          const urna = normalizar(row.NM_URNA_CANDIDATO) === normalizar(c.nome_urna)
-          const partido = normalizar(row.SG_PARTIDO) === normalizar(c.partido_sigla)
-          return urna || partido
-        })
-        if (!alvo) return
-        resultado.set(alvo.slug, {
-          status: "confirmada",
-          metodo: "tse-nome-cargo-uf",
-          url,
-          ano: Number(ano),
-          sq_candidato: row.SQ_CANDIDATO,
-          nome: row.NM_CANDIDATO,
-          nome_urna: row.NM_URNA_CANDIDATO,
-          cargo: row.DS_CARGO,
-          uf: row.SG_UF,
-          partido: row.SG_PARTIDO,
-          cpf: row.NR_CPF_CANDIDATO,
-          arquivo: basename(arquivo),
-        })
+        const alvos = (pendentesPorNome.get(normalizar(row.NM_CANDIDATO)) ?? [])
+          .filter((c) => !resultado.has(c.slug) && identidadeTseNominalCompativel(c, row))
+        for (const alvo of alvos) {
+          const anteriores = correspondencias.get(alvo.slug) ?? []
+          if (!anteriores.some((item) => item.SQ_CANDIDATO === row.SQ_CANDIDATO)) {
+            correspondencias.set(alvo.slug, [...anteriores, { ...row, arquivo }])
+          }
+        }
+      })
+    }
+    for (const alvo of pendentes) {
+      const correspondencia = correspondencias.get(alvo.slug) ?? []
+      if (correspondencia.length !== 1) continue
+      const row = correspondencia[0]
+      resultado.set(alvo.slug, {
+        status: "confirmada",
+        metodo: "tse-nome-urna-partido-uf-unico",
+        url,
+        ano: Number(ano),
+        sq_candidato: row.SQ_CANDIDATO,
+        nome: row.NM_CANDIDATO,
+        nome_urna: row.NM_URNA_CANDIDATO,
+        cargo: row.DS_CARGO,
+        uf: row.SG_UF,
+        partido: row.SG_PARTIDO,
+        cpf: row.NR_CPF_CANDIDATO,
+        arquivo: basename(row.arquivo),
       })
     }
   }
@@ -512,7 +548,7 @@ async function confirmarIdentidade(
   }
   return {
     status: "bloqueada",
-    motivo: "sem identificador ou perfil oficial verificavel apos TSE 2016, 2018, 2020, 2022, 2024 e 2026 (nome completo + UF + nome de urna ou partido)",
+    motivo: "sem identificador ou perfil oficial verificavel apos TSE 2016, 2018, 2020, 2022, 2024 e 2026 (nome completo + UF + nome de urna + partido, com correspondencia unica)",
     urls: ["2016", "2018", "2020", "2022", "2024", "2026"].map((ano) => `${TSE_CDN}/consulta_cand_${ano}.zip`),
     detalhe: "TSE consulta_cand consultado nos anos 2016, 2018, 2020, 2022, 2024 e 2026 sem identidade oficial compativel",
   }
@@ -865,7 +901,11 @@ function gravarAtomico(path: string, dados: Evidencia): void {
   mkdirSync(dirname(path), { recursive: true })
   const temp = `${path}.tmp-${process.pid}`
   rmSync(temp, { force: true })
-  const texto = `${JSON.stringify(dados, null, 2)}\n`
+  const texto = `${JSON.stringify(
+    dados,
+    (chave, valor) => (chave.toLowerCase() === "cpf" ? undefined : valor),
+    2,
+  )}\n`
   writeFileSync(temp, texto, { encoding: "utf8", mode: 0o600 })
   renameSync(temp, path)
 }

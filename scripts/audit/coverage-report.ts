@@ -43,7 +43,7 @@
  *   --slugs=a,b,c               limita o relatório a esses slugs
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { homedir } from "node:os"
 
@@ -116,7 +116,82 @@ interface Opcoes {
   evidence?: string
 }
 
-interface EvidenciaRelatorio {
+type ValorEvidencia = string | number | boolean | null
+
+export type CategoriaResiduo =
+  | "N/A"
+  | "fonte indisponível"
+  | "identidade sem prova"
+  | "curadoria em andamento"
+  | "aguardando aprovação"
+  | "busca esgotada no escopo"
+  | "erro de código ainda aberto"
+
+export interface LinhaReconciliacao {
+  chave?: string
+  nome?: string
+  slug?: string
+  coluna?: string
+  fonte?: string
+  candidato?: string
+  celula?: string
+  consulta?: string
+  antes?: ValorEvidencia
+  depois?: ValorEvidencia
+  delta?: number
+  transicao?: string
+  tipo?: string
+  categoria?: string
+  detalhe?: string
+  proxima_acao?: string
+}
+
+type TabelaReconciliacao =
+  | LinhaReconciliacao[]
+  | Record<string, LinhaReconciliacao | ValorEvidencia>
+
+export interface ResiduoReconciliacao {
+  categoria?: CategoriaResiduo
+  total?: number
+  resumo?: string
+  motivo?: string
+  proxima_acao?: string
+  itens?: LinhaReconciliacao[]
+}
+
+export interface ReconciliacaoEvidencia {
+  passou?: boolean
+  totais?: {
+    antes?: Record<string, number>
+    depois?: Record<string, number>
+  }
+  /** Alias aceito para produtores que gravam os lados diretamente. */
+  antes?: Record<string, number>
+  depois?: Record<string, number>
+  resumo?: {
+    zerou?: string[]
+    mudou_categoria?: string[]
+    depende_aprovacao?: string[]
+    continua_impossivel?: string[]
+  }
+  por_coluna?: TabelaReconciliacao
+  por_fonte?: TabelaReconciliacao
+  por_candidato?: TabelaReconciliacao
+  por_celula?: TabelaReconciliacao
+  por_consulta_fonte_candidato?: TabelaReconciliacao
+  transicoes?: LinhaReconciliacao[]
+  residuos?:
+    | ResiduoReconciliacao[]
+    | Partial<Record<CategoriaResiduo, ResiduoReconciliacao | LinhaReconciliacao[]>>
+  proximas_acoes?: {
+    id: string
+    rotulo: string
+    descricao?: string
+    recomendada?: boolean
+  }[]
+}
+
+export interface EvidenciaRelatorio {
   verificado_em: string
   regua: {
     candidatos_antes: number
@@ -146,6 +221,7 @@ interface EvidenciaRelatorio {
     tabelas_com_overflow: number
     passou: boolean
   }
+  reconciliacao?: ReconciliacaoEvidencia
 }
 
 /**
@@ -453,6 +529,258 @@ function renderTabelaFontes(coorte: CandidatoCoverage[], id: string): string {
   )
 }
 
+const CATEGORIAS_RESIDUO: readonly CategoriaResiduo[] = [
+  "N/A",
+  "fonte indisponível",
+  "identidade sem prova",
+  "curadoria em andamento",
+  "aguardando aprovação",
+  "busca esgotada no escopo",
+  "erro de código ainda aberto"
+]
+
+function rotuloChave(chave: string): string {
+  return chave.replaceAll("_", " ").replace(/^./, (letra) => letra.toUpperCase())
+}
+
+function valorEvidencia(valor: ValorEvidencia | undefined): string {
+  if (valor === undefined || valor === null || valor === "") return "não informado"
+  if (typeof valor === "number") return valor.toLocaleString("pt-BR")
+  if (typeof valor === "boolean") return valor ? "sim" : "não"
+  return esc(String(valor))
+}
+
+function linhasDaTabela(tabela: TabelaReconciliacao | undefined): LinhaReconciliacao[] {
+  if (!tabela) return []
+  if (Array.isArray(tabela)) return tabela
+  return Object.entries(tabela).map(([chave, valor]) =>
+    valor !== null && typeof valor === "object"
+      ? { chave, ...(valor as LinhaReconciliacao) }
+      : { chave, depois: valor as ValorEvidencia }
+  )
+}
+
+function chaveDaLinha(linha: LinhaReconciliacao): string {
+  const composta = [linha.slug ?? linha.candidato, linha.coluna ?? linha.fonte]
+    .filter(Boolean)
+    .join(" · ")
+  const explicita =
+    linha.chave ??
+    linha.nome ??
+    linha.celula ??
+    linha.consulta
+  return explicita ?? (composta || "não informado")
+}
+
+function mudancaDaLinha(linha: LinhaReconciliacao): string {
+  if (linha.transicao) return esc(linha.transicao)
+  if (linha.delta !== undefined) {
+    const delta = linha.delta
+    return `${delta > 0 ? "+" : ""}${delta.toLocaleString("pt-BR")}`
+  }
+  if (typeof linha.antes === "number" && typeof linha.depois === "number") {
+    const delta = linha.depois - linha.antes
+    return `${delta > 0 ? "+" : ""}${delta.toLocaleString("pt-BR")}`
+  }
+  return "não informada"
+}
+
+function renderTabelaReconciliacao(
+  titulo: string,
+  tabela: TabelaReconciliacao | undefined,
+  aberta = false
+): string {
+  const linhas = linhasDaTabela(tabela)
+  if (linhas.length === 0) return ""
+  const corpo = linhas
+    .map(
+      (linha) =>
+        `<tr><th scope="row"><code>${esc(chaveDaLinha(linha))}</code></th>` +
+        `<td>${valorEvidencia(linha.antes)}</td><td>${valorEvidencia(linha.depois)}</td>` +
+        `<td>${mudancaDaLinha(linha)}</td><td>${valorEvidencia(
+          linha.categoria ?? linha.tipo
+        )}</td><td>${valorEvidencia(linha.detalhe)}</td>` +
+        `<td>${valorEvidencia(linha.proxima_acao)}</td></tr>`
+    )
+    .join("")
+  return `<details class="recon-details"${aberta ? " open" : ""}>
+<summary>${esc(titulo)} <span class="count">${linhas.length.toLocaleString("pt-BR")}</span></summary>
+<div class="recon-table-wrap"><table class="recon-table" data-page-size="50">
+<thead><tr><th>Item</th><th>Antes</th><th>Depois</th><th>Delta ou transição</th><th>Categoria</th><th>Detalhe</th><th>Próxima ação</th></tr></thead>
+<tbody>${corpo}</tbody></table></div>
+</details>`
+}
+
+function residuosDaReconciliacao(
+  reconciliacao: ReconciliacaoEvidencia
+): Map<CategoriaResiduo, ResiduoReconciliacao> {
+  const mapa = new Map<CategoriaResiduo, ResiduoReconciliacao>()
+  const residuos = reconciliacao.residuos
+  if (Array.isArray(residuos)) {
+    for (const residuo of residuos) {
+      if (residuo.categoria && CATEGORIAS_RESIDUO.includes(residuo.categoria)) {
+        mapa.set(residuo.categoria, residuo)
+      }
+    }
+  } else if (residuos) {
+    for (const categoria of CATEGORIAS_RESIDUO) {
+      const valor = residuos[categoria]
+      if (Array.isArray(valor)) mapa.set(categoria, { categoria, itens: valor })
+      else if (valor) mapa.set(categoria, { categoria, ...valor })
+    }
+  }
+  return mapa
+}
+
+function renderListaResumo(itens: string[] | undefined): string {
+  if (!itens?.length) return `<p class="nao-informado">Não informado na evidência.</p>`
+  return `<ul>${itens.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`
+}
+
+function renderReconciliacao(evidencia: EvidenciaRelatorio): string {
+  const reconciliacao = evidencia.reconciliacao
+  if (!reconciliacao) return ""
+
+  const antes = reconciliacao.totais?.antes ?? reconciliacao.antes ?? {}
+  const depois = reconciliacao.totais?.depois ?? reconciliacao.depois ?? {}
+  const chavesTotais = [...new Set([...Object.keys(antes), ...Object.keys(depois)])]
+  const totais = chavesTotais
+    .map((chave) => {
+      const a = antes[chave]
+      const d = depois[chave]
+      const delta = a === undefined || d === undefined ? "não informado" : d - a
+      return `<tr><th scope="row">${esc(rotuloChave(chave))}</th><td>${valorEvidencia(
+        a
+      )}</td><td>${valorEvidencia(d)}</td><td>${valorEvidencia(delta)}</td></tr>`
+    })
+    .join("")
+
+  const zerouDerivado = chavesTotais
+    .filter((chave) => (antes[chave] ?? 0) > 0 && depois[chave] === 0)
+    .map((chave) => `${rotuloChave(chave)}: ${antes[chave].toLocaleString("pt-BR")} → 0`)
+  const resumo = reconciliacao.resumo
+  const residuos = residuosDaReconciliacao(reconciliacao)
+
+  const cardsResumo = [
+    ["O que zerou", resumo?.zerou ?? zerouDerivado],
+    ["O que apenas mudou de categoria", resumo?.mudou_categoria],
+    ["O que depende de aprovação", resumo?.depende_aprovacao],
+    ["O que continua impossível e por quê", resumo?.continua_impossivel]
+  ] as const
+
+  const cardsResiduo = CATEGORIAS_RESIDUO.map((categoria) => {
+    const residuo = residuos.get(categoria)
+    if (!residuo) {
+      return `<article class="residuo" data-categoria="${esc(categoria)}"><h4>${esc(
+        categoria
+      )}</h4><p class="nao-informado">Sem registro nesta categoria na evidência.</p></article>`
+    }
+    const total = residuo.total === undefined ? "" : `<b class="residuo-total">${residuo.total.toLocaleString("pt-BR")}</b>`
+    const descricao = residuo.resumo ?? residuo.motivo
+    const itens = residuo.itens?.length
+      ? renderTabelaReconciliacao("Itens desta categoria", residuo.itens)
+      : ""
+    return `<article class="residuo" data-categoria="${esc(categoria)}"><h4>${esc(
+      categoria
+    )}${total}</h4>${descricao ? `<p>${esc(descricao)}</p>` : ""}<p><b>Próxima ação:</b> ${
+      residuo.proxima_acao ? esc(residuo.proxima_acao) : "não informada na evidência"
+    }.</p>${itens}</article>`
+  }).join("")
+
+  const aguardando = residuos.get("aguardando aprovação")
+  const acoes = reconciliacao.proximas_acoes?.length
+    ? reconciliacao.proximas_acoes
+    : [
+        {
+          id: "seguir-acoes-relatorio",
+          rotulo: "Seguir as próximas ações registradas",
+          descricao: "Executar cada resíduo dentro do limite e da fonte indicados no relatório.",
+          recomendada: true
+        },
+        {
+          id: "priorizar-aprovacoes",
+          rotulo: "Priorizar aprovações pendentes",
+          descricao: "Revisar primeiro os itens que dependem de decisão humana."
+        },
+        {
+          id: "manter-bloqueios-abertos",
+          rotulo: "Manter bloqueios abertos",
+          descricao: "Não converter fonte indisponível, identidade sem prova ou erro em sucesso."
+        }
+      ]
+  const recomendada = acoes.findIndex((acao) => acao.recomendada)
+  const opcoes = acoes
+    .map(
+      (acao, indice) =>
+        `<label class="acao-opcao"><input type="radio" name="acao-c7" value="${esc(
+          acao.id
+        )}" ${indice === (recomendada >= 0 ? recomendada : 0) ? "checked" : ""}>` +
+        `<span><b>${esc(acao.rotulo)}${acao.recomendada ? " · Recomendado" : ""}</b>${
+          acao.descricao ? `<small>${esc(acao.descricao)}</small>` : ""
+        }</span></label>`
+    )
+    .join("")
+
+  return `<section class="reconciliacao" id="reconciliacao">
+<div class="section-head"><div><p class="eyebrow">C7 · reconciliação final</p><h2>O que mudou, o que não mudou e o que ainda bloqueia</h2></div>${
+    reconciliacao.passou === undefined
+      ? ""
+      : `<b class="selo ${reconciliacao.passou ? "passou" : "falhou"}">${
+          reconciliacao.passou ? "PASSOU" : "PARCIAL OU BLOQUEADO"
+        }</b>`
+  }</div>
+<p class="notes">Os números abaixo vêm do JSON de evidência. Redução legítima, mudança de categoria e bloqueio permanecem separados.</p>
+${
+  totais
+    ? `<div class="recon-table-wrap totais"><table><thead><tr><th>Métrica</th><th>Antes</th><th>Depois</th><th>Delta</th></tr></thead><tbody>${totais}</tbody></table></div>`
+    : `<p class="nao-informado">Totais antes/depois não informados na evidência.</p>`
+}
+<div class="summary-grid">${cardsResumo
+    .map(
+      ([titulo, itens]) =>
+        `<article><h3>${esc(titulo)}</h3>${renderListaResumo(itens as string[] | undefined)}</article>`
+    )
+    .join("")}</div>
+
+<h3 class="subsection-title">Detalhamento antes/depois</h3>
+${renderTabelaReconciliacao("Por coluna", reconciliacao.por_coluna, true)}
+${renderTabelaReconciliacao("Por fonte", reconciliacao.por_fonte)}
+${renderTabelaReconciliacao("Por candidato", reconciliacao.por_candidato)}
+${renderTabelaReconciliacao("Por célula", reconciliacao.por_celula)}
+${renderTabelaReconciliacao(
+  "Por consulta fonte-candidato",
+  reconciliacao.por_consulta_fonte_candidato
+)}
+${renderTabelaReconciliacao("Transições", reconciliacao.transicoes)}
+
+<h3 class="subsection-title">Resíduos nas sete categorias</h3>
+<div class="residuos-grid">${cardsResiduo}</div>
+
+<section class="approval-box" id="aguardando-aprovacao-c7">
+<h3>Aguardando aprovação</h3>
+${
+  aguardando
+    ? `<p>${
+        aguardando.total === undefined
+          ? "A evidência registra itens dependentes de aprovação."
+          : `${aguardando.total.toLocaleString("pt-BR")} item(ns) dependem de aprovação.`
+      } ${aguardando.proxima_acao ? esc(aguardando.proxima_acao) : ""}</p>`
+    : `<p class="nao-informado">Nenhum total foi informado para esta categoria. Isso não equivale a zero.</p>`
+}
+${aguardando?.itens?.length ? renderTabelaReconciliacao("Itens aguardando aprovação", aguardando.itens, true) : ""}
+<p><a href="revisao/lote.html">Abrir a fila editorial completa</a></p>
+</section>
+
+<form class="aplicar-box" id="c7-aplicar" data-verificado-em="${esc(evidencia.verificado_em)}">
+<fieldset><legend>Próxima ação</legend>${opcoes}</fieldset>
+<label for="c7-instrucoes"><b>Instruções adicionais</b></label>
+<textarea id="c7-instrucoes" name="instrucoes" placeholder="Restrições, ordem de prioridade ou contexto para a próxima execução."></textarea>
+<button type="submit">Aplicar</button>
+<p id="c7-aplicar-status" class="form-status" role="status" aria-live="polite"></p>
+</form>
+</section>`
+}
+
 function renderEvidencia(evidencia: EvidenciaRelatorio | undefined): string {
   if (!evidencia) return ""
 
@@ -591,13 +919,133 @@ table.fontes td.detalhe { min-width:230px; max-width:420px; overflow:hidden; tex
 .selo { padding:2px 7px; border-radius:999px; font-size:10.5px; letter-spacing:.04em; }
 .selo.passou { color:#1c6b2d; background:#e3f2e6; }
 .selo.falhou { color:#a12622; background:#fbe4e4; }
+.reconciliacao { margin:24px 0 34px; padding:clamp(14px,2vw,22px); border:1px solid #cddffa;
+  border-radius:14px; background:linear-gradient(180deg,#f7faff 0,#fff 150px); min-width:0; }
+.reconciliacao h2 { margin:2px 0 4px; }
+.section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.eyebrow { margin:0; color:#1d4ed8; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:14px 0 22px; }
+.summary-grid article { min-width:0; border:1px solid var(--line); border-radius:10px; padding:12px; background:#fff; }
+.summary-grid h3 { margin-bottom:6px; }
+.summary-grid ul { margin:0; padding-left:18px; }
+.summary-grid li { margin:3px 0; }
+.nao-informado { color:var(--muted); font-style:italic; }
+.subsection-title { margin:24px 0 8px; }
+.recon-details { border:1px solid var(--line); border-radius:10px; background:#fff; margin:8px 0; overflow:hidden; }
+.recon-details > summary { cursor:pointer; padding:10px 12px; font-weight:750; list-style-position:inside; }
+.recon-details > summary:hover { background:#f7f7f5; }
+.recon-details > summary .count { color:var(--muted); font-size:11px; margin-left:5px; }
+.recon-table-wrap { max-width:100%; max-height:480px; overflow:auto; border-top:1px solid var(--line); }
+.recon-table-wrap.totais { max-height:340px; border:1px solid var(--line); border-radius:10px; margin-top:14px; }
+.recon-table-wrap table { width:max-content; min-width:100%; font-size:12px; }
+.recon-table-wrap th, .recon-table-wrap td { text-align:left; min-width:110px; padding:7px 9px; vertical-align:top; }
+.recon-table-wrap th:first-child { min-width:210px; max-width:360px; }
+.recon-table-wrap code { white-space:normal; overflow-wrap:anywhere; }
+.residuos-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.residuo { min-width:0; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+.residuo h4 { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 7px; font-size:14px; }
+.residuo p { margin:6px 0; }
+.residuo-total { min-width:30px; text-align:center; padding:2px 7px; border-radius:999px; background:#f1f1ee; }
+.approval-box { margin:20px 0; padding:14px; border-left:4px solid #8a6100; border-radius:8px; background:#fffaf0; }
+.approval-box h3 { margin-bottom:6px; }
+.aplicar-box { margin-top:20px; padding:16px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+.aplicar-box fieldset { border:0; padding:0; margin:0 0 14px; }
+.aplicar-box legend { font-size:15px; font-weight:800; margin-bottom:8px; }
+.acao-opcao { display:flex; align-items:flex-start; gap:9px; padding:10px 11px; margin:7px 0; border:1px solid var(--line);
+  border-radius:10px; cursor:pointer; background:#fff; }
+.acao-opcao:has(input:checked) { border-color:#1d4ed8; box-shadow:0 0 0 2px #dbe7ff; }
+.acao-opcao input { margin-top:3px; }
+.acao-opcao span, .acao-opcao small { display:block; }
+.acao-opcao small { color:var(--muted); margin-top:2px; }
+.aplicar-box textarea { display:block; width:100%; min-height:88px; margin-top:7px; padding:10px 11px; resize:vertical;
+  border:1px solid var(--line); border-radius:9px; color:var(--fg); background:#fff; font:inherit; }
+.aplicar-box button { margin-top:11px; padding:10px 20px; border:0; border-radius:9px; color:#fff; background:#1a1a1a;
+  font:inherit; font-weight:750; cursor:pointer; }
+.aplicar-box button[disabled] { opacity:.55; cursor:wait; }
+.form-status { min-height:1.4em; margin:8px 0 0; font-weight:650; }
+.pagination { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:8px 10px; border-top:1px solid var(--line); background:#fafaf8; }
+.pagination button { border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--fg); padding:4px 9px; cursor:pointer; }
+.pagination button:disabled { opacity:.45; cursor:default; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline:3px solid #8ab4ff; outline-offset:2px; }
 @media (max-width:600px) {
   body { padding:20px 12px 60px; }
   h1 { font-size:22px; }
   .fonte-intro { display:block; }
   .fonte-intro p { margin-top:3px; }
   .evidence-grid { grid-template-columns:1fr; }
+  .section-head { display:block; }
+  .section-head .selo { display:inline-block; margin-top:8px; }
+  .summary-grid, .residuos-grid { grid-template-columns:1fr; }
+  .reconciliacao { padding:13px 10px; }
+  .recon-table-wrap th:first-child { min-width:170px; }
 }
+`
+
+const JS_RELATORIO = `
+(() => {
+  const porPagina = 50;
+  document.querySelectorAll('table.recon-table').forEach((table) => {
+    const linhas = Array.from(table.tBodies[0]?.rows || []);
+    if (linhas.length <= porPagina) return;
+    let pagina = 0;
+    const paginas = Math.ceil(linhas.length / porPagina);
+    const barra = document.createElement('div');
+    barra.className = 'pagination';
+    const anterior = document.createElement('button');
+    anterior.type = 'button'; anterior.textContent = 'Anterior';
+    const status = document.createElement('span');
+    const proxima = document.createElement('button');
+    proxima.type = 'button'; proxima.textContent = 'Próxima';
+    barra.append(anterior, status, proxima);
+    table.closest('.recon-table-wrap')?.after(barra);
+    const desenhar = () => {
+      linhas.forEach((linha, indice) => { linha.hidden = Math.floor(indice / porPagina) !== pagina; });
+      status.textContent = 'Página ' + (pagina + 1) + ' de ' + paginas;
+      anterior.disabled = pagina === 0;
+      proxima.disabled = pagina === paginas - 1;
+    };
+    anterior.addEventListener('click', () => { pagina -= 1; desenhar(); });
+    proxima.addEventListener('click', () => { pagina += 1; desenhar(); });
+    desenhar();
+  });
+
+  const form = document.getElementById('c7-aplicar');
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const selecionada = form.querySelector('input[name="acao-c7"]:checked');
+    const botao = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('c7-aplicar-status');
+    if (!selecionada || !botao || !status) return;
+    const label = selecionada.closest('label')?.querySelector('b')?.textContent || selecionada.value;
+    botao.disabled = true;
+    status.textContent = 'Enviando…';
+    try {
+      const resposta = await fetch('/aplicar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'c7_proxima_acao',
+          opcoes: [{ id: selecionada.value, rotulo: label }],
+          instrucoes: form.querySelector('[name="instrucoes"]')?.value || '',
+          contexto: {
+            verificado_em: form.dataset.verificadoEm || null,
+            relatorio: window.location.pathname
+          }
+        })
+      });
+      if (!resposta.ok) throw new Error('HTTP ' + resposta.status);
+      status.textContent = 'Aplicado. A decisão foi registrada para a próxima execução.';
+      status.style.color = '#1c6b2d';
+    } catch (erro) {
+      status.textContent = 'Não foi possível registrar: ' + erro;
+      status.style.color = '#a12622';
+    } finally {
+      botao.disabled = false;
+    }
+  });
+})();
 `
 
 export function renderHtml(
@@ -619,6 +1067,9 @@ export function renderHtml(
 
   const toc =
     (evidencia ? `<a href="#evidencias" class="chip">Evidências</a>` : "") +
+    (evidencia?.reconciliacao
+      ? `<a href="#reconciliacao" class="chip">Reconciliação C7</a>`
+      : "") +
     `<a href="#presidentes" class="chip">Presidente</a>` +
     ufs.map((uf) => `<a href="#uf-${uf.toLowerCase()}" class="chip">${uf}</a>`).join("") +
     (outros.length ? `<a href="#outros" class="chip">Outros cargos</a>` : "")
@@ -728,10 +1179,12 @@ Gerado por <code>scripts/audit/coverage-report.ts</code>.</p>
 </ul>
 ${blocoPendentes}
 ${renderEvidencia(evidencia)}
+${evidencia ? renderReconciliacao(evidencia) : ""}
 <p class="notes" style="font-size:13.5px"><b>Aguardando aprovação:</b> <a href="revisao/lote.html">abrir a fila editorial numa tabela separada</a>, uma linha por fato, com filtro por tipo e cargo e um envio no fim.</p>
 <nav class="toc">${toc}</nav>
 ${secoes.join("")}
 </main>
+<script>${JS_RELATORIO}</script>
 </body>
 </html>`
 }

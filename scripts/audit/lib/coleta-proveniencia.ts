@@ -138,14 +138,10 @@ export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Ob
  * lacunas, porque o alvo real delas é a UF ou um agregado estatístico.
  */
 export const FONTES_POR_CANDIDATO: readonly string[] = Object.freeze(
-  [
-    ...Object.entries(FONTES)
-      .filter(([, escopo]) => escopo === "candidato")
-      .map(([fonte]) => fonte),
-    // Já existe em coleta_log_ultima e foi pedido como eixo obrigatório, mas o
-    // ingest correspondente ainda não integra esta base de código.
-    "tse-cpf"
-  ].sort((a, b) => a.localeCompare(b, "pt-BR"))
+  Object.entries(FONTES)
+    .filter(([, escopo]) => escopo === "candidato")
+    .map(([fonte]) => fonte)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
 )
 
 /**

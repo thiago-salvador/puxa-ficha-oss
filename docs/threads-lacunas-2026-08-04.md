@@ -1569,7 +1569,6 @@ não foi aplicada no Supabase.
   as tabelas largas rolam dentro do container.
 
 ## Ingests históricos pendentes (2026-08-05)
-## Ingests históricos pendentes (2026-08-05)
 
 Execução em worktree isolado baseado na PR #105, com escrita no Supabase apenas
 por `scripts/ingest-all.ts`. O inventário direto no banco encontrou 194
@@ -1592,6 +1591,50 @@ pendências em `tse-historico`, 194 em `filiacao`, 102 em
 Os nove gates locais passaram após substituir, apenas no worktree, o symlink de
 `node_modules` por uma cópia local exigida pelo Turbopack. Evidência completa:
 `~/.disposable-html/2026-08-05-puxa-ficha-ingests-historicos.evidence.json`.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+---
+
+## C7 · Reconciliação final de cobertura (2026-08-05)
+
+**Estado:** branch `codex/reconciliacao-cobertura-zero` pronta para PR, sem
+merge na `main`. O snapshot final foi lido diretamente do Supabase com 194
+candidatos e 4.462 células. O relatório permanece parcial por resíduos
+factuais e por aprovação editorial, embora os nove gates de código tenham
+passado.
+
+- A régua original passou de 276 para 31 zeros nunca verificados, de 32 para
+  199 tentativas inconclusivas, de 372 para 0 sem ingest automático e de 161
+  para 179 zeros comprovados.
+- O único total que chegou a zero foi o rótulo `sem ingest automático`. Isso
+  não significa que 372 lacunas foram resolvidas: 172 viraram busca esgotada
+  no escopo, 131 inconclusivas, 53 coletadas e 16 zeros comprovados.
+- Houve redução legítima em 302 células e 551 consultas fonte-candidato. Outras
+  374 células e 924 consultas apenas mudaram de categoria.
+- Os 185 candidatos da curadoria de processos continuam classificados em 50
+  com achado, 16 vazios confirmados e 119 bloqueados. Os 204 números CNJ de 50
+  candidatos aguardam decisão individual. A triagem atual recomenda 6
+  publicações, 65 pontos de atenção, 86 não publicações e 47 pesquisas
+  adicionais. Thiago aprovou a recomendação de revisar essa fila antes de
+  publicar, não a aprovação automática dos itens.
+- Resíduos após a reconciliação: 1.325 `N/A`, 30 fontes indisponíveis, 242
+  identidades sem prova, 4.057 itens em curadoria, 204 aguardando aprovação e
+  351 buscas esgotadas apenas no escopo. Nenhum resíduo foi classificado como
+  erro de código aberto depois dos gates.
+- A evidência final exclui CPFs. Cadu Xavier, Jarbas Soares e Renato Gomes
+  permanecem bloqueados para a rota nominal do TSE; nome, UF, nome de urna ou
+  partido não podem reintroduzir identificadores removidos por homônimo.
+- Chrome/Chromium confirmou 4.462 células na legenda e no DOM, três candidatos
+  contra `coleta_log_ultima` sem divergência, 28 tabelas territoriais, 204 itens
+  na fila, rolagem interna e página sem rolagem horizontal em 375 px.
+- Gates: `npm audit`, lint, spell UI, typecheck, scripts, seed, fotos, dead code
+  e testes passaram; a suíte final teve 2.022 testes aprovados.
+
+Próximas ações: revisar os 204 vínculos CNJ; obter uma segunda prova oficial
+para identidades bloqueadas; repetir as 30 consultas quando as fontes voltarem;
+concluir a curadoria pendente com URL e resultado; ampliar buscas esgotadas
+somente em nova rodada com escopo explícito.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
 

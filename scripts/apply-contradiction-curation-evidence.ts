@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   montarLinhas,
@@ -10,11 +11,71 @@ import {
 } from "./lib/coleta-log";
 import { supabase } from "./lib/supabase";
 
-async function main(): Promise<void> {
-  const evidencePath = process.argv
+export function validarCoorteEvidencia(
+  cohortInitialSlugs: string[],
+  candidateSlugs: string[],
+): void {
+  const duplicados = (slugs: string[]): string[] => {
+    const vistos = new Set<string>();
+    const repetidos = new Set<string>();
+    for (const slug of slugs) {
+      if (vistos.has(slug)) repetidos.add(slug);
+      vistos.add(slug);
+    }
+    return [...repetidos].sort();
+  };
+
+  const invalidosCoorte = cohortInitialSlugs.filter(
+    (slug) => typeof slug !== "string" || slug.trim() === "",
+  );
+  const invalidosCandidatos = candidateSlugs.filter(
+    (slug) => typeof slug !== "string" || slug.trim() === "",
+  );
+  if (invalidosCoorte.length > 0 || invalidosCandidatos.length > 0) {
+    throw new Error("slugs da coorte e dos candidatos devem ser strings não vazias");
+  }
+
+  const duplicadosCoorte = duplicados(cohortInitialSlugs);
+  const duplicadosCandidatos = duplicados(candidateSlugs);
+  if (duplicadosCoorte.length > 0 || duplicadosCandidatos.length > 0) {
+    throw new Error(
+      [
+        `slugs duplicados na coorte: ${duplicadosCoorte.join(",") || "nenhum"}`,
+        `slugs duplicados nos candidatos: ${duplicadosCandidatos.join(",") || "nenhum"}`,
+      ].join("; "),
+    );
+  }
+
+  const coorte = new Set(cohortInitialSlugs);
+  const candidatos = new Set(candidateSlugs);
+  const ausentes = [...coorte].filter((slug) => !candidatos.has(slug)).sort();
+  const extras = [...candidatos].filter((slug) => !coorte.has(slug)).sort();
+  if (ausentes.length > 0 || extras.length > 0) {
+    throw new Error(
+      `slugs da evidência divergem da coorte; ausentes=${ausentes.join(",") || "nenhum"}; extras=${extras.join(",") || "nenhum"}`,
+    );
+  }
+}
+
+export function escreverEvidenciaAtomica(
+  evidencePath: string,
+  evidence: unknown,
+): void {
+  const tempPath = join(dirname(evidencePath), `.${basename(evidencePath)}.tmp`);
+  writeFileSync(tempPath, `${JSON.stringify(evidence, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  chmodSync(tempPath, 0o600);
+  renameSync(tempPath, evidencePath);
+  chmodSync(evidencePath, 0o600);
+}
+
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+  const evidencePath = argv
     .find((arg) => arg.startsWith("--evidence="))
-    ?.split("=")[1];
-  const apply = process.argv.includes("--apply");
+    ?.slice("--evidence=".length);
+  const apply = argv.includes("--apply");
   if (!evidencePath) {
     throw new Error(
       "usage: apply-contradiction-curation-evidence.ts --evidence=<path> [--apply]",
@@ -41,11 +102,10 @@ async function main(): Promise<void> {
 
   if (evidence.summary.pendentes !== 0)
     throw new Error("evidence ainda contém candidatos pendentes");
-  if (evidence.candidates.length !== evidence.cohort_initial_slugs.length) {
-    throw new Error(
-      "cardinalidade do conjunto inicial diverge do arquivo de evidências",
-    );
-  }
+  validarCoorteEvidencia(
+    evidence.cohort_initial_slugs,
+    evidence.candidates.map((candidate) => candidate.slug),
+  );
 
   const { data: publicRows, error: publicError } = await supabase
     .from("candidatos_publico")
@@ -142,7 +202,7 @@ async function main(): Promise<void> {
         2,
       ),
     );
-    process.exit(0);
+    return;
   }
 
   const batchSize = 20;
@@ -175,12 +235,7 @@ async function main(): Promise<void> {
       batches: completedBatches,
       updated_at: completedAt,
     };
-    const tempPath = join(
-      dirname(evidencePath),
-      `.${evidencePath.split("/").at(-1)}.tmp`,
-    );
-    writeFileSync(tempPath, `${JSON.stringify(evidence, null, 2)}\n`);
-    renameSync(tempPath, evidencePath);
+    escreverEvidenciaAtomica(evidencePath, evidence);
   }
 
   const completedAt = new Date().toISOString();
@@ -192,12 +247,7 @@ async function main(): Promise<void> {
     batches: completedBatches,
     completed_at: completedAt,
   };
-  const tempPath = join(
-    dirname(evidencePath),
-    `.${evidencePath.split("/").at(-1)}.tmp`,
-  );
-  writeFileSync(tempPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  renameSync(tempPath, evidencePath);
+  escreverEvidenciaAtomica(evidencePath, evidence);
   console.log(
     JSON.stringify(
       { mode: "apply", inserted: pending.length, total: entries.length },
@@ -207,7 +257,9 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
