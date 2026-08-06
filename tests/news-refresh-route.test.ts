@@ -273,6 +273,7 @@ function createDeps(allCandidatos: FakeCandidato[]) {
       record.continuationToken = null
       return true
     },
+    listRecoverable: async () => [],
   }
 
   const deps = {
@@ -317,7 +318,18 @@ function createDeps(allCandidatos: FakeCandidato[]) {
     },
     fetchImpl: (async (url: string | URL, init?: RequestInit) => {
       captured.fetchCalls.push({ url: String(url), init })
-      return new Response(null, { status: 200 })
+      const requestUrl = new URL(String(url))
+      const headers = init?.headers as Record<string, string>
+      return Response.json(
+        {
+          accepted: true,
+          alreadyAccepted: false,
+          state: "processing",
+          executionId: headers[EXECUTION_HEADER],
+          cursor: Number(requestUrl.searchParams.get("cursor")),
+        },
+        { status: 200 },
+      )
     }) as unknown as typeof fetch,
     sleep: async (ms: number) => {
       captured.sleepCalls.push(ms)
@@ -689,7 +701,18 @@ describe("news refresh route", () => {
       captured.fetchCalls.push({ url: String(url), init })
       calls += 1
       if (calls === 1) throw new Error("socket hang up")
-      return new Response(null, { status: 200 })
+      const requestUrl = new URL(String(url))
+      const headers = init?.headers as Record<string, string>
+      return Response.json(
+        {
+          accepted: true,
+          alreadyAccepted: false,
+          state: "processing",
+          executionId: headers[EXECUTION_HEADER],
+          cursor: Number(requestUrl.searchParams.get("cursor")),
+        },
+        { status: 200 },
+      )
     }) as unknown as typeof fetch
     const handler = createNewsRefreshHandler(deps)
 
@@ -701,6 +724,68 @@ describe("news refresh route", () => {
     assert.equal(captured.logCalls.filter((c) => c.event === "chain_fetch_retry").length, 1)
     assert.equal(captured.logCalls.filter((c) => c.event === "chain_fetch_failed").length, 0)
     assert.deepEqual(captured.sleepCalls, [3000])
+  })
+
+  it("keeps the continuation pending when a duplicate child is still processing", async () => {
+    const { deps, captured, batches } = createDeps(makeCandidatos(10))
+    deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      captured.fetchCalls.push({ url: String(url), init })
+      const requestUrl = new URL(String(url))
+      const headers = init?.headers as Record<string, string>
+      return Response.json(
+        {
+          accepted: true,
+          alreadyAccepted: true,
+          state: "processing",
+          executionId: headers[EXECUTION_HEADER],
+          cursor: Number(requestUrl.searchParams.get("cursor")),
+        },
+        { status: 202 },
+      )
+    }) as unknown as typeof fetch
+    const handler = createNewsRefreshHandler(deps)
+
+    assert.equal((await handler(makeRequest({ cursor: "0", limit: "5" }))).status, 200)
+    const dispatch = captured.afterCallbacks.shift()
+    assert.ok(dispatch)
+    await dispatch()
+
+    assert.equal(batches.get(`${ROOT_EXECUTION_ID}:0`)?.continuationState, "pending")
+    assert.equal(captured.refreshedBatches.length, 1)
+    assert.equal(captured.coletaBatches.length, 1)
+    assert.ok(captured.logCalls.some((entry) => entry.event === "chain_ack_ambiguous"))
+  })
+
+  it("accepts a child ACK only when execution id and cursor match", async () => {
+    const { deps, captured, batches } = createDeps(makeCandidatos(10))
+    let calls = 0
+    deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      captured.fetchCalls.push({ url: String(url), init })
+      calls += 1
+      const requestUrl = new URL(String(url))
+      const headers = init?.headers as Record<string, string>
+      return Response.json(
+        {
+          accepted: true,
+          alreadyAccepted: false,
+          state: "processing",
+          executionId:
+            calls === 1 ? "33333333-3333-4333-8333-333333333333" : headers[EXECUTION_HEADER],
+          cursor: Number(requestUrl.searchParams.get("cursor")),
+        },
+        { status: 202 },
+      )
+    }) as unknown as typeof fetch
+    const handler = createNewsRefreshHandler(deps)
+
+    assert.equal((await handler(makeRequest({ cursor: "0", limit: "5" }))).status, 200)
+    const dispatch = captured.afterCallbacks.shift()
+    assert.ok(dispatch)
+    await dispatch()
+
+    assert.equal(calls, 2)
+    assert.equal(batches.get(`${ROOT_EXECUTION_ID}:0`)?.continuationState, "dispatched")
+    assert.equal(captured.logCalls.filter((entry) => entry.event === "chain_ack_ambiguous").length, 1)
   })
 
   it("stops chaining when MAX_CHAIN_DEPTH is reached even if more remain", async () => {
@@ -911,7 +996,18 @@ describe("news refresh route", () => {
 
     deps.fetchImpl = (async (url: string | URL, init?: RequestInit) => {
       captured.fetchCalls.push({ url: String(url), init })
-      return new Response(null, { status: 202 })
+      const requestUrl = new URL(String(url))
+      const headers = init?.headers as Record<string, string>
+      return Response.json(
+        {
+          accepted: true,
+          alreadyAccepted: false,
+          state: "processing",
+          executionId: headers[EXECUTION_HEADER],
+          cursor: Number(requestUrl.searchParams.get("cursor")),
+        },
+        { status: 202 },
+      )
     }) as unknown as typeof fetch
     const duplicate = await handler(request())
     const duplicateBody = await readJson(duplicate)

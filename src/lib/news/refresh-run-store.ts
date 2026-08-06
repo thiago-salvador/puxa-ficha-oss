@@ -31,6 +31,19 @@ export interface NewsRefreshContinuationClaim {
   revalidateRequested: boolean
 }
 
+export interface NewsRefreshRecoverable {
+  executionId: string
+  cursor: number
+  limit: number
+  chainDepth: number
+  revalidateRequested: boolean
+  kind:
+    | "batch_retryable"
+    | "batch_lease_expired"
+    | "continuation_pending"
+    | "continuation_lease_expired"
+}
+
 export interface NewsRefreshRunStore {
   acquireBatch: (config: NewsRefreshBatchConfig, leaseSeconds: number) => Promise<NewsRefreshBatchClaim>
   renewBatchLease: (args: {
@@ -62,6 +75,7 @@ export interface NewsRefreshRunStore {
     token: string
     accepted: boolean
   }) => Promise<boolean>
+  listRecoverable: (limit: number) => Promise<NewsRefreshRecoverable[]>
 }
 
 interface AcquireRow {
@@ -83,6 +97,15 @@ interface ContinuationRow {
   batch_limit: number
   chain_depth: number
   revalidate_requested: boolean
+}
+
+interface RecoverableRow {
+  execucao_id: string
+  cursor: number
+  batch_limit: number
+  chain_depth: number
+  revalidate_requested: boolean
+  recovery_kind: NewsRefreshRecoverable["kind"]
 }
 
 function firstRow<T>(data: unknown, rpcName: string): T {
@@ -205,6 +228,21 @@ export function createNewsRefreshRunStore(): NewsRefreshRunStore {
           "finish_news_refresh_continuacao",
         ),
       )
+    },
+
+    async listRecoverable(limit) {
+      const rows = requireRpcSuccess(
+        await client().rpc("list_news_refresh_recuperaveis", { p_limit: limit }),
+        "list_news_refresh_recuperaveis",
+      ) as RecoverableRow[] | null
+      return (rows ?? []).map((row) => ({
+        executionId: row.execucao_id,
+        cursor: row.cursor,
+        limit: row.batch_limit,
+        chainDepth: row.chain_depth,
+        revalidateRequested: row.revalidate_requested,
+        kind: row.recovery_kind,
+      }))
     },
   }
 }

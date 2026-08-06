@@ -21,10 +21,8 @@ describe("news refresh idempotency migration contract", () => {
     assert.match(migration, /add column lote_cursor integer/i)
     assert.match(migration, /unique \(fonte, execucao, lote_cursor, candidato_id\)/i)
     assert.match(route, /lote_cursor: batchCursor/i)
-    assert.match(
-      route,
-      /onConflict: "fonte,execucao,lote_cursor,candidato_id", ignoreDuplicates: true/i,
-    )
+    assert.match(route, /onConflict:\s*"fonte,execucao,lote_cursor,candidato_id"/i)
+    assert.match(route, /ignoreDuplicates:\s*true/i)
   })
 
   it("acquires atomically and only retakes retryable or expired work", () => {
@@ -48,6 +46,9 @@ describe("news refresh idempotency migration contract", () => {
   })
 
   it("claims exactly one logical continuation and fences its final state", () => {
+    assert.match(migration, /update public\.news_refresh_lotes as l/i)
+    assert.match(migration, /and l\.next_cursor is not null/i)
+    assert.match(migration, /returning l\.\* into v_row/i)
     assert.match(migration, /continuacao_estado = 'dispatching'/i)
     assert.match(migration, /continuacao_estado = 'pending'/i)
     assert.match(migration, /continuacao_lease_ate <= now\(\)/i)
@@ -61,6 +62,21 @@ describe("news refresh idempotency migration contract", () => {
     assert.match(migration, /grant select, insert, update on public\.news_refresh_lotes to service_role/i)
     assert.match(migration, /-- drop table if exists public\.news_refresh_lotes;/i)
     assert.match(migration, /-- alter table public\.coleta_log drop column if exists lote_cursor;/i)
+  })
+
+  it("lists only bounded recoverable work for the service role", () => {
+    assert.match(migration, /function public\.list_news_refresh_recuperaveis/i)
+    assert.match(migration, /l\.estado = 'retryable'/i)
+    assert.match(migration, /l\.estado = 'processing' and l\.lease_ate <= now\(\)/i)
+    assert.match(migration, /l\.estado = 'completed'\s+and l\.next_cursor is not null/i)
+    assert.match(migration, /continuation_lease_expired/i)
+    assert.match(migration, /order by l\.atualizado_em asc, l\.execucao_id asc, l\.cursor asc/i)
+    assert.match(migration, /limit least\(greatest\(p_limit, 1\), 50\)/i)
+    assert.match(
+      migration,
+      /grant execute on function public\.list_news_refresh_recuperaveis\(integer\) to service_role/i,
+    )
+    assert.match(migration, /-- drop function if exists public\.list_news_refresh_recuperaveis/i)
   })
 
   it("propagates the stable execution id into coleta_log instead of recreating a daily id", () => {

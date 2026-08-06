@@ -61,6 +61,22 @@ alter table public.news_refresh_lotes enable row level security;
 revoke all on public.news_refresh_lotes from public, anon, authenticated;
 grant select, insert, update on public.news_refresh_lotes to service_role;
 
+create index news_refresh_lotes_processing_expired_idx
+  on public.news_refresh_lotes (lease_ate)
+  where estado = 'processing';
+
+create index news_refresh_lotes_retryable_idx
+  on public.news_refresh_lotes (atualizado_em)
+  where estado = 'retryable';
+
+create index news_refresh_lotes_continuacao_pending_idx
+  on public.news_refresh_lotes (atualizado_em)
+  where estado = 'completed' and continuacao_estado = 'pending';
+
+create index news_refresh_lotes_continuacao_expired_idx
+  on public.news_refresh_lotes (continuacao_lease_ate)
+  where estado = 'completed' and continuacao_estado = 'dispatching';
+
 create or replace function public.acquire_news_refresh_lote(
   p_execucao_id uuid,
   p_cursor integer,
@@ -253,25 +269,25 @@ declare
   v_row public.news_refresh_lotes%rowtype;
   v_acquired boolean := false;
 begin
-  update public.news_refresh_lotes
+  update public.news_refresh_lotes as l
      set continuacao_estado = 'dispatching',
          continuacao_token = gen_random_uuid(),
          continuacao_lease_ate = now() + make_interval(
            secs => least(greatest(p_lease_seconds, 30), 300)
          ),
          atualizado_em = now()
-   where execucao_id = p_execucao_id
-     and cursor = p_cursor
-     and estado = 'completed'
-     and next_cursor is not null
+   where l.execucao_id = p_execucao_id
+     and l.cursor = p_cursor
+     and l.estado = 'completed'
+     and l.next_cursor is not null
      and (
-       continuacao_estado = 'pending'
+       l.continuacao_estado = 'pending'
        or (
-         continuacao_estado = 'dispatching'
-         and continuacao_lease_ate <= now()
+         l.continuacao_estado = 'dispatching'
+         and l.continuacao_lease_ate <= now()
        )
      )
-  returning * into v_row;
+  returning l.* into v_row;
 
   v_acquired := found;
   if not v_acquired then
@@ -317,12 +333,57 @@ begin
 end;
 $$;
 
+create or replace function public.list_news_refresh_recuperaveis(
+  p_limit integer default 20
+)
+returns table (
+  execucao_id uuid,
+  cursor integer,
+  batch_limit integer,
+  chain_depth integer,
+  revalidate_requested boolean,
+  recovery_kind text
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select l.execucao_id,
+         l.cursor,
+         l.batch_limit,
+         l.chain_depth,
+         l.revalidate_requested,
+         case
+           when l.estado = 'retryable' then 'batch_retryable'
+           when l.estado = 'processing' then 'batch_lease_expired'
+           when l.continuacao_estado = 'pending' then 'continuation_pending'
+           else 'continuation_lease_expired'
+         end as recovery_kind
+    from public.news_refresh_lotes as l
+   where l.estado = 'retryable'
+      or (l.estado = 'processing' and l.lease_ate <= now())
+      or (
+        l.estado = 'completed'
+        and l.next_cursor is not null
+        and (
+          l.continuacao_estado = 'pending'
+          or (
+            l.continuacao_estado = 'dispatching'
+            and l.continuacao_lease_ate <= now()
+          )
+        )
+      )
+   order by l.atualizado_em asc, l.execucao_id asc, l.cursor asc
+   limit least(greatest(p_limit, 1), 50);
+$$;
+
 revoke all on function public.acquire_news_refresh_lote(uuid, integer, integer, integer, boolean, boolean, integer) from public, anon, authenticated;
 revoke all on function public.renew_news_refresh_lote_lease(uuid, integer, uuid, integer) from public, anon, authenticated;
 revoke all on function public.complete_news_refresh_lote(uuid, integer, uuid, integer) from public, anon, authenticated;
 revoke all on function public.retry_news_refresh_lote(uuid, integer, uuid, text) from public, anon, authenticated;
 revoke all on function public.claim_news_refresh_continuacao(uuid, integer, integer) from public, anon, authenticated;
 revoke all on function public.finish_news_refresh_continuacao(uuid, integer, uuid, boolean) from public, anon, authenticated;
+revoke all on function public.list_news_refresh_recuperaveis(integer) from public, anon, authenticated;
 
 grant execute on function public.acquire_news_refresh_lote(uuid, integer, integer, integer, boolean, boolean, integer) to service_role;
 grant execute on function public.renew_news_refresh_lote_lease(uuid, integer, uuid, integer) to service_role;
@@ -330,10 +391,12 @@ grant execute on function public.complete_news_refresh_lote(uuid, integer, uuid,
 grant execute on function public.retry_news_refresh_lote(uuid, integer, uuid, text) to service_role;
 grant execute on function public.claim_news_refresh_continuacao(uuid, integer, integer) to service_role;
 grant execute on function public.finish_news_refresh_continuacao(uuid, integer, uuid, boolean) to service_role;
+grant execute on function public.list_news_refresh_recuperaveis(integer) to service_role;
 
 COMMIT;
 
 -- Rollback reversivel (nao executar junto com a migration):
+-- drop function if exists public.list_news_refresh_recuperaveis(integer);
 -- drop function if exists public.finish_news_refresh_continuacao(uuid, integer, uuid, boolean);
 -- drop function if exists public.claim_news_refresh_continuacao(uuid, integer, integer);
 -- drop function if exists public.retry_news_refresh_lote(uuid, integer, uuid, text);

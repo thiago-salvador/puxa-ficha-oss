@@ -126,6 +126,28 @@ function safeErrorMessage(error: unknown, secret: string | undefined): string {
   return message.slice(0, 300)
 }
 
+async function confirmsDurableAcceptance(
+  response: Response,
+  expectedExecutionId: string,
+  expectedCursor: number,
+): Promise<boolean> {
+  if (!response.ok) return false
+  try {
+    const body = (await response.json()) as {
+      accepted?: unknown
+      alreadyAccepted?: unknown
+      state?: unknown
+      executionId?: unknown
+      cursor?: unknown
+    }
+    if (body.accepted !== true) return false
+    if (body.executionId !== expectedExecutionId || body.cursor !== expectedCursor) return false
+    return !(body.alreadyAccepted === true && body.state === "processing")
+  } catch {
+    return false
+  }
+}
+
 async function defaultFetchCandidatoPage(args: { cursor: number; limit: number }) {
   const supabase = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
   const { data, error, count } = await supabase
@@ -312,11 +334,13 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
               redirect: "manual",
               signal: controller.signal,
             })
-            if (res.ok) {
+            if (
+              await confirmsDurableAcceptance(res, executionId, continuation.nextCursor)
+            ) {
               accepted = true
               break
             }
-            deps.log(eventoDeFalha, {
+            deps.log(res.ok ? "chain_ack_ambiguous" : eventoDeFalha, {
               nextCursor: continuation.nextCursor,
               status: res.status,
               attempt,
@@ -375,6 +399,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
           ok: true,
           accepted: true,
           alreadyAccepted: true,
+          workScheduled: false,
           executionId,
           cursor: claim.cursor,
           state: claim.state,
@@ -661,6 +686,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
           ok: true,
           accepted: true,
           alreadyAccepted: false,
+          workScheduled: true,
           executionId,
           cursor,
           state: "processing",

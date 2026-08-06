@@ -24,6 +24,7 @@ const ROTAS_DE_SEGREDO = [
   { arquivo: "src/app/api/internal/published-consistency/route.ts", variavel: "expectedSecret" },
   { arquivo: "src/app/api/alerts/send-digest/route.ts", variavel: "expectedSecret" },
   { arquivo: "src/app/api/news/refresh/route.ts", variavel: "expectedSecret" },
+  { arquivo: "src/app/api/news/refresh/recover/route.ts", variavel: "expectedSecret" },
   { arquivo: "src/lib/revalidate-cache.ts", variavel: "expectedTrimmed" },
 ]
 
