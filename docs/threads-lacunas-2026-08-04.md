@@ -1691,3 +1691,33 @@ decisão, mas não funciona como prova de autenticação de identidade.
   finais e deploy de produção continuam sem autorização.
 
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+## N12 — reconciliação definitiva do histórico de migrations (2026-08-06 08:52 BRT)
+
+**Estado:** sucessora limpa da PR #107 preparada sobre `origin/main`
+`181cca8fc948a97a19c4a601f787ec4cc9f51187`, sem escrita no Supabase.
+
+- O ledger remoto reconhece `20260805003740`, `20260805004921`,
+  `20260805120133`, `20260805120633` e `20260805123929` como aplicadas. Os
+  quatro arquivos históricos foram renomeados para esses timestamps, e a
+  migration editorial `20260805123929` foi recuperada; o SQL local corresponde
+  ao remoto após normalizar comentários e espaços.
+- Os efeitos antes preparados como `20260805160207` e `20260805160212`
+  continuam pendentes. O readback confirmou a ausência da coluna e do índice
+  de hash do pedido de e-mail; o índice de analytics existe, mas a tabela ainda
+  não possui o comentário de retenção de 90 dias.
+- A PR #117 integrou `20260805200145` já aplicada no ledger e mudou a ordenação.
+  Por isso, os dois forwards foram portados para `20260806114753` e
+  `20260806114754`, posteriores ao ledger atual. As demais integrações de #105,
+  #110 e #116–#122 não acrescentaram migrations relevantes; a #122 permaneceu
+  sem migration e os 204 CNJs ficaram fora deste escopo.
+- `supabase db push --linked --dry-run` terminou com exit 0 e listou somente
+  `20260806114753_alert_subscribers_last_email_request_ip_hash_forward.sql` e
+  `20260806114754_analytics_launch_events_retencao_90_dias_forward.sql`.
+- Verificação local em Node 24: 33/33 testes focados de migrations, 2.014/2.014
+  testes completos, `check:scripts`, typecheck e lint passaram. O lint manteve
+  um aviso preexistente em `scripts/audit/coverage-report.ts`; nenhum erro.
+- Não houve `db push`, `migration repair`, `apply_migration`, SQL de escrita,
+  migration dos 204 CNJs, merge, deploy ou revalidação de produção.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
