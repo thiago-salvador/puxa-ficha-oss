@@ -6,6 +6,16 @@ import { pathToFileURL } from "node:url"
 
 import type { EvidenciaFinal, ItemFinal } from "./validar-revisao-final-processos"
 
+export function exigirItemFinal(
+  finalPorCnj: ReadonlyMap<string, ItemFinal>,
+  cnj: string,
+  origem: string,
+): ItemFinal {
+  const final = finalPorCnj.get(cnj)
+  if (!final) throw new Error(`${cnj}: ausente na decisao final (${origem})`)
+  return final
+}
+
 type Registro = Record<string, unknown>
 
 function argumento(nome: string, padrao: string): string {
@@ -238,10 +248,14 @@ export function main(): void {
   })
 
   const finalPorCnj = new Map(itens.map((item) => [item.numero_cnj, item]))
-  const descartesRevalidados = descartes86.map((item) => finalPorCnj.get(String(item.numero_cnj))!)
+  const descartesRevalidados = descartes86.map((item) =>
+    exigirItemFinal(finalPorCnj, String(item.numero_cnj), "descartes86"),
+  )
   const lotesPesquisa = lotesBrutos.map((lote, indice) => ({
     numero: indice + 1,
-    itens: lote.map((item) => finalPorCnj.get(String(item.numero_cnj))!),
+    itens: lote.map((item) =>
+      exigirItemFinal(finalPorCnj, String(item.numero_cnj), `lote-${indice + 1}`),
+    ),
   }))
   const resumo = Object.fromEntries(
     ["publicar", "ponto_atencao", "nao_publicar", "bloqueado_concreto"].map((decisao) => [
