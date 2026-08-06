@@ -1599,7 +1599,7 @@ Os nove gates locais passaram após substituir, apenas no worktree, o symlink de
 
 ## Busca ativa de processos da coorte pública (2026-08-05)
 
-**Estado:** C7 aplicado no Supabase a partir da branch
+**Estado:** curadoria de processos aplicada no Supabase a partir da branch
 `codex/processos-curadoria-20260805`, baseada exatamente no commit `022d3ed`
 da PR #108. A coorte foi recalculada no banco: 194 fichas públicas, 185 sem
 processos no snapshot inicial.
