@@ -87,6 +87,8 @@ export interface Proveniencia {
  */
 export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Object.freeze({
   foto: ["wikipedia"],
+  // Coluna informativa derivada da URL; nao e uma coleta nem entra no indice.
+  foto_origem: [],
   bio: ["wikipedia"],
   redes: ["wikipedia", "instagram"],
   dados: ["tse-situacao", "wikidata"],

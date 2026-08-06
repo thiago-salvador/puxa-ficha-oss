@@ -19,6 +19,7 @@ import { test } from "node:test"
 
 import {
   COLUNAS,
+  COLUNAS_DO_INDICE,
   FONTES_POR_COLUNA,
   calcularCelulas,
   calcularFontesNaoAplicaveis,
@@ -38,6 +39,7 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
     cargo_disputado: "Governador",
     estado: "SP",
     foto: false,
+    foto_origem: null,
     bio: false,
     redes: false,
     idade: null,
@@ -69,6 +71,22 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
     itensRevisar: [],
     ...over
   }
+}
+
+function origemFoto(url: string): "local" | "tse" | "wikimedia" | "oficial" | "terceiro" {
+  if (url.startsWith("/") && !url.startsWith("//")) return "local"
+  if (/^https?:\/\/([a-z0-9-]+\.)*tse\.jus\.br([/:?#]|$)/i.test(url)) return "tse"
+  if (/^https?:\/\/([a-z0-9-]+\.)*(wikimedia|wikipedia)\.org([/:?#]|$)/i.test(url)) {
+    return "wikimedia"
+  }
+  if (
+    /^https?:\/\/([a-z0-9-]+\.)*(camara\.leg\.br|senado\.leg\.br|gov\.br)([/:?#]|$)/i.test(
+      url
+    )
+  ) {
+    return "oficial"
+  }
+  return "terceiro"
 }
 
 type Desfecho = UltimaColeta["resultado"]
@@ -145,6 +163,38 @@ test("célula com dado não recebe procedência", () => {
   const cel = calcularCelulas(candidato({ sancoes: 2 }))
   assert.equal(cel.sancoes.state, "ok")
   assert.equal(cel.sancoes.proveniencia, undefined)
+})
+
+test("origem técnica da foto não altera o índice nem presume direitos", () => {
+  const local = calcularCelulas(candidato({ foto: true, foto_origem: "local" })).foto_origem
+  const oficial = calcularCelulas(candidato({ foto: true, foto_origem: "tse" })).foto_origem
+  const semFoto = calcularCelulas(candidato()).foto_origem
+
+  assert.deepEqual({ state: local.state, text: local.text }, { state: "partial", text: "Local" })
+  assert.match(local.tip ?? "", /não afirma autoria, licença ou titularidade/)
+  assert.deepEqual({ state: oficial.state, text: oficial.text }, { state: "ok", text: "TSE" })
+  assert.equal(semFoto.state, "na")
+  assert.ok(!COLUNAS_DO_INDICE.includes("foto_origem" as never))
+})
+
+test("origem técnica da foto exige hostname confiável", () => {
+  const sql = readFileSync(
+    join(import.meta.dirname, "..", "scripts", "audit", "coverage-snapshot.sql"),
+    "utf8"
+  )
+
+  assert.equal(origemFoto("/candidates/foto.jpg"), "local")
+  assert.equal(origemFoto("//example.org/foto.jpg"), "terceiro")
+  assert.equal(origemFoto("https://tse.jus.br/foto.jpg"), "tse")
+  assert.equal(origemFoto("https://upload.wikimedia.org/foto.jpg"), "wikimedia")
+  assert.equal(origemFoto("https://www.gov.br/foto.jpg"), "oficial")
+  assert.equal(origemFoto("https://example.org/tse.jus.br/foto.jpg"), "terceiro")
+  assert.equal(origemFoto("https://example.org/foto.jpg?ref=senado.leg.br"), "terceiro")
+  assert.equal(origemFoto("https://evilgov.br/foto.jpg"), "terceiro")
+
+  assert.match(sql, /c\.foto_url not like '\/\/%'/)
+  assert.match(sql, /\^https\?:\/\/\(\[a-z0-9-\]\+\\\.\)\*tse\\\.jus\\\.br/)
+  assert.doesNotMatch(sql, /like '%tse\.jus\.br%'/)
 })
 
 test("candidato sem tentativa e log não lido não se confundem na célula", () => {
