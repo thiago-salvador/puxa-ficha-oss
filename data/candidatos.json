@@ -1721,9 +1721,7 @@
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {
-        "2020": "200000998862"
-      }
+      "tse_sq_candidato": {}
     },
     "wikipedia_title": "Cadu_Xavier"
   },
@@ -3565,10 +3563,7 @@
     "ids": {
       "camara": null,
       "senado": null,
-      "tse_sq_candidato": {
-        "2008": "815",
-        "2020": "120000886590"
-      }
+      "tse_sq_candidato": {}
     }
   },
   {

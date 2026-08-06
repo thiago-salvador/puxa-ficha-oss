@@ -360,6 +360,21 @@ describe("ANOS_VARRIDOS", () => {
   })
 })
 
+describe("identidades invalidadas por homônimo", () => {
+  const candidatos = JSON.parse(readFileSync("data/candidatos.json", "utf-8")) as Array<{
+    slug: string
+    ids?: { tse_sq_candidato?: Record<string, string> }
+  }>
+
+  for (const slug of ["cadu-xavier", "jarbas-soares", "renato-gomes"]) {
+    it(`${slug} não expõe SQ ao backfill automático`, () => {
+      const candidato = candidatos.find((item) => item.slug === slug)
+      assert.ok(candidato, `candidato ausente no seed: ${slug}`)
+      assert.deepEqual(candidato.ids?.tse_sq_candidato ?? {}, {})
+    })
+  }
+})
+
 describe("backfill-cpf-tse: garantias que só se leem na fonte", () => {
   const fonte = readFileSync("scripts/backfill-cpf-tse.ts", "utf-8")
 
