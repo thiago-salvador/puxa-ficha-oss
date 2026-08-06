@@ -16,6 +16,7 @@ import { Footer } from "@/components/Footer"
 import { DataSourceNotice } from "@/components/DataSourceNotice"
 import { PublicDataSourcesNote } from "@/components/PublicDataSourcesNote"
 import { JsonLd } from "@/components/JsonLd"
+import { getHomeHeroMetrics } from "@/lib/home-hero-metrics"
 import { formatCompact } from "@/lib/utils"
 
 // Inerte hoje: o `await headers()` do nonce de CSP no RootLayout torna a
@@ -27,40 +28,41 @@ import { formatCompact } from "@/lib/utils"
 export const revalidate = 3600
 
 export default async function Home() {
-  const [resumosResource, comparaveisResource] = await Promise.all([
-    getCandidatosComResumoResource("Presidente"),
+  const [todosResumosResource, comparaveisResource] = await Promise.all([
+    getCandidatosComResumoResource(),
     getCandidatosComparaveisResource("Presidente"),
   ])
-  const resumos = resumosResource.data
+  const todosResumos = todosResumosResource.data
+  const resumosPresidencia = todosResumos.filter(
+    (resumo) => resumo.candidato.cargo_disputado === "Presidente"
+  )
   const comparaveis = comparaveisResource.data
   const sourceStatus = mergeSourceStatuses(
-    resumosResource.sourceStatus,
+    todosResumosResource.sourceStatus,
     comparaveisResource.sourceStatus
   )
   const sourceMessage = mergeSourceMessages(
-    resumosResource.sourceMessage,
+    todosResumosResource.sourceMessage,
     comparaveisResource.sourceMessage
   )
 
-  resumos.sort((a, b) =>
+  resumosPresidencia.sort((a, b) =>
     a.candidato.nome_urna.localeCompare(b.candidato.nome_urna, "pt-BR")
   )
 
-  const candidatos = resumos.map((r) => r.candidato)
+  const candidatos = resumosPresidencia.map((r) => r.candidato)
   const processos: Record<string, number> = {}
   const patrimonios: Record<string, number | null> = {}
-  for (const r of resumos) {
+  for (const r of resumosPresidencia) {
     processos[r.candidato.slug] = r.processos
     patrimonios[r.candidato.slug] = r.patrimonio
   }
 
-  // Aggregate stats for hero data bar
-  const totalCandidatos = candidatos.length
-  const totalPatrimonio = resumos.reduce(
-    (sum, r) => sum + (r.patrimonio ?? 0),
-    0
-  )
-  const totalProcessos = resumos.reduce((sum, r) => sum + r.processos, 0)
+  const { totalCandidatos, totalPatrimonio, totalProcessos } =
+    getHomeHeroMetrics(
+      todosResumos,
+      todosResumosResource.sourceStatus
+    )
   const schema = [
     {
       "@context": "https://schema.org",
@@ -127,15 +129,17 @@ export default async function Home() {
 
           {/* Data bar */}
           <div className="mt-6 flex flex-wrap gap-6 pb-4 sm:gap-12 lg:gap-20">
-            <div className="hero-fade" style={{ animationDelay: "0.4s" }}>
-              <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
-                {totalCandidatos}
-              </p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
-                pré-candidatos mapeados
-              </p>
-            </div>
-            {totalPatrimonio > 0 && (
+            {totalCandidatos !== null && (
+              <div className="hero-fade" style={{ animationDelay: "0.4s" }}>
+                <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
+                  {totalCandidatos}
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
+                  pré-candidatos mapeados
+                </p>
+              </div>
+            )}
+            {totalPatrimonio !== null && totalPatrimonio > 0 && (
               <div className="hero-fade" style={{ animationDelay: "0.5s" }}>
                 <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
                   {formatCompact(totalPatrimonio)}
@@ -145,7 +149,7 @@ export default async function Home() {
                 </p>
               </div>
             )}
-            {totalProcessos > 0 && (
+            {totalProcessos !== null && totalProcessos > 0 && (
               <div className="hero-fade" style={{ animationDelay: "0.6s" }}>
                 <p className="font-heading text-[22px] leading-none tracking-tight text-white sm:text-[36px] lg:text-[48px]">
                   {totalProcessos}
