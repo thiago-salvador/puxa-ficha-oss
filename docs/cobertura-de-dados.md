@@ -41,14 +41,14 @@ do quiz, e vale só para quem disputa a Presidência. Para os outros 183 a célu
 posição faltando ali não é buraco. Vale também o filtro do próprio quiz: só conta
 posição com `verificado = true`, porque é o que `src/lib/api.ts` consome. Posição
 gravada e não revisada não vai ao ar, e por isso não vira verde: vira item na
-coluna "Itens a revisar".
+coluna "Aguardando aprovação".
 
 **Índice de preenchimento: 15 colunas.** Entram foto, bio, redes sociais, dados
 pessoais, patrimônio, evolução patrimonial, bens ano a ano, financiamento,
 doadores detalhados, votações-chave, projetos de lei, cota parlamentar,
 legislação do Executivo, notícias e posições. Ficam **fora** as oito colunas de
 achado: cargos ocupados, histórico partidário, contradições, processos, alertas,
-sanções, projetos em destaque e itens a revisar.
+sanções, projetos em destaque e itens aguardando aprovação.
 
 O motivo é o mesmo para todas: **elas medem o mundo, não o nosso esforço.** Um
 governador sem nenhuma sanção administrativa não tem ficha pior que a de um com
@@ -67,8 +67,9 @@ em `coleta_log`:
 |---|---|
 | Verde | A fonte foi consultada e respondeu vazio. Único caso em que o zero afirma algo. |
 | Âmbar | Nenhuma tentativa registrada. O zero não quer dizer nada. |
-| Vermelho | A coleta falhou, ou terminou sem saber dizer se a fonte veio vazia. |
-| Cinza | Nenhum ingest alimenta a coluna; o dado só entra por curadoria manual. |
+| Vermelho | A tentativa foi inconclusiva. Não fecha cobertura. |
+| Azul | A curadoria terminou sem achado no escopo declarado. Não prova ausência absoluta. |
+| Cinza | Não existe ingest automático para a coluna. |
 | Sem traço | Este relatório não leu o log de coleta. |
 
 A regra é conservadora: só vira verde quando **todas** as fontes daquela coluna
@@ -92,6 +93,33 @@ casos repõe exatamente o bug que a tabela veio corrigir.
 O relatório funciona em banco **sem** `coleta_log`: a leitura é opcional e, sem a
 tabela, todo zero sai com procedência não lida. Detalhe do vocabulário de
 `resultado` na migration `coleta_log_tentativa_por_fonte`.
+
+### Curadoria manual de processos e contradições
+
+As fontes `processos-curadoria` e `contradicoes-curadoria` também escrevem em
+`coleta_log`, mas continuam marcadas como curadoria, não como ingest automático.
+O comando seguro é:
+
+```bash
+npm run data:curadoria:registrar -- \
+  --slug=<slug> --frente=<processos|contradicoes> --data=AAAA-MM-DD \
+  --resultado=<resultado> --detalhe="<detalhe>" \
+  --identidade=<id-oficial|cargo-e-uf> \
+  --identidade-url=<url também listada em --url> \
+  --url=<url consultada>
+```
+
+O padrão é dry-run. A escrita exige `--apply`. O comando valida o slug na view
+`candidatos_publico`, exige fonte pública, rejeita nome sozinho como prova de
+identidade e não aceita `encontrado` sem `--evidencia-publicavel=<url>`. Toda URL
+de identidade ou evidência precisa constar também entre as URLs consultadas.
+
+Para processos, `vazio_confirmado` só é aceito quando `--detalhe` declara quatro
+campos não vazios, separados por ponto e vírgula: `órgãos`, `jurisdição`,
+`período` e `termos`. Para contradições, `vazio_confirmado` é proibido. Use
+`sem_achado_no_escopo`, que aparece no relatório como "curadoria concluída sem
+achado no escopo". Uma execução `indeterminado` continua como "tentativa
+inconclusiva" e não fecha cobertura.
 
 ## Eixo por fonte, por candidato
 
@@ -147,6 +175,7 @@ tsx scripts/audit/coverage-report.ts --from-snapshot=caminho/do/snapshot.json
 | `scripts/audit/lib/snapshot-fetch.ts` | Transporte e credencial. Não interpreta nada, mas remove o bloco de `coleta` quando o banco não tem a view. |
 | `scripts/audit/coverage-report.ts` | Monta e desenha. |
 | `scripts/audit/check-report.ts` | `npm run audit:cobertura:check`, confere o relatório. |
+| `scripts/registrar-revisao-curadoria.ts` | Valida e registra a revisão manual; dry-run por padrão. |
 
 A divisão importa: o `.sql` é a **única** descrição dos fatos. Em 02/08 existia um
 segundo caminho que lia o banco pelo supabase-js e reimplementava em JS as janelas

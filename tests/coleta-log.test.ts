@@ -127,6 +127,16 @@ describe("normalizarEntrada respeita a constraint coleta_log_volume_coerente", (
     }
   })
 
+  it("curadoria sem achado no escopo sempre zera o volume", () => {
+    const n = normalizarEntrada({
+      fonte: "contradicoes-curadoria",
+      alvo: "fulano",
+      resultado: "sem_achado_no_escopo",
+      volume: 9,
+    })
+    assert.deepEqual(n, { resultado: "sem_achado_no_escopo", volume: 0 })
+  })
+
   it("volume negativo ou fracionario nao chega ao banco", () => {
     assert.equal(
       normalizarEntrada({ fonte: "camara", alvo: "lula", resultado: "erro", volume: -3 }).volume,
@@ -226,7 +236,12 @@ describe("FONTES cobre todo source declarado pelos ingests", () => {
     // `tse-cpf` e o backfill dedicado de CPF (scripts/backfill-cpf-tse.ts),
     // fora de scripts/lib, que tambem chama registrarColetas direto.
     // Essas sao as excecoes legitimas; qualquer outra e fonte esquecida.
-    const excecoes = new Set(["wiki-historico", "tse-cpf"])
+    const excecoes = new Set([
+      "wiki-historico",
+      "tse-cpf",
+      "processos-curadoria",
+      "contradicoes-curadoria",
+    ])
     const orfas = Object.keys(FONTES).filter(
       (f) => !declarados.has(f) && !excecoes.has(f),
     )

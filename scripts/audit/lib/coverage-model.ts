@@ -337,7 +337,7 @@ export const COLUNAS: ColunaDef[] = [
   { key: "noticias", label: "Notícias" },
   { key: "posicoes", label: "Posições (quiz)" },
   { key: "sancoes", label: "Sanções" },
-  { key: "revisar", label: "Itens a revisar" }
+  { key: "revisar", label: "Aguardando aprovação" }
 ]
 
 /** As 15 colunas que entram no índice de preenchimento. */
@@ -375,6 +375,7 @@ function cellZero(coluna: string, c: CandidatoCoverage, semDado: string): Cell {
     nunca_verificado: `${semDado}, e alguma fonte nunca registrou tentativa: este zero não afirma nada`,
     nao_sabemos: `${semDado}, mas alguma coleta falhou ou não soube dizer: o zero não vale como resposta`,
     sem_ingest: `${semDado}: nenhum ingest alimenta esta coluna, só curadoria manual`,
+    curadoria_concluida_sem_achado: `${semDado}: a curadoria terminou sem achado no escopo declarado; não é prova absoluta de ausência`,
     desconhecida: `${semDado}; o log de coleta não foi lido nesta execução`
   }
   return {

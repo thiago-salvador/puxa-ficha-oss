@@ -24,7 +24,13 @@ import { FONTES } from "../../lib/coleta-log"
 
 /** O que `coleta_log` registrou para a última tentativa de uma fonte. */
 export interface UltimaColeta {
-  resultado: "encontrado" | "vazio_confirmado" | "nao_aplicavel" | "erro" | "indeterminado"
+  resultado:
+    | "encontrado"
+    | "vazio_confirmado"
+    | "sem_achado_no_escopo"
+    | "nao_aplicavel"
+    | "erro"
+    | "indeterminado"
   volume?: number
   executado_em?: string
   detalhe?: string | null
@@ -54,6 +60,8 @@ export type VeredictoProveniencia =
   | "nao_sabemos"
   /** A coluna não é alimentada por ingest nenhum: o preenchimento é curadoria. */
   | "sem_ingest"
+  /** A curadoria terminou sem achado, dentro do escopo declarado no log. */
+  | "curadoria_concluida_sem_achado"
 
 export interface Proveniencia {
   veredito: VeredictoProveniencia
@@ -117,12 +125,12 @@ export const FONTES_POR_COLUNA: Readonly<Record<string, readonly string[]>> = Ob
   // ingest-jarbas, ingest-tcu e ingest-transparencia-sanctions inserem ali.
   alertas: ["jarbas", "tcu", "transparencia-sanctions"],
 
-  // Curadoria: nenhum ingest escreve, então não há coleta a cobrar.
-  processos: [],
+  // Curadoria manual com rastro em coleta_log. Não são ingests automáticos.
+  processos: ["processos-curadoria"],
   posicoes: [],
   legexec: [],
+  contradicoes: ["contradicoes-curadoria"],
   // Derivadas de outras colunas, não de fonte externa.
-  contradicoes: [],
   revisar: []
 })
 
@@ -170,9 +178,10 @@ export function linhasPorFonte(
 export const ROTULO_RESULTADO_FONTE: Readonly<Record<ResultadoFonte, string>> = Object.freeze({
   encontrado: "encontrado",
   vazio_confirmado: "vazio confirmado",
+  sem_achado_no_escopo: "curadoria concluída sem achado no escopo",
   nao_aplicavel: "N/A",
   erro: "erro",
-  indeterminado: "indeterminado",
+  indeterminado: "tentativa inconclusiva",
   nunca_verificado: "nunca verificado"
 })
 
@@ -209,6 +218,7 @@ export function provenienciaDaColuna(coluna: string, coleta: ColetaPorFonte = {}
   const faltando: string[] = []
   const duvidosas: string[] = []
   let algumEncontrou = false
+  let curadoriaSemAchado = false
 
   for (const fonte of fontes) {
     const ultima = coleta[fonte]
@@ -217,6 +227,7 @@ export function provenienciaDaColuna(coluna: string, coleta: ColetaPorFonte = {}
       continue
     }
     if (ultima.resultado === "encontrado") algumEncontrou = true
+    else if (ultima.resultado === "sem_achado_no_escopo") curadoriaSemAchado = true
     else if (ultima.resultado === "erro" || ultima.resultado === "indeterminado") {
       duvidosas.push(fonte)
     }
@@ -225,6 +236,9 @@ export function provenienciaDaColuna(coluna: string, coleta: ColetaPorFonte = {}
   if (algumEncontrou) return { veredito: "coletado", faltando, duvidosas }
   if (faltando.length > 0) return { veredito: "nunca_verificado", faltando, duvidosas }
   if (duvidosas.length > 0) return { veredito: "nao_sabemos", faltando, duvidosas }
+  if (curadoriaSemAchado) {
+    return { veredito: "curadoria_concluida_sem_achado", faltando, duvidosas }
+  }
   return { veredito: "zero_provado", faltando, duvidosas }
 }
 
@@ -233,6 +247,7 @@ export const ROTULO_PROVENIENCIA: Readonly<Record<VeredictoProveniencia, string>
   coletado: "coletado",
   zero_provado: "verificado, não há",
   nunca_verificado: "nunca verificado",
-  nao_sabemos: "tentado, sem resposta",
-  sem_ingest: "só por curadoria"
+  nao_sabemos: "tentativa inconclusiva",
+  sem_ingest: "sem ingest automático",
+  curadoria_concluida_sem_achado: "curadoria concluída sem achado no escopo"
 })
