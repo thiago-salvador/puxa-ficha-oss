@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { NextRequest } from "next/server"
 import { after, NextResponse } from "next/server"
 import { revalidateTag } from "next/cache"
@@ -12,6 +13,12 @@ import {
   type NewsRefreshSummary,
   type NoticiaRow,
 } from "@/lib/news/refresh"
+import {
+  createNewsRefreshRunStore,
+  NEWS_REFRESH_EXECUTION_HEADER,
+  type NewsRefreshBatchClaim,
+  type NewsRefreshRunStore,
+} from "@/lib/news/refresh-run-store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -57,6 +64,13 @@ const CHAIN_FETCH_RETRY_DELAY_MS = 3000
 // 15s e folgado para o handshake e curto o bastante para sobrar orcamento para
 // a segunda tentativa dentro da mesma invocacao.
 const CHAIN_FETCH_TIMEOUT_MS = 15_000
+// A lease cobre com folga o maxDuration de 300s. Renovamos antes de cada
+// pagina; expiracao ou estado retryable permitem takeover com novo fencing
+// token, sem deixar o cursor preso para sempre.
+const BATCH_LEASE_SECONDS = 600
+const CONTINUATION_LEASE_SECONDS = 60
+const CONTINUATION_RECOVERY_ROUNDS = 2
+const BATCH_RECOVERY_HEADER = "x-puxaficha-news-recovery-attempt"
 
 type AfterResponseCallback = () => Promise<void> | void
 
@@ -70,12 +84,19 @@ interface NewsRefreshHandlerDeps {
    * Grava as tentativas do lote em `public.coleta_log` (fonte `google-news`).
    * Falha aqui nunca derruba o lote: o handler engole e loga `coleta_log_failed`.
    */
-  registrarColetas: (tentativas: ColetaTentativaNews[]) => Promise<void>
+  registrarColetas: (
+    tentativas: ColetaTentativaNews[],
+    executionId: string,
+    batchCursor: number,
+  ) => Promise<void>
+  runStore: NewsRefreshRunStore
   revalidate: (tag: string) => void
   afterResponse: (callback: AfterResponseCallback) => void
   fetchImpl: typeof fetch
   sleep: (ms: number) => Promise<void>
   log: (event: string, detail: Record<string, unknown>) => void
+  createExecutionId: () => string
+  now: () => number
   /** Orçamento da invocação. Nos testes, 0 força uma página por invocação. */
   invocationBudgetMs: number
 }
@@ -92,6 +113,17 @@ function parsePositiveInt(value: string | null, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10)
   if (!Number.isFinite(parsed) || parsed < 0) return fallback
   return parsed
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function safeErrorMessage(error: unknown, secret: string | undefined): string {
+  let message = error instanceof Error ? error.message : "unknown"
+  message = message.replace(/bearer\s+\S+/gi, "Bearer [REDACTED]")
+  if (secret) message = message.split(secret).join("[REDACTED]")
+  return message.slice(0, 300)
 }
 
 async function defaultFetchCandidatoPage(args: { cursor: number; limit: number }) {
@@ -131,15 +163,17 @@ function defaultRefreshNews(candidatos: NewsCandidato[]): Promise<NewsRefreshSum
  * refresh da rota era a unica coleta do projeto sem rastro nenhum: o cron
  * rodava todo dia, cobria 5 de 194 candidatos (incidente de 2026-08-04) e a
  * tabela dizia "nunca verificado" para os 194, sem denunciar a diferenca.
- * `execucao` agrupa por dia, o que basta para reconstruir uma rodada do cron
- * encadeado (cada lote e uma invocacao serverless separada).
+ * `execucao` recebe o UUID estavel gerado na raiz e propagado em todos os
+ * filhos, permitindo reconstruir uma rodada sem conflar execucoes do mesmo dia.
  */
-async function defaultRegistrarColetas(tentativas: ColetaTentativaNews[]): Promise<void> {
+async function defaultRegistrarColetas(
+  tentativas: ColetaTentativaNews[],
+  executionId: string,
+  batchCursor: number,
+): Promise<void> {
   if (tentativas.length === 0) return
   const supabase = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
-  const ambiente = process.env.VERCEL ? "vercel" : "local"
-  const execucao = `${ambiente}:news-refresh:${new Date().toISOString().slice(0, 10)}`
-  const { error } = await supabase.from("coleta_log").insert(
+  const { error } = await supabase.from("coleta_log").upsert(
     tentativas.map((t) => ({
       fonte: "google-news",
       escopo: "candidato",
@@ -149,9 +183,11 @@ async function defaultRegistrarColetas(tentativas: ColetaTentativaNews[]): Promi
       volume: t.volume,
       detalhe: t.detalhe,
       url: t.url,
-      execucao,
+      execucao: executionId,
+      lote_cursor: batchCursor,
       duracao_ms: t.duracao_ms,
     })),
+    { onConflict: "fonte,execucao,lote_cursor,candidato_id", ignoreDuplicates: true },
   )
   if (error) {
     throw new Error(error.message)
@@ -162,17 +198,19 @@ const defaultDeps: NewsRefreshHandlerDeps = {
   fetchCandidatoPage: defaultFetchCandidatoPage,
   refreshNews: defaultRefreshNews,
   registrarColetas: defaultRegistrarColetas,
+  runStore: createNewsRefreshRunStore(),
   revalidate: (tag: string) => revalidateTag(tag, "max"),
   afterResponse: after,
   fetchImpl: fetch,
   sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   log: (event, detail) => console.log(`[news-refresh] ${event} ${JSON.stringify(detail)}`),
+  createExecutionId: randomUUID,
+  now: Date.now,
   invocationBudgetMs: INVOCATION_BUDGET_MS,
 }
 
 export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultDeps) {
   return async function handler(req: NextRequest) {
-    const inicio = Date.now()
     const expectedSecret = process.env.CRON_SECRET?.trim()
     const providedSecret = getCronSecret(req)
 
@@ -181,12 +219,180 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const cursor = parsePositiveInt(req.nextUrl.searchParams.get("cursor"), 0)
+    const requestedCursor = parsePositiveInt(req.nextUrl.searchParams.get("cursor"), 0)
     const requestedLimit = parsePositiveInt(req.nextUrl.searchParams.get("limit"), DEFAULT_BATCH_LIMIT)
-    const limit = Math.max(1, Math.min(MAX_BATCH_LIMIT, requestedLimit || DEFAULT_BATCH_LIMIT))
-    const chainDepth = parsePositiveInt(req.nextUrl.searchParams.get("depth"), 0)
-    const shouldChain = req.nextUrl.searchParams.get("chain") !== "0" && chainDepth < MAX_CHAIN_DEPTH
-    const shouldRevalidateGlobalFichaCache = req.nextUrl.searchParams.get("revalidate") === "1"
+    const requestedBatchLimit = Math.max(1, Math.min(MAX_BATCH_LIMIT, requestedLimit || DEFAULT_BATCH_LIMIT))
+    const requestedChainDepth = parsePositiveInt(req.nextUrl.searchParams.get("depth"), 0)
+    const requestedShouldChain =
+      req.nextUrl.searchParams.get("chain") !== "0" && requestedChainDepth < MAX_CHAIN_DEPTH
+    const requestedRevalidation = req.nextUrl.searchParams.get("revalidate") === "1"
+    const isChainedInvocation = req.nextUrl.searchParams.get("chain") === "1"
+    const recoveryAttempt = parsePositiveInt(req.headers.get(BATCH_RECOVERY_HEADER), 0)
+    const suppliedExecutionId = req.headers.get(NEWS_REFRESH_EXECUTION_HEADER)?.trim() ?? ""
+
+    if (isChainedInvocation && !suppliedExecutionId) {
+      deps.log("missing_execution_id", { cursor: requestedCursor })
+      return NextResponse.json({ error: "Missing execution id" }, { status: 400 })
+    }
+
+    const executionId = suppliedExecutionId || deps.createExecutionId()
+    if (!isUuid(executionId)) {
+      deps.log("invalid_execution_id", { cursor: requestedCursor })
+      return NextResponse.json({ error: "Invalid execution id" }, { status: 400 })
+    }
+
+    let claim: NewsRefreshBatchClaim
+    try {
+      claim = await deps.runStore.acquireBatch(
+        {
+          executionId,
+          cursor: requestedCursor,
+          limit: requestedBatchLimit,
+          chainDepth: requestedChainDepth,
+          shouldChain: requestedShouldChain,
+          revalidateRequested: requestedRevalidation,
+        },
+        BATCH_LEASE_SECONDS,
+      )
+    } catch (error) {
+      deps.log("batch_claim_failed", {
+        executionId,
+        cursor: requestedCursor,
+        message: safeErrorMessage(error, expectedSecret),
+      })
+      return NextResponse.json({ error: "Could not accept batch" }, { status: 503 })
+    }
+
+    const makeContinuationCallback = (
+      sourceCursor: number,
+      recoveryRound = 0,
+    ): AfterResponseCallback => async () => {
+      const continuation = await deps.runStore.claimContinuation({
+        executionId,
+        cursor: sourceCursor,
+        leaseSeconds: CONTINUATION_LEASE_SECONDS,
+      })
+      if (!continuation.acquired || !continuation.token || continuation.nextCursor === null) {
+        return
+      }
+
+      let accepted = false
+      try {
+        const origemBruta = resolveChainOrigin(req)
+        const origem = validarOrigemEncadeamento(origemBruta)
+        if (!origem.ok) {
+          deps.log("chain_origin_rejected", {
+            origem: origemBruta,
+            motivo: origem.motivo,
+            nextCursor: continuation.nextCursor,
+          })
+          return
+        }
+
+        const nextUrl = new URL(req.nextUrl.pathname, origem.origin)
+        nextUrl.searchParams.set("cursor", String(continuation.nextCursor))
+        nextUrl.searchParams.set("limit", String(continuation.limit))
+        nextUrl.searchParams.set("chain", "1")
+        nextUrl.searchParams.set("depth", String(continuation.chainDepth + 1))
+        if (continuation.revalidateRequested) nextUrl.searchParams.set("revalidate", "1")
+
+        for (let attempt = 1; attempt <= CHAIN_FETCH_ATTEMPTS; attempt += 1) {
+          const ultimaTentativa = attempt === CHAIN_FETCH_ATTEMPTS
+          const eventoDeFalha = ultimaTentativa ? "chain_fetch_failed" : "chain_fetch_retry"
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), CHAIN_FETCH_TIMEOUT_MS)
+          try {
+            const res = await deps.fetchImpl(nextUrl.toString(), {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${expectedSecret}`,
+                [NEWS_REFRESH_EXECUTION_HEADER]: executionId,
+              },
+              cache: "no-store",
+              redirect: "manual",
+              signal: controller.signal,
+            })
+            if (res.ok) {
+              accepted = true
+              break
+            }
+            deps.log(eventoDeFalha, {
+              nextCursor: continuation.nextCursor,
+              status: res.status,
+              attempt,
+            })
+          } catch (error) {
+            const message =
+              error instanceof Error && error.name === "AbortError"
+                ? "timeout"
+                : safeErrorMessage(error, expectedSecret)
+            deps.log(eventoDeFalha, { nextCursor: continuation.nextCursor, message, attempt })
+          } finally {
+            clearTimeout(timer)
+          }
+          if (!ultimaTentativa) await deps.sleep(CHAIN_FETCH_RETRY_DELAY_MS)
+        }
+      } finally {
+        let released = false
+        try {
+          released = await deps.runStore.finishContinuation({
+            executionId,
+            cursor: sourceCursor,
+            token: continuation.token,
+            accepted,
+          })
+        } catch (error) {
+          deps.log("chain_state_failed", {
+            executionId,
+            cursor: sourceCursor,
+            message: safeErrorMessage(error, expectedSecret),
+          })
+        }
+        if (!accepted && released && recoveryRound + 1 < CONTINUATION_RECOVERY_ROUNDS) {
+          await deps.sleep(CHAIN_FETCH_RETRY_DELAY_MS)
+          await makeContinuationCallback(sourceCursor, recoveryRound + 1)()
+        }
+      }
+    }
+
+    if (!claim.acquired || !claim.ownerToken) {
+      deps.log("batch_duplicate", {
+        executionId,
+        cursor: claim.cursor,
+        state: claim.state,
+      })
+      if (
+        claim.state === "completed" &&
+        (claim.continuationState === "pending" || claim.continuationState === "dispatching")
+      ) {
+        // Recupera a MESMA continuacao persistente que ainda nao foi aceita.
+        // O claim atomico impede que duplicatas concorrentes criem duas e decide
+        // se uma lease ainda ativa em `dispatching` pode ou nao ser retomada.
+        deps.afterResponse(makeContinuationCallback(claim.cursor))
+      }
+      return NextResponse.json(
+        {
+          ok: true,
+          accepted: true,
+          alreadyAccepted: true,
+          executionId,
+          cursor: claim.cursor,
+          state: claim.state,
+        },
+        { status: claim.state === "completed" ? 200 : 202 },
+      )
+    }
+
+    const cursor = claim.cursor
+    const limit = claim.limit
+    const chainDepth = claim.chainDepth
+    const shouldChain = claim.shouldChain
+    const shouldRevalidateGlobalFichaCache = claim.revalidateRequested
+    const ownerToken = claim.ownerToken
+    let continuationCallback: AfterResponseCallback | null = null
+
+    const processBatch = async () => {
+      const inicio = deps.now()
 
     // Processa paginas ate esgotar o universo ou o orcamento da invocacao.
     // E o que mantem o numero de hops encadeados baixo o bastante para nunca
@@ -205,14 +411,22 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     let paginas = 0
 
     for (;;) {
+      const leaseRenewed = await deps.runStore.renewBatchLease({
+        executionId,
+        cursor,
+        ownerToken,
+        leaseSeconds: BATCH_LEASE_SECONDS,
+      })
+      if (!leaseRenewed) throw new Error("batch_lease_lost")
+
       let page: { candidatos: NewsCandidato[]; total: number }
       try {
         page = await deps.fetchCandidatoPage({ cursor: cursorAtual, limit })
       } catch (error) {
-        const message = error instanceof Error ? error.message : "unknown"
+        const message = safeErrorMessage(error, expectedSecret)
         deps.log("candidato_page_failed", { cursor: cursorAtual, limit, message })
         if (paginas === 0) {
-          return NextResponse.json({ error: "Could not load candidates" }, { status: 503 })
+          throw new Error("candidate_page_failed")
         }
         // Falha no meio da invocacao: o que ja foi processado esta gravado, e o
         // encadeamento abaixo retoma deste cursor em vez de perder a cauda.
@@ -230,16 +444,27 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       summary.errors.push(...pagina.errors)
       summary.coletas.push(...pagina.coletas)
 
+      // `refreshNews` usa upsert idempotente. Antes do append em coleta_log,
+      // renova e confere o fencing token outra vez: um owner que perdeu a
+      // lease durante a leitura longa nao pode duplicar o rastro append-only.
+      const leaseStillOwned = await deps.runStore.renewBatchLease({
+        executionId,
+        cursor,
+        ownerToken,
+        leaseSeconds: BATCH_LEASE_SECONDS,
+      })
+      if (!leaseStillOwned) throw new Error("batch_lease_lost_after_refresh")
+
       // Rastro de tentativa em coleta_log (regra do projeto: toda coleta, com
       // ou sem achado, deixa rastro), gravado por pagina para o progresso
       // persistir mesmo se a invocacao morrer no meio. Telemetria nunca
       // derruba o lote: falha aqui vira log e a resposta segue com
       // coletaLogOk=false.
       try {
-        await deps.registrarColetas(pagina.coletas)
+        await deps.registrarColetas(pagina.coletas, executionId, cursorAtual)
       } catch (error) {
         coletaLogOk = false
-        const message = error instanceof Error ? error.message.slice(0, 300) : "unknown"
+        const message = safeErrorMessage(error, expectedSecret)
         deps.log("coleta_log_failed", {
           cursor: cursorAtual,
           linhas: pagina.coletas.length,
@@ -250,7 +475,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       paginas += 1
       cursorAtual += page.candidatos.length
       if (cursorAtual >= total) break
-      if (Date.now() - inicio >= deps.invocationBudgetMs) break
+      if (deps.now() - inicio >= deps.invocationBudgetMs) break
       await deps.sleep(PAGE_PAUSE_MS)
     }
 
@@ -268,54 +493,16 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       deps.log("chain_origin_rejected", { origem: origemBruta, motivo: origem.motivo, nextCursor })
     }
 
-    if (hasMore && shouldChain && origem.ok) {
-      const nextUrl = new URL(req.nextUrl.pathname, origem.origin)
-      nextUrl.searchParams.set("cursor", String(nextCursor))
-      nextUrl.searchParams.set("limit", String(limit))
-      nextUrl.searchParams.set("chain", "1")
-      nextUrl.searchParams.set("depth", String(chainDepth + 1))
-      if (shouldRevalidateGlobalFichaCache) {
-        nextUrl.searchParams.set("revalidate", "1")
-      }
+    const chainScheduled = hasMore && shouldChain && origem.ok
+    const completed = await deps.runStore.completeBatch({
+      executionId,
+      cursor,
+      ownerToken,
+      nextCursor: chainScheduled ? nextCursor : null,
+    })
+    if (!completed) throw new Error("batch_completion_fenced")
 
-      deps.afterResponse(async () => {
-        for (let attempt = 1; attempt <= CHAIN_FETCH_ATTEMPTS; attempt += 1) {
-          const ultimaTentativa = attempt === CHAIN_FETCH_ATTEMPTS
-          const eventoDeFalha = ultimaTentativa ? "chain_fetch_failed" : "chain_fetch_retry"
-          // Prazo por tentativa. Sem ele, um POST interno que trava nunca
-          // devolve: o loop nao tenta de novo, nao registra chain_fetch_failed
-          // e os candidatos restantes ficam sem nova invocacao.
-          const controller = new AbortController()
-          const timer = setTimeout(() => controller.abort(), CHAIN_FETCH_TIMEOUT_MS)
-          try {
-            const res = await deps.fetchImpl(nextUrl.toString(), {
-              method: "POST",
-              headers: { Authorization: `Bearer ${expectedSecret}` },
-              cache: "no-store",
-              // Um redirect aqui e sempre bug (SSO, dominio errado): seguir o 3xx
-              // esconderia a falha de novo.
-              redirect: "manual",
-              signal: controller.signal,
-            })
-            if (res.ok) return
-            deps.log(eventoDeFalha, { nextCursor, status: res.status, attempt })
-          } catch (error) {
-            const message =
-              error instanceof Error && error.name === "AbortError"
-                ? "timeout"
-                : error instanceof Error
-                  ? error.message.slice(0, 300)
-                  : "unknown"
-            deps.log(eventoDeFalha, { nextCursor, message, attempt })
-          } finally {
-            clearTimeout(timer)
-          }
-          if (!ultimaTentativa) {
-            await deps.sleep(CHAIN_FETCH_RETRY_DELAY_MS)
-          }
-        }
-      })
-    }
+    if (chainScheduled) continuationCallback = makeContinuationCallback(cursor)
 
     // Execucao manual explicita: permite flush global quando o operador aceita o
     // custo. O cron padrao deixa o Data Cache expirar naturalmente (~1h), evitando
@@ -348,6 +535,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     }
 
     deps.log("batch_complete", {
+      executionId,
       cursor,
       limit,
       chainDepth,
@@ -359,9 +547,9 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
       errorCount: summary.errors.length,
       coletaLinhas: summary.coletas.length,
       coletaLogOk,
-      duracaoMs: Date.now() - inicio,
+      duracaoMs: deps.now() - inicio,
       nextCursor: hasMore ? nextCursor : null,
-      chainScheduled: hasMore && shouldChain,
+      chainScheduled,
       revalidated: revalidatedTag,
       revalidateRequested: shouldRevalidateGlobalFichaCache,
       total,
@@ -371,6 +559,7 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
     return NextResponse.json(
       {
         ok: !degradado,
+        executionId,
         degradado: degradado
           ? { loteInteiroFalhou, filaTruncada, motivo: loteInteiroFalhou ? "todos os candidatos do lote falharam" : "teto de encadeamento atingido com fila pendente" }
           : null,
@@ -386,13 +575,101 @@ export function createNewsRefreshHandler(deps: NewsRefreshHandlerDeps = defaultD
         coletaLinhas: summary.coletas.length,
         coletaLogOk,
         nextCursor: hasMore ? nextCursor : null,
-        chainScheduled: hasMore && shouldChain,
+        chainScheduled,
         revalidated: revalidatedTag,
         revalidateRequested: shouldRevalidateGlobalFichaCache,
         total,
       },
       { status },
     )
+    }
+
+    const runOwnedBatch = async () => {
+      try {
+        const response = await processBatch()
+        if (continuationCallback) {
+          if (isChainedInvocation) await continuationCallback()
+          else deps.afterResponse(continuationCallback)
+        }
+        return response
+      } catch (error) {
+        const message = safeErrorMessage(error, expectedSecret)
+        let retryableReleased = false
+        try {
+          retryableReleased = await deps.runStore.markBatchRetryable({
+            executionId,
+            cursor,
+            ownerToken,
+            error: "processing_failed",
+          })
+        } catch (stateError) {
+          deps.log("batch_retry_state_failed", {
+            executionId,
+            cursor,
+            message: safeErrorMessage(stateError, expectedSecret),
+          })
+        }
+        deps.log("batch_failed", { executionId, cursor, message })
+        if (isChainedInvocation && retryableReleased && recoveryAttempt < 1) {
+          await deps.sleep(CHAIN_FETCH_RETRY_DELAY_MS)
+          const origem = validarOrigemEncadeamento(resolveChainOrigin(req))
+          if (origem.ok) {
+            const retryUrl = new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, origem.origin)
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), CHAIN_FETCH_TIMEOUT_MS)
+            try {
+              const recoveryResponse = await deps.fetchImpl(retryUrl.toString(), {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${expectedSecret}`,
+                  [NEWS_REFRESH_EXECUTION_HEADER]: executionId,
+                  [BATCH_RECOVERY_HEADER]: String(recoveryAttempt + 1),
+                },
+                cache: "no-store",
+                redirect: "manual",
+                signal: controller.signal,
+              })
+              if (!recoveryResponse.ok) {
+                deps.log("batch_recovery_failed", {
+                  executionId,
+                  cursor,
+                  status: recoveryResponse.status,
+                })
+              }
+            } catch (recoveryError) {
+              deps.log("batch_recovery_failed", {
+                executionId,
+                cursor,
+                message: safeErrorMessage(recoveryError, expectedSecret),
+              })
+            } finally {
+              clearTimeout(timer)
+            }
+          }
+        }
+        return NextResponse.json({ error: "Batch processing failed", executionId, cursor }, { status: 503 })
+      }
+    }
+
+    if (isChainedInvocation) {
+      deps.afterResponse(async () => {
+        await runOwnedBatch()
+      })
+      deps.log("batch_accepted", { executionId, cursor })
+      return NextResponse.json(
+        {
+          ok: true,
+          accepted: true,
+          alreadyAccepted: false,
+          executionId,
+          cursor,
+          state: "processing",
+        },
+        { status: 202 },
+      )
+    }
+
+    return runOwnedBatch()
   }
 }
 
