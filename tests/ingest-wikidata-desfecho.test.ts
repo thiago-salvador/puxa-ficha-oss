@@ -238,14 +238,24 @@ describe("ingestWikidata: desfecho da coleta", () => {
       name: "url preenchida e username vazio",
       current: {
         username: "",
-        url: "https://instagram.com/perfil_wikidata",
+        url: "https://instagram.com/perfil_curado_por_url",
         campo_desconhecido: true,
       },
       expected: {
-        username: "perfil_wikidata",
-        url: "https://instagram.com/perfil_wikidata",
+        username: "perfil_curado_por_url",
+        url: "https://instagram.com/perfil_curado_por_url",
         campo_desconhecido: true,
       },
+    },
+    {
+      name: "url local nao reconhecivel nao recebe username remoto",
+      current: {
+        username: "",
+        url: "https://perfil-curado.example/instagram",
+        followers: 456,
+        campo_desconhecido: "preservado",
+      },
+      expected: null,
     },
     {
       name: "objeto completo preservado",

@@ -75,21 +75,54 @@ function textoSocialNaoVazio(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
 }
 
+function usernameInstagramDaUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    const hostsValidos = new Set(["instagram.com", "www.instagram.com", "m.instagram.com"])
+    if (!hostsValidos.has(url.hostname.toLowerCase())) return null
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null
+    if (url.username || url.password || url.port) return null
+
+    const segmentos = url.pathname.split("/").filter(Boolean)
+    if (segmentos.length !== 1) return null
+
+    const username = decodeURIComponent(segmentos[0])
+    const caminhosReservados = new Set([
+      "accounts", "direct", "explore", "p", "reel", "reels", "stories", "tv",
+    ])
+    if (caminhosReservados.has(username.toLowerCase())) return null
+    return /^[A-Za-z0-9._]+$/.test(username) ? username : null
+  } catch {
+    return null
+  }
+}
+
 function mergeInstagramPorPropriedade(
   atual: InstagramSocial | undefined,
   usernameWikidata: string,
 ): InstagramSocial {
-  const usernameFinal = textoSocialNaoVazio(atual?.username)
-    ? atual.username
-    : usernameWikidata
-  const urlFinal = textoSocialNaoVazio(atual?.url)
-    ? atual.url
-    : `https://instagram.com/${usernameFinal}`
+  const usernameLocal = textoSocialNaoVazio(atual?.username) ? atual.username : null
+  const urlLocal = textoSocialNaoVazio(atual?.url) ? atual.url : null
+
+  if (usernameLocal) {
+    return {
+      ...atual,
+      username: usernameLocal,
+      url: urlLocal ?? `https://instagram.com/${usernameLocal}`,
+    }
+  }
+
+  if (urlLocal) {
+    const usernameDaUrl = usernameInstagramDaUrl(urlLocal)
+    return usernameDaUrl
+      ? { ...atual, username: usernameDaUrl, url: urlLocal }
+      : { ...atual }
+  }
 
   return {
     ...atual,
-    username: usernameFinal,
-    url: urlFinal,
+    username: usernameWikidata,
+    url: `https://instagram.com/${usernameWikidata}`,
   }
 }
 
