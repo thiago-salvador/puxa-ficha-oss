@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { conferirReembolsos } from "../scripts/lib/ingest-jarbas"
+import { conferirReembolsos, declararJarbasNaoAplicavel } from "../scripts/lib/ingest-jarbas"
+import type { IngestResult } from "../scripts/lib/types"
 import { agregarDespesasDoAno } from "../scripts/lib/ingest-ceaps-senado"
 
 // Irmaos do incidente de 2026-08-04 (sancoes com `cpfCnpj`, parametro que a API
@@ -75,6 +76,22 @@ test("jarbas: reembolsos do proprio deputado passam (guard nao rejeita tudo)", (
   const conferencia = conferirReembolsos([reembolso(), reembolso({ document_id: 2 })], DEPUTADO)
   assert.equal(conferencia.ok, true)
   assert.equal(conferencia.ok && conferencia.reembolsos.length, 2)
+})
+
+test("jarbas: candidato sem ID da Camara e nao aplicavel, nao indeterminado", () => {
+  const resultado: IngestResult = {
+    source: "jarbas",
+    candidato: "sem-id-camara",
+    tables_updated: [],
+    rows_upserted: 0,
+    errors: [],
+    duration_ms: 0,
+  }
+
+  declararJarbasNaoAplicavel(resultado)
+
+  assert.equal(resultado.coleta_resultado, "nao_aplicavel")
+  assert.match(resultado.coleta_detalhe ?? "", /sem ID da Camara/)
 })
 
 test("jarbas: lista vazia passa e nao inventa reembolso", () => {
