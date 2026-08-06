@@ -1658,8 +1658,9 @@ explicada e interativa. Nenhum processo foi publicado.
 
 ## Revisão final editorial de processos (2026-08-06)
 
-**Estado:** os 204 CNJs foram reconciliados em 56 publicáveis, 13 ligados a
-pontos de atenção aprovados, 108 não publicáveis e 27 bloqueios concretos.
+**Estado:** os 204 CNJs foram editorialmente reconciliados em 56 publicáveis,
+13 ligados a pontos de atenção aprovados, 108 não publicáveis e 27 bloqueios
+concretos.
 Nenhum dado foi escrito no Supabase.
 
 - Os 47 casos de pesquisa foram revisados em lotes de 20, 20 e 7, com sete
