@@ -108,7 +108,7 @@ ALTER TABLE public.candidatos
   CHECK (status IN ('pre-candidato', 'candidato', 'indeferido', 'desistente', 'removido'));
 
 COMMENT ON CONSTRAINT candidatos_status_dominio ON public.candidatos IS
-  'Espelha o union de status em src/lib/types.ts. Mudou lá, muda aqui na mesma PR.';
+  'Espelha o union de status em src/lib/types.ts. Mudou la, muda aqui na mesma PR.';
 
 -- ---------------------------------------------------------------------------
 -- Conferência.
