@@ -1623,3 +1623,35 @@ processos no snapshot inicial.
   `check:scripts`, typecheck, ESLint, `git diff --check`, readback do Supabase e
   renderização real do relatório.
 [codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
+
+---
+
+## Correção do handoff editorial de processos (2026-08-05)
+
+**Estado:** a lista bruta de 204 CNJs foi substituída por uma revisão editorial
+explicada e interativa. Nenhum processo foi publicado.
+
+- O CSV anterior era um inventário técnico e não dava base suficiente para uma
+  aprovação responsável.
+- Dois revisores independentes classificaram os 204 registros, e uma auditoria
+  principal reconciliou as recomendações pela régua I/R/P/S/D/L: identidade,
+  papel direto, interesse público, estado oficial, família deduplicada e
+  linguagem neutra.
+- A primeira reconciliação foi rejeitada por ser caridosa demais: ela usava
+  falta de interesse público como motivo para apagar processos pessoais e
+  confundia ausência de acusação pessoal com ausência de interesse editorial.
+- A auditoria adversarial dos 157 descartes manteve só 86 como exclusões
+  seguras. A classificação corrigida tem 6 `publicar em Processos`, 65 CNJs que
+  sustentam 6 pontos de atenção agregados, 47 `pesquisar mais` e 86 exclusões.
+  O total foi conferido contra a evidência: 204 CNJs únicos, sem ausência,
+  duplicata ou item extra.
+- A página
+  `~/.disposable-html/2026-08-05-puxa-ficha-processos-revisao-editorial.descartavel.html`
+  explica cada decisão, mantém a recomendação pré-marcada e registra a escolha
+  de Thiago sem escrever no Supabase.
+- O fluxo corrigido foi testado em navegador automatizado, sem abrir o Comet:
+  uma recomendação foi alterada para ponto de atenção, a instrução livre foi
+  enviada por `POST /aplicar` e o JSON resultante preservou as 204 decisões. O
+  teste não publicou ficha nem alterou dados.
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]
