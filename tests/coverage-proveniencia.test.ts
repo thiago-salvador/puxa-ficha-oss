@@ -150,13 +150,26 @@ test("'encontrado' com célula zerada não vira zero provado", () => {
   assert.equal(provenienciaDoZero("sancoes", todas("sancoes", "encontrado")), "coletado")
 })
 
-test("coluna sem ingest é 'sem fonte', e não promete coleta que não existe", () => {
-  // Processos judiciais não têm ingest: os registros que existem vieram de
-  // curadoria manual. Marcar como 'nunca verificado' sugeriria uma coleta
-  // pendente de rodar, e não há nenhuma.
-  assert.deepEqual(FONTES_POR_COLUNA.processos, [])
-  assert.equal(provenienciaDoZero("processos", {}), "sem_ingest")
-  assert.equal(provenienciaDoZero("processos", undefined), "sem_ingest")
+test("processos e contradições têm procedência de curadoria manual", () => {
+  assert.deepEqual(FONTES_POR_COLUNA.processos, ["processos-curadoria"])
+  assert.deepEqual(FONTES_POR_COLUNA.contradicoes, ["contradicoes-curadoria"])
+  assert.equal(provenienciaDoZero("processos", {}), "nunca_verificado")
+  assert.equal(provenienciaDoZero("processos", undefined), "desconhecida")
+})
+
+test("tentativa artificial não fecha cobertura de curadoria", () => {
+  const tentativa: ColetaPorFonte = {
+    "contradicoes-curadoria": { resultado: "indeterminado" }
+  }
+  assert.equal(provenienciaDoZero("contradicoes", tentativa), "nao_sabemos")
+
+  const concluida: ColetaPorFonte = {
+    "contradicoes-curadoria": { resultado: "sem_achado_no_escopo" }
+  }
+  assert.equal(
+    provenienciaDoZero("contradicoes", concluida),
+    "curadoria_concluida_sem_achado"
+  )
 })
 
 test("célula com dado não recebe procedência", () => {

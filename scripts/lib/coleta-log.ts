@@ -45,6 +45,7 @@ import type { IngestResult } from "./types"
 export type ResultadoColeta =
   | "encontrado"
   | "vazio_confirmado"
+  | "sem_achado_no_escopo"
   | "nao_aplicavel"
   | "erro"
   | "indeterminado"
@@ -96,6 +97,8 @@ export const FONTES: Readonly<Record<string, EscopoColeta>> = Object.freeze({
   "wikidata-politico": "candidato",
   instagram: "candidato",
   "google-news": "candidato",
+  "processos-curadoria": "candidato",
+  "contradicoes-curadoria": "candidato",
   // Backfill dedicado de CPF (scripts/backfill-cpf-tse.ts). Fonte própria de
   // propósito: gravar como `tse` sobrescreveria, em `coleta_log_ultima`, a
   // última tentativa real do ingest do TSE (perfil/patrimônio/financiamento)
@@ -180,6 +183,18 @@ export function normalizarEntrada(entrada: EntradaColeta): {
 /** Grava uma tentativa. Nunca lança. */
 export async function registrarColeta(entrada: EntradaColeta): Promise<void> {
   await registrarColetas([entrada])
+}
+
+/**
+ * Variante estrita para comandos manuais: se a escrita falhar, o processo
+ * precisa falhar também, em vez de anunciar uma revisão que não deixou rastro.
+ * Ingests continuam usando `registrarColeta(s)`, cujo contrato é nunca lançar.
+ */
+export async function registrarColetaOuFalhar(entrada: EntradaColeta): Promise<void> {
+  const ids = await carregarCandidatoIds()
+  const linhas = montarLinhas([entrada], ids)
+  const { error } = await supabase.from("coleta_log").insert(linhas)
+  if (error) throw new Error(error.message)
 }
 
 /** Uma linha de `public.coleta_log`, exatamente como o insert a envia. */

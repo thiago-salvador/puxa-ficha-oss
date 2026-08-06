@@ -75,12 +75,21 @@ describe("provenienciaDaColuna separa o zero provado do zero presumido", () => {
     assert.equal(provenienciaDaColuna("projetos", coleta).veredito, "coletado")
   })
 
-  it("coluna so de curadoria nao cobra coleta que nao existe", () => {
-    // processos_judiciais tem 30 linhas vindas de STF, MP-RJ e imprensa, uma a
-    // uma. Nenhum ingest escreve ali, entao "nunca verificado" seria acusacao
-    // contra um pipeline inexistente.
-    assert.equal(provenienciaDaColuna("processos", {}).veredito, "sem_ingest")
+  it("curadoria manual ganha procedência sem fingir ingest automático", () => {
+    assert.deepEqual(FONTES_POR_COLUNA.processos, ["processos-curadoria"])
+    assert.deepEqual(FONTES_POR_COLUNA.contradicoes, ["contradicoes-curadoria"])
+    assert.equal(provenienciaDaColuna("processos", {}).veredito, "nunca_verificado")
     assert.equal(provenienciaDaColuna("posicoes", {}).veredito, "sem_ingest")
+  })
+
+  it("contradição sem achado no escopo não vira ausência comprovada", () => {
+    const coleta: ColetaPorFonte = {
+      "contradicoes-curadoria": { resultado: "sem_achado_no_escopo" }
+    }
+    assert.equal(
+      provenienciaDaColuna("contradicoes", coleta).veredito,
+      "curadoria_concluida_sem_achado"
+    )
   })
 
   it("coluna fora do mapa nunca vira zero provado por acidente", () => {
