@@ -65,6 +65,26 @@ test("normalizePatrimonioForDisplay mantém anos ou valores distintos", () => {
   assert.equal(out.length, 3)
 })
 
+test("normalizePatrimonioForDisplay remove marcadores TSE dos bens sem perder o valor", () => {
+  const row: Patrimonio = {
+    id: "pat-marker",
+    candidato_id: "c-a",
+    ano_eleicao: 2018,
+    valor_total: 101_000,
+    bens: [
+      { tipo: "Apartamento", descricao: "#NULO#", valor: 100_000 },
+      { tipo: "#NE#", descricao: "TSE: #NULO#", valor: 1_000 },
+    ],
+  }
+
+  const out = normalizePatrimonioForDisplay([row])
+
+  assert.deepEqual(out[0]?.bens, [
+    { tipo: "Apartamento", descricao: "", valor: 100_000 },
+    { tipo: "", descricao: "TSE:", valor: 1_000 },
+  ])
+})
+
 test("normalizeFinanciamentoForDisplay colapsa duplicata entre slugs da mesma pessoa e deduplica doadores repetidos", () => {
   const rowA: Financiamento = {
     id: "fin-a",

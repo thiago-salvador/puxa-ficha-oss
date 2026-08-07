@@ -16,6 +16,7 @@ import {
   resolveCargoDisputadoProveniencia,
 } from "@/lib/candidatura-proveniencia"
 import { isTerminalProcessStatus } from "@/lib/processos-display"
+import { sanitizePublicText } from "@/lib/public-text"
 
 const DOCUMENT_LIKE_SEQUENCE_RE =
   /(^|[^\d])((?:\d{3}\.?\d{3}\.?\d{3}-?\d{2})|(?:\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|\d{11}|\d{14})(?=$|[^\d])/g
@@ -38,7 +39,7 @@ function maskNullableText(value: string | null | undefined): string | null {
 const WIKIDATA_QID_ONLY_RE = /^Q\d+$/i
 
 function replaceInternalEditorialJargon(value: string): string {
-  return maskDocumentLikeSequences(value)
+  return sanitizePublicText(maskDocumentLikeSequences(value))
     .replace(/\bconsulta_cand(?:_[0-9]{4})?\b/gi, "base oficial de candidaturas do TSE")
     .replace(/\bSQ_CANDIDATO\b/gi, "identificador oficial do TSE")
     .replace(/\buma?\s+row\b/gi, "um registro")
@@ -105,7 +106,7 @@ function publicPatrimonio(row: Patrimonio, index: number) {
     ano_eleicao: row.ano_eleicao,
     valor_total: row.valor_total,
     bens: (row.bens ?? []).map((bem) => ({
-      tipo: bem.tipo,
+      tipo: sanitizePublicText(bem.tipo),
       descricao: replaceInternalEditorialJargon(bem.descricao ?? ""),
       valor: bem.valor,
     })),

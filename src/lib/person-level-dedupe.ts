@@ -1,4 +1,5 @@
 import type { BemDeclarado, Doador, Financiamento, Patrimonio } from "@/lib/types"
+import { sanitizePublicText } from "@/lib/public-text"
 
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100
@@ -49,7 +50,13 @@ function patrimonioRichness(row: Patrimonio): number {
 function normalizePatrimonioRow<T extends Patrimonio>(row: T): T {
   return {
     ...row,
-    bens: dedupeBensForDisplay(row.bens),
+    bens: dedupeBensForDisplay(
+      (row.bens ?? []).map((bem) => ({
+        ...bem,
+        tipo: sanitizePublicText(bem.tipo),
+        descricao: sanitizePublicText(bem.descricao),
+      })),
+    ),
   }
 }
 

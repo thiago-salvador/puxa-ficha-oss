@@ -54,6 +54,7 @@ import {
   resolveExecutiveLegislationInventoryScope,
 } from "@/lib/legislacao-profile-groups"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
+import { sanitizePublicText } from "@/lib/public-text"
 import { buildFinancingComposition } from "@/lib/financiamento-display"
 
 const LEGISLACAO_PAGE_SIZE = 25
@@ -149,10 +150,10 @@ export function MoneyTabSection({
                       >
                         <div>
                           <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-                            {bem.tipo}
+                            {sanitizePublicText(bem.tipo) || "Tipo não informado"}
                           </span>
                           <p className="text-[length:var(--text-body-sm)] font-medium text-foreground">
-                            {bem.descricao}
+                            {sanitizePublicText(bem.descricao) || "Descrição não informada"}
                           </p>
                         </div>
                         <span className="ml-3 shrink-0 text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
@@ -664,11 +665,13 @@ function ExecutiveLegislationList({
   label = `Atos do Executivo no mandato (${items.length})`,
   title = "Legislação do Executivo",
   description = resolveExecutiveLegislationInventoryScope(items).listDescription,
+  featured = false,
 }: {
   items: LegislacaoMandatoExecutivo[]
   label?: string
   title?: string
   description?: string
+  featured?: boolean
 }) {
   const [page, setPage] = useState(1)
   const totalPages = Math.max(1, Math.ceil(items.length / LEGISLACAO_PAGE_SIZE))
@@ -721,12 +724,17 @@ function ExecutiveLegislationList({
               key={lei.id}
               data-pf-timeline-ref={`lme-${lei.id}`}
               data-pf-executive-legislation-card
-              className="max-w-full overflow-hidden rounded-[12px] border border-border/50 bg-card px-4 py-4 sm:px-5"
+              className={`max-w-full overflow-hidden rounded-[12px] border px-4 py-4 transition-colors sm:px-5 ${
+                featured
+                  ? "border-foreground/20 border-l-[4px] border-l-foreground bg-foreground/[0.025] shadow-[0_10px_24px_-20px_rgba(0,0,0,0.5)]"
+                  : "border-border/50 bg-card"
+              }`}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-0 break-words text-[length:var(--text-body)] font-bold text-foreground">
                   {identifier || "Norma"}
                 </span>
+                {featured && <MetaBadge tone="neutral">Destaque editorial</MetaBadge>}
                 <MetaBadge tone="muted">{tipoRelacaoLabel}</MetaBadge>
                 {lei.data_norma && (
                   <span className="text-[10px] font-semibold text-muted-foreground">
@@ -1106,6 +1114,7 @@ export function LegislationTabSection({
             label={`Destaques do Executivo (${groups.destaquesExecutivo.length})`}
             title="Destaques legislativos"
             description={groups.inventoryScope.featuredDescription}
+            featured
           />
           {groups.destaquesParlamentares.length > 0 && (
             <ProjetoLeiList

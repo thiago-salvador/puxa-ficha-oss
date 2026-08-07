@@ -290,6 +290,22 @@ describe("public profile DTO", () => {
     assert.deepEqual(findForbiddenPublicProfileKeys(dto), [])
   })
 
+  it("não publica marcadores técnicos de ausência do TSE", () => {
+    const ficha = fixtureProfile()
+    ficha.patrimonio[0].bens = [
+      { tipo: "Apartamento", descricao: "#NULO#", valor: 100_000 },
+      { tipo: "#NE#", descricao: "TSE: #NULO#", valor: 1_000 },
+    ]
+
+    const dto = toPublicCandidatoProfileDto(ficha)
+
+    assert.deepEqual(dto.patrimonio[0].bens, [
+      { tipo: "Apartamento", descricao: "", valor: 100_000 },
+      { tipo: "", descricao: "TSE:", valor: 1_000 },
+    ])
+    assert.doesNotMatch(JSON.stringify(dto), /#(?:NULO|NE)#?/i)
+  })
+
   it("não expõe QID ou jargão operacional como texto editorial", () => {
     const ficha = fixtureProfile()
     ficha.profissao_declarada = "Q12345"

@@ -79,3 +79,17 @@ test("positive points never count as negative grave alerts", () => {
   assert.equal(isNegativeCriticalAttentionPoint(mixedPoints[3]), false)
   assert.equal(isNegativeHighestSeverityAttentionPoint(mixedPoints[3]), false)
 })
+
+test("historical judicial information with low gravity stays out of grave alerts", () => {
+  const historical = {
+    ...mixedPoints[0],
+    id: "historical-judicial",
+    titulo: "STF anulou a ação por incompetência do juízo",
+    gravidade: "baixa" as const,
+  }
+
+  const result = classifyAttentionPoints([historical])
+
+  assert.deepEqual(result.alertasGraves, [])
+  assert.deepEqual(result.alertasNaoPositivos.map((item) => item.id), ["historical-judicial"])
+})
