@@ -1,5 +1,39 @@
 # Status atual
 
+Snapshot verificado em **07/08/2026** (workflow `pf-patrimonio-20260807T170643Z`).
+Este arquivo descreve o estado observado nessa data. Reexecute os gates antes
+de usá-lo como prova futura.
+
+## Snapshot 07/08/2026: patrimônio por eleição e candidaturas na trajetória
+
+- Banco compartilhado: ledger reconciliado. Fantasma remoto `20260807144555`
+  removido; `20260807054000` (neutralização judicial, já aplicada por fora)
+  marcada no ledger. Aplicadas com allowlist fechada e readback:
+  `20260807180000` (4 candidaturas oficiais nunca ingeridas: cintia-dias 2012;
+  jayme-campos, jose-roberto-arruda e mailza-assis 2014), `20260807181000`
+  (tabela `patrimonio_ausencia_oficial` + 48 ausências oficiais 2010-2024,
+  confirmadas nos pacotes `bem_candidato` lidos de ponta a ponta, sem valor
+  fabricado) e `20260807182000` (27 lacunas de bens 2006-2024 com fonte
+  rastreável). Células de 2026 ficam de fora até o snapshot do TSE estabilizar.
+- Migrations pendentes (pertencem ao gate de completude maior, não aplicadas):
+  `20260807050000` a `20260807053000`.
+- Código: eleição colapsada com posse volta a aparecer como candidatura no ano
+  do pleito (81 casos ocultos pela regra de display); API pública expõe
+  `patrimonio_eleicoes` por eleição aplicável (publicado, vazio_confirmado,
+  nao_coletado); ficha exibe ausência oficial com fonte e data. 2.165 testes
+  passando, gates verdes.
+- Cobertura pós-apply (`npm run audit:cobertura`, produção read-only): índice
+  médio 87,2; 37 fichas em 100; célula de patrimônio 92 ok / 67 parcial /
+  6 faltante / 29 n/a; 28 fichas com ausência confirmada. A régua agora mede
+  patrimônio por eleição aplicável (>= 2006), não por presença.
+- Produção: commit `0cf39b41` segue no ar; merge/deploy da branch
+  `codex/profiles-complete-2026` permanece no gate de completude.
+- Bloqueios remanescentes: snapshot 2026 do TSE parcial (13 ausências e 17
+  lacunas de 2026 adiadas); 27 slugs sem rota de casamento exata; pré-2010 fora
+  do universo de candidaturas (SQ antigo colide por UF).
+
+## Snapshot 06/08/2026 (anterior)
+
 Snapshot verificado em **06/08/2026**. Este arquivo descreve o estado observado
 nessa data. Reexecute os gates antes de usá-lo como prova futura.
 
