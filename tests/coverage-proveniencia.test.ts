@@ -178,6 +178,20 @@ test("célula com dado não recebe procedência", () => {
   assert.equal(cel.sancoes.proveniencia, undefined)
 })
 
+test("candidatura sem mandato continua sendo trajetória preenchida", () => {
+  const cel = calcularCelulas(candidato({
+    historico: [{
+      cargo_canonico: "Presidente",
+      tipo_evento: "candidatura",
+      periodo_inicio: 2022,
+      periodo_fim: 2022,
+    }],
+  })).cargos
+
+  assert.equal(cel.state, "ok")
+  assert.equal(cel.text, "0 mandatos · 1 candidatura")
+})
+
 test("origem técnica da foto não altera o índice nem presume direitos", () => {
   const local = calcularCelulas(candidato({ foto: true, foto_origem: "local" })).foto_origem
   const oficial = calcularCelulas(candidato({ foto: true, foto_origem: "tse" })).foto_origem

@@ -15,6 +15,7 @@ import {
   buildCargoDisputadoProvenienceNote,
   resolveCargoDisputadoProveniencia,
 } from "@/lib/candidatura-proveniencia"
+import { isTerminalProcessStatus } from "@/lib/processos-display"
 
 const DOCUMENT_LIKE_SEQUENCE_RE =
   /(^|[^\d])((?:\d{3}\.?\d{3}\.?\d{3}-?\d{2})|(?:\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|\d{11}|\d{14})(?=$|[^\d])/g
@@ -31,7 +32,29 @@ export function maskDocumentLikeSequences(value: string | null | undefined): str
 
 function maskNullableText(value: string | null | undefined): string | null {
   if (value == null) return null
+  return replaceInternalEditorialJargon(value)
+}
+
+const WIKIDATA_QID_ONLY_RE = /^Q\d+$/i
+
+function replaceInternalEditorialJargon(value: string): string {
   return maskDocumentLikeSequences(value)
+    .replace(/\bconsulta_cand(?:_[0-9]{4})?\b/gi, "base oficial de candidaturas do TSE")
+    .replace(/\bSQ_CANDIDATO\b/gi, "identificador oficial do TSE")
+    .replace(/\buma?\s+row\b/gi, "um registro")
+    .replace(/\brows\b/gi, "registros")
+    .replace(/\brow\b/gi, "registro")
+}
+
+function publicTaxonomyValue(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const sanitized = replaceInternalEditorialJargon(value).trim()
+  if (!sanitized || WIKIDATA_QID_ONLY_RE.test(sanitized)) return null
+  if (sanitized.length > 4 && sanitized === sanitized.toLocaleUpperCase("pt-BR")) {
+    const lower = sanitized.toLocaleLowerCase("pt-BR")
+    return lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1)
+  }
+  return sanitized
 }
 
 function hashPublicId(value: string): string {
@@ -59,7 +82,9 @@ function publicHistorico(row: HistoricoPolitico, index: number) {
     estado: row.estado,
     eleito_por: row.eleito_por,
     observacoes: maskNullableText(row.observacoes),
-    proveniencia: row.proveniencia ?? null,
+    proveniencia: row.proveniencia == null
+      ? null
+      : replaceInternalEditorialJargon(row.proveniencia),
   }
 }
 
@@ -81,7 +106,7 @@ function publicPatrimonio(row: Patrimonio, index: number) {
     valor_total: row.valor_total,
     bens: (row.bens ?? []).map((bem) => ({
       tipo: bem.tipo,
-      descricao: maskDocumentLikeSequences(bem.descricao),
+      descricao: replaceInternalEditorialJargon(bem.descricao ?? ""),
       valor: bem.valor,
     })),
   }
@@ -96,6 +121,7 @@ function publicFinanciamento(row: Financiamento, index: number) {
     total_fundo_eleitoral: row.total_fundo_eleitoral,
     total_pessoa_fisica: row.total_pessoa_fisica,
     total_recursos_proprios: row.total_recursos_proprios,
+    categorias_origem: row.categorias_origem ?? null,
     maiores_doadores: (row.maiores_doadores ?? []).map((doador) => ({
       nome: doador.nome,
       valor: doador.valor,
@@ -132,7 +158,7 @@ function publicProcesso(row: Processo, index: number) {
     tipo: row.tipo,
     tribunal: row.tribunal,
     numero_processo: row.numero_processo,
-    descricao: maskDocumentLikeSequences(row.descricao),
+    descricao: replaceInternalEditorialJargon(row.descricao ?? ""),
     status: row.status,
     data_inicio: row.data_inicio,
     data_decisao: row.data_decisao,
@@ -145,9 +171,9 @@ function publicPontoAtencao(row: PontoAtencao, index: number) {
     id: compactPublicId("ponto", row.id, index),
     categoria: row.categoria,
     titulo: row.titulo,
-    descricao: maskDocumentLikeSequences(row.descricao),
+    descricao: replaceInternalEditorialJargon(row.descricao ?? ""),
     fontes: (row.fontes ?? []).map((fonte) => ({
-      titulo: fonte.titulo,
+      titulo: replaceInternalEditorialJargon(fonte.titulo),
       url: fonte.url,
       data: fonte.data,
     })),
@@ -297,8 +323,8 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     data_nascimento: ficha.data_nascimento,
     idade: ficha.idade,
     naturalidade: ficha.naturalidade,
-    formacao: ficha.formacao,
-    profissao_declarada: ficha.profissao_declarada,
+    formacao: publicTaxonomyValue(ficha.formacao),
+    profissao_declarada: publicTaxonomyValue(ficha.profissao_declarada),
     genero: ficha.genero ?? null,
     estado_civil: ficha.estado_civil ?? null,
     cor_raca: ficha.cor_raca ?? null,
@@ -316,12 +342,13 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     estado: ficha.estado,
     status: ficha.status,
     situacao_candidatura: ficha.situacao_candidatura ?? null,
-    biografia: maskNullableText(ficha.biografia),
+    biografia: ficha.biografia == null ? null : replaceInternalEditorialJargon(ficha.biografia),
     foto_url: ficha.foto_url,
     site_campanha: ficha.site_campanha,
     redes_sociais: publicSocialLinks(ficha.redes_sociais),
-    fonte_dados: [...(ficha.fonte_dados ?? [])],
+    fonte_dados: (ficha.fonte_dados ?? []).map(replaceInternalEditorialJargon),
     ultima_atualizacao: ficha.ultima_atualizacao,
+    verificacao_campos: ficha.verificacao_campos ?? null,
     historico: (ficha.historico ?? []).map(publicHistorico),
     mudancas_partido: (ficha.mudancas_partido ?? []).map(publicMudancaPartido),
     patrimonio: (ficha.patrimonio ?? []).map(publicPatrimonio),
@@ -345,7 +372,9 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     noticias: (ficha.noticias ?? []).map(publicNoticia),
     indicadores_estaduais: (ficha.indicadores_estaduais ?? []).map(publicIndicador),
     total_processos: ficha.total_processos,
-    processos_criminais: ficha.processos_criminais,
+    processos_criminais: (ficha.processos ?? []).filter(
+      (processo) => processo.tipo === "criminal" && !isTerminalProcessStatus(processo.status)
+    ).length,
     total_mudancas_partido: ficha.total_mudancas_partido,
     total_pontos_atencao: ficha.total_pontos_atencao,
     pontos_criticos: ficha.pontos_criticos,
@@ -355,6 +384,7 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     // fonte nunca foi consultada (null). Zero provado e zero presumido não
     // podem ter a mesma cara nem no JSON.
     sancoes_verificacao: ficha.sancoes_verificacao ?? null,
+    processos_verificacao: ficha.processos_verificacao ?? null,
     historico_descartado: ficha.historico_descartado ?? 0,
     historico_em_revisao: ficha.historico_em_revisao ?? false,
     timeline_partidaria_incompleta: ficha.timeline_partidaria_incompleta ?? false,

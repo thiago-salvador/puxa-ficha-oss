@@ -434,8 +434,15 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
   )
 
   const mandatos = c.historico.filter((h) => h.tipo_evento === "mandato").length
-  out.cargos =
-    mandatos > 0 ? cell("ok", String(mandatos)) : cellZero("cargos", c, "nenhum mandato registrado")
+  const candidaturas = c.historico.filter((h) => h.tipo_evento === "candidatura").length
+  const eventosTrajetoria = mandatos + candidaturas
+  out.cargos = eventosTrajetoria > 0
+    ? cell(
+        "ok",
+        `${mandatos} mandato${mandatos === 1 ? "" : "s"} · ${candidaturas} candidatura${candidaturas === 1 ? "" : "s"}`,
+        "trajetória eleitoral: mandatos e candidaturas são contados separadamente",
+      )
+    : cellZero("cargos", c, "nenhum evento eleitoral registrado")
   out.partidos =
     c.mudancas > 0
       ? cell("ok", String(c.mudancas))

@@ -289,4 +289,30 @@ describe("public profile DTO", () => {
     assert.equal(dto.gastos_parlamentares[0].gastos_destaque[0].descricao, "")
     assert.deepEqual(findForbiddenPublicProfileKeys(dto), [])
   })
+
+  it("não expõe QID ou jargão operacional como texto editorial", () => {
+    const ficha = fixtureProfile()
+    ficha.profissao_declarada = "Q12345"
+    ficha.formacao = "SUPERIOR COMPLETO"
+    ficha.biografia = "Identidade confirmada em consulta_cand pelo SQ_CANDIDATO."
+    ficha.fonte_dados = ["consulta_cand_2026"]
+    ficha.historico[0].observacoes = "Uma row da consulta_cand pelo SQ_CANDIDATO."
+    ficha.mudancas_partido[0].contexto = "row reconciliada em consulta_cand"
+
+    const dto = toPublicCandidatoProfileDto(ficha)
+    assert.equal(dto.profissao_declarada, null)
+    assert.equal(dto.formacao, "Superior completo")
+    assert.doesNotMatch(JSON.stringify(dto), /consulta_cand|SQ_CANDIDATO|Q12345/)
+    assert.doesNotMatch(JSON.stringify(dto), /\brow\b/i)
+  })
+
+  it("não conta processo criminal terminal no resumo público", () => {
+    const ficha = fixtureProfile()
+    ficha.processos[0].tipo = "criminal"
+    ficha.processos[0].status = "anulado"
+    ficha.processos_criminais = 1
+
+    const dto = toPublicCandidatoProfileDto(ficha)
+    assert.equal(dto.processos_criminais, 0)
+  })
 })

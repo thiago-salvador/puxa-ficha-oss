@@ -24,11 +24,24 @@ export interface SparqlBinding {
   idSenado?: { value: string }
 }
 
+type InstagramSocial = Record<string, unknown> & {
+  username?: string | null
+  url?: string | null
+  followers?: number | null
+}
+
 interface RedesSociais {
-  instagram?: { username: string; url: string; followers?: number | null }
+  instagram?: InstagramSocial | string
   twitter?: string
   facebook?: string
   site_oficial?: string
+}
+
+function temValorSocial(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  if (typeof value === "object") return Object.values(value).some(temValorSocial)
+  return true
 }
 
 const OPTIONAL_PROPS = `
@@ -56,6 +69,63 @@ export interface IngestWikidataDependencies {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function textoSocialNaoVazio(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
+
+function usernameInstagramDaUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    const hostsValidos = new Set(["instagram.com", "www.instagram.com", "m.instagram.com"])
+    if (!hostsValidos.has(url.hostname.toLowerCase())) return null
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null
+    if (url.username || url.password || url.port) return null
+
+    const segmentos = url.pathname.split("/").filter(Boolean)
+    if (segmentos.length !== 1) return null
+
+    const username = decodeURIComponent(segmentos[0])
+    const caminhosReservados = new Set([
+      "about", "accounts", "direct", "explore", "p", "privacy", "reel", "reels",
+      "stories", "terms", "tv",
+    ])
+    if (caminhosReservados.has(username.toLowerCase())) return null
+    return /^[A-Za-z0-9._]+$/.test(username) ? username : null
+  } catch {
+    return null
+  }
+}
+
+function mergeInstagramPorPropriedade(
+  atual: InstagramSocial | undefined,
+  usernameWikidata: string,
+): InstagramSocial {
+  const usernameLocal = textoSocialNaoVazio(atual?.username) ? atual.username : null
+  const urlLocal = textoSocialNaoVazio(atual?.url) ? atual.url : null
+
+  if (usernameLocal) {
+    return {
+      ...atual,
+      username: usernameLocal,
+      url: urlLocal ?? `https://instagram.com/${usernameLocal}`,
+    }
+  }
+
+  if (urlLocal) {
+    const usernameDaUrl = usernameInstagramDaUrl(urlLocal)
+    const identidadeCoincide = usernameDaUrl?.toLowerCase() === usernameWikidata.toLowerCase()
+    return usernameDaUrl && identidadeCoincide
+      ? { ...atual, username: usernameDaUrl, url: urlLocal }
+      : { ...atual }
+  }
+
+  return {
+    ...atual,
+    username: usernameWikidata,
+    url: `https://instagram.com/${usernameWikidata}`,
+  }
 }
 
 function bindingValue(row: Record<string, unknown>, property: string, index: number): void {
@@ -251,25 +321,29 @@ export async function ingestWikidata(
 
       // Redes sociais: merge preservando o que ja existe
         const redesAtual: RedesSociais = (dbCand?.redes_sociais as RedesSociais) ?? {}
-        const instagram = binding.instagram?.value ?? null
-        const twitter = binding.twitter?.value ?? null
-        const facebook = binding.facebook?.value ?? null
-        const site = binding.site?.value ?? null
+        const instagram = binding.instagram?.value.trim() || null
+        const twitter = binding.twitter?.value.trim() || null
+        const facebook = binding.facebook?.value.trim() || null
+        const site = binding.site?.value.trim() || null
 
-        const redesUpdate: RedesSociais = {
-        ...redesAtual,
-        ...(instagram
-          ? {
-              instagram: {
-                username: instagram,
-                url: `https://instagram.com/${instagram}`,
-                followers: redesAtual.instagram?.followers ?? null,
-              },
-            }
-          : {}),
-        ...(twitter ? { twitter } : {}),
-        ...(facebook ? { facebook } : {}),
-        ...(site ? { site_oficial: site } : {}),
+        const redesUpdate: RedesSociais = { ...redesAtual }
+        if (instagram) {
+          const instagramAtual = redesAtual.instagram
+          if (!textoSocialNaoVazio(instagramAtual)) {
+            redesUpdate.instagram = mergeInstagramPorPropriedade(
+              isObject(instagramAtual) ? instagramAtual : undefined,
+              instagram,
+            )
+          }
+        }
+        if (twitter && !temValorSocial(redesAtual.twitter)) {
+          redesUpdate.twitter = twitter
+        }
+        if (facebook && !temValorSocial(redesAtual.facebook)) {
+          redesUpdate.facebook = facebook
+        }
+        if (site && !temValorSocial(redesAtual.site_oficial)) {
+          redesUpdate.site_oficial = site
         }
 
       // So atualiza redes se mudou algo

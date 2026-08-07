@@ -54,6 +54,24 @@ describe("resolveCargoDisputadoProveniencia", () => {
       "registro_tse",
     )
   })
+
+  it("separa pedido aguardando julgamento de candidatura deferida", () => {
+    assert.equal(
+      resolveCargoDisputadoProveniencia({
+        status: "candidato",
+        situacao_candidatura: "aguardando julgamento",
+      }),
+      "registro_tse_pendente",
+    )
+    assert.equal(
+      buildCargoDisputadoProvenienceLabel("registro_tse_pendente"),
+      "Pedido de registro no TSE",
+    )
+    assert.match(
+      buildCargoDisputadoProvenienceNote("registro_tse_pendente"),
+      /não equivale a candidatura deferida/i,
+    )
+  })
 })
 
 describe("copy da proveniencia", () => {

@@ -4,7 +4,12 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyn
 import dynamic from "next/dynamic"
 import type { FichaCandidato, LegislacaoMandatoExecutivo, ProjetoLei } from "@/lib/types"
 import { classifyAttentionPoints } from "@/lib/attention-points"
-import { processosOverviewDisplay } from "@/lib/processos-display"
+import {
+  isTerminalProcessStatus,
+  processoBorderColor,
+  processoTemporalLabel,
+  processosOverviewDisplay,
+} from "@/lib/processos-display"
 import { formatCompact, formatDate, safeHref } from "@/lib/utils"
 import { ProfileTabs, type Tab } from "./ProfileTabs"
 import { GravityBadge } from "./GravityBadge"
@@ -47,11 +52,10 @@ import {
 } from "@/lib/ui-labels"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
 import {
-  mudancasPartidoLinhasPublicas,
   prepareHistoricoPoliticoPublicDisplayList,
   profileTrajetoriaTabBadgeCount,
 } from "@/lib/trajetoria-public-display"
-import { hasSameYearPartyReversal } from "@/lib/party-switches"
+import { countPartySwitches, hasSameYearPartyReversal } from "@/lib/party-switches"
 import { hasWideManualOverlappingSegmentedMandates } from "@/lib/historico-dedupe"
 import { hasLegislativeHistory as detectLegislativeHistory } from "@/lib/legislative-history"
 import {
@@ -250,7 +254,13 @@ export function CandidatoProfile({
   const patrimonio = ficha.patrimonio ?? []
   const financiamento = ficha.financiamento ?? []
   const processos = ficha.processos ?? []
-  const processosOverview = processosOverviewDisplay(ficha.total_processos, ficha.processos_criminais)
+  const processosOverview = processosOverviewDisplay(
+    ficha.total_processos,
+    processos.filter(
+      (processo) => processo.tipo === "criminal" && !isTerminalProcessStatus(processo.status)
+    ).length,
+    ficha.processos_verificacao,
+  )
   const sancoes = ficha.sancoes_administrativas ?? []
   const votos = ficha.votos ?? []
   const historico = ficha.historico ?? []
@@ -471,7 +481,7 @@ export function CandidatoProfile({
   const partySwitchCountValue =
     (mudancas.length > 0 || Boolean(ficha.partido_sigla) || Boolean(ficha.partido_atual)) &&
     !hasSameYearPartyReversal(mudancas)
-      ? mudancasPartidoLinhasPublicas(mudancas)
+      ? countPartySwitches(mudancas)
       : null
 
   return (
@@ -612,15 +622,21 @@ export function CandidatoProfile({
                 {/* Sem "(0)": zero aqui é ausência de verificação, não contagem apurada. */}
                 <SectionLabel>{processos.length > 0 ? `Processos judiciais (${processos.length})` : "Processos judiciais"}</SectionLabel>
                 <SectionTitle>{fixedCopy.justiceSituation}</SectionTitle>
-                {processos.length === 0 && (() => { const s = suggestFor("justica"); return <EmptyState {...getProcessosEmptyState()} suggestLabel={s?.label} onSuggest={s?.go} /> })()}
+                {processos.length === 0 && (
+                  <EmptyState {...getProcessosEmptyState(ficha.processos_verificacao)} />
+                )}
                 {/* Group by type */}
-                {(["criminal", "improbidade", "eleitoral", "civil"] as const).map((tipo) => {
-                  const grouped = processos.filter((p) => p.tipo === tipo)
+                {(["criminal", "improbidade", "eleitoral", "civil", "historico"] as const).map((tipo) => {
+                  const grouped = processos.filter((p) =>
+                    tipo === "historico"
+                      ? isTerminalProcessStatus(p.status)
+                      : p.tipo === tipo && !isTerminalProcessStatus(p.status),
+                  )
                   if (grouped.length === 0) return null
                   return (
                     <div key={tipo} className="mt-6">
                       <h3 className="mb-3 text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                        {formatProcessTypeLabel(tipo)} ({grouped.length})
+                        {tipo === "historico" ? "Histórico judicial" : formatProcessTypeLabel(tipo)} ({grouped.length})
                       </h3>
                       <div className="space-y-3">
                         {grouped.map((p) => (
@@ -629,19 +645,24 @@ export function CandidatoProfile({
                             data-pf-timeline-ref={`processo-${p.id}`}
                             className="rounded-[12px] border border-border/50 border-l-[3px] px-5 py-4"
                             style={{
-                              borderLeftColor: p.gravidade === "alta" ? "#dc2626" : p.gravidade === "media" ? "#f59e0b" : "#d4d4d4",
+                              borderLeftColor: processoBorderColor(p),
                             }}
                           >
                             <div className="flex flex-wrap items-center gap-2">
-                              <GravityBadge gravidade={p.gravidade} />
+                              {!isTerminalProcessStatus(p.status) && (
+                                <GravityBadge gravidade={p.gravidade} />
+                              )}
                               <MetaBadge tone="muted">
                                 {formatProcessStatusLabel(p.status)}
                               </MetaBadge>
-                              {p.data_inicio && (
+                              {(() => {
+                                const temporal = processoTemporalLabel(p)
+                                return temporal ? (
                                 <span className="text-[10px] font-semibold text-muted-foreground">
-                                  Desde {formatDate(p.data_inicio)}
+                                  {temporal.label} {formatDate(temporal.date)}
                                 </span>
-                              )}
+                                ) : null
+                              })()}
                             </div>
                             <p className="mt-2 text-[length:var(--text-body)] font-medium leading-snug text-foreground">
                               {p.descricao}
@@ -687,7 +708,9 @@ export function CandidatoProfile({
                     <VotingDots votos={votos} />
                   </div>
                 )}
-                {votos.length === 0 && (() => { const s = suggestFor("votos"); return <EmptyState {...getVotosEmptyState(hasLegislativeHistory)} suggestLabel={s?.label} onSuggest={s?.go} /> })()}
+                {votos.length === 0 && (
+                  <EmptyState {...getVotosEmptyState(hasLegislativeHistory)} />
+                )}
                 <div className="mt-6 space-y-3">
                   {votos.map((v) => (
                     <div
@@ -796,20 +819,22 @@ export function CandidatoProfile({
               <div>
                 <SectionLabel>{fixedCopy.attentionPointsAndHighlights} ({pontosAtencao.length})</SectionLabel>
                 <SectionTitle>O que você precisa saber</SectionTitle>
+                {alertasNaoPositivos.length === 0 && pontosPositivos.length === 0 ? (
+                  <NoticePanel
+                    tone="neutral"
+                    rail={false}
+                    className="mt-6"
+                    description="Nenhum alerta ou ponto positivo visível registrado no momento."
+                  />
+                ) : (
                 <div className="mt-6 space-y-8">
+                  {alertasNaoPositivos.length > 0 && (
                   <section className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                         Alertas e Pontos de Atenção ({alertasNaoPositivos.length})
                       </h3>
                     </div>
-                    {alertasNaoPositivos.length === 0 && (
-                      <NoticePanel
-                        tone="neutral"
-                        rail={false}
-                        description="Nenhum alerta negativo visível registrado no momento."
-                      />
-                    )}
                     {alertasNaoPositivos.map((p) => (
                       <div
                         key={p.id}
@@ -838,20 +863,15 @@ export function CandidatoProfile({
                       </div>
                     ))}
                   </section>
+                  )}
 
+                  {pontosPositivos.length > 0 && (
                   <section className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                         Pontos positivos ({pontosPositivos.length})
                       </h3>
                     </div>
-                    {pontosPositivos.length === 0 && (
-                      <NoticePanel
-                        tone="neutral"
-                        rail={false}
-                        description="Nenhum ponto positivo destacado no momento."
-                      />
-                    )}
                     {pontosPositivos.map((p) => (
                       <div
                         key={p.id}
@@ -879,7 +899,9 @@ export function CandidatoProfile({
                       </div>
                     ))}
                   </section>
+                  )}
                 </div>
+                )}
               </div>
             )}
           </div>

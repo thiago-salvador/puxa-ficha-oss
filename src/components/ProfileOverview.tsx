@@ -34,6 +34,11 @@ import {
   formatVoteBadgeLabel,
 } from "@/lib/ui-labels"
 import { financiamentoPleitoSubtitulo } from "@/lib/financiamento-pleito-display"
+import { buildFinancingComposition } from "@/lib/financiamento-display"
+import {
+  isTerminalProcessStatus,
+  processoBorderColor,
+} from "@/lib/processos-display"
 
 /* ─── Pure helpers ──────────────────────────────────── */
 
@@ -51,6 +56,7 @@ const FINANCING_COLOR_BY_KEY: Record<(typeof FINANCING_BREAKDOWN_KEYS)[number], 
   fundo_partidario: "#525252",
   pessoa_fisica: "#a3a3a3",
   recursos_proprios: "#d4d4d4",
+  outros_recursos: "#e5e5e5",
 }
 
 function getPatrimonioSummary(patrimonio: Patrimonio[]): PatrimonioSummary {
@@ -76,17 +82,13 @@ function getLatestSpending(gastos: GastoParlamentar[]): GastoParlamentar | null 
 
 function getFinancingSegments(latestFin: Financiamento | null): FinancingSegment[] {
   if (!latestFin) return []
-  const valueByKey: Record<(typeof FINANCING_BREAKDOWN_KEYS)[number], number> = {
-    fundo_eleitoral: latestFin.total_fundo_eleitoral,
-    fundo_partidario: latestFin.total_fundo_partidario,
-    pessoa_fisica: latestFin.total_pessoa_fisica,
-    recursos_proprios: latestFin.total_recursos_proprios,
-  }
-  return FINANCING_BREAKDOWN_KEYS.map((key) => ({
+  const composition = buildFinancingComposition(latestFin)
+  if (!composition.chartIsSafe) return []
+  return composition.segments.map(({ key, value }) => ({
     label: formatFinancingLabel(key),
-    value: valueByKey[key],
+    value,
     color: FINANCING_COLOR_BY_KEY[key],
-  })).filter((s) => s.value > 0)
+  })).filter((segment) => segment.value > 0)
 }
 
 function hasOverviewData(ficha: FichaCandidato): boolean {
@@ -120,12 +122,6 @@ function getPatrimonioGrowthIndicator(
   if (growthPct > 0) return { arrow: "↑", color: "text-green-700" }
   if (growthPct < 0) return { arrow: "↓", color: "text-red-600" }
   return { arrow: "", color: "text-muted-foreground" }
-}
-
-function getProcessoBorderColor(processo: Processo): string {
-  if (processo.tipo === "criminal") return "#dc2626"
-  if (processo.gravidade === "alta") return "#f59e0b"
-  return "#d4d4d4"
 }
 
 function getVotoBadgeClassName(voto: VotoCandidato["voto"]): string {
@@ -324,17 +320,17 @@ function ProcessesTeaser({
           <div
             key={p.id}
             className="rounded-lg border border-border/50 border-l-[3px] px-3 py-2"
-            style={{ borderLeftColor: getProcessoBorderColor(p) }}
+            style={{ borderLeftColor: processoBorderColor(p) }}
           >
             <div className="flex items-center gap-2">
-              <MetaBadge tone={p.tipo === "criminal" ? "critical" : "muted"}>
-                {formatProcessTypeLabel(p.tipo)}
+              <MetaBadge tone={!isTerminalProcessStatus(p.status) && p.tipo === "criminal" ? "critical" : "muted"}>
+                {isTerminalProcessStatus(p.status) ? "Histórico judicial" : formatProcessTypeLabel(p.tipo)}
               </MetaBadge>
               <span className="text-[10px] font-semibold text-muted-foreground">
                 {formatProcessStatusLabel(p.status)}
               </span>
             </div>
-            <p className="mt-1 line-clamp-1 text-[12px] font-medium leading-snug text-foreground">
+            <p className="mt-1 text-[12px] font-medium leading-snug text-foreground">
               {p.descricao ?? p.tipo}
             </p>
           </div>

@@ -16,12 +16,12 @@ export function DataFreshnessNotice({
     info.status === "current"
       ? {
           tone: "neutral",
-          title: "Dado atual",
+          title: "Verificação recente",
         }
       : info.status === "stale"
         ? {
             tone: "caution",
-            title: "Pode estar defasado",
+            title: "Verificação desatualizada",
           }
         : info.status === "historical"
         ? {

@@ -75,7 +75,7 @@ export function QuizDetailPanel({
 
       {plEntries.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-foreground">Exemplo de projeto por tema (inteiro teor)</p>
+          <p className="text-xs font-semibold text-foreground">Exemplo de projeto por tema (página oficial)</p>
           <ul className="space-y-1 text-xs">
             {plEntries.map(([tema, url]) => (
               <li key={tema}>

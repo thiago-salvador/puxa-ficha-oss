@@ -1,6 +1,10 @@
 # Workflow: completude e confiabilidade das fichas 2026
 
-Status: **planejado; execução aguardando aprovação explícita**.
+Status: **Etapa 5 concluída; integração local aprovada pelos verificadores e Etapa 6 aguardando segundo gate**.
+
+Execução ativa: `pf-completeness-20260807T022551Z`, branch local
+`codex/profiles-complete-2026`. Banco de produção, publicação editorial, merge,
+deploy e email continuam fora da autorização atual.
 
 Baseline revalidada em 06/08/2026:
 
@@ -10,8 +14,9 @@ Baseline revalidada em 06/08/2026:
 - 60 fichas com índice 100 e 134 abaixo de 100 no último snapshot;
 - PRs abertas #127 (bloqueada), #114 (conflitante) e #72 (draft atrasada);
 - CI e CodeQL do `main` sem estado totalmente verde nesta revalidação;
-- readback público desta sessão bloqueado por falha de DNS local. O snapshot de
-  produção anterior não substitui uma nova leitura antes de publicar.
+- readback público confirmado no início da execução pelo domínio canônico,
+  incluindo 194 slugs e o SHA `0cf39b41` em `/api/deployment-info`; uma nova
+  leitura continua obrigatória antes de qualquer publicação.
 
 Este workflow transforma a amostragem de bugs dos presidenciáveis e todo o
 trabalho acumulado da semana em uma fila fechada por candidato e frente. Ele não

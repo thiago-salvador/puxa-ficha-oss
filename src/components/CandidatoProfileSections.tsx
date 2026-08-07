@@ -33,16 +33,12 @@ import { ExternalLink } from "lucide-react"
 import { DataFreshnessNotice } from "./DataFreshnessNotice"
 import * as historicoDisplay from "@/lib/historico-display"
 import { hasWideManualOverlappingSegmentedMandates } from "@/lib/historico-dedupe"
-import { formatPartyTransitionLabel, hasSameYearPartyReversal } from "@/lib/party-switches"
+import { countPartySwitches, formatPartyTransitionLabel, hasSameYearPartyReversal } from "@/lib/party-switches"
 import { isUncertainParty, normalizePartySigla } from "@/lib/party-utils"
-import {
-  mudancasPartidoLinhasPublicas,
-  prepareHistoricoPoliticoPublicDisplayList,
-} from "@/lib/trajetoria-public-display"
+import { prepareHistoricoPoliticoPublicDisplayList } from "@/lib/trajetoria-public-display"
 import { formatFinanciamentoPleitoPublicLabelForRow } from "@/lib/financiamento-pleito-public-label"
 import {
   type FinancingBreakdownKey,
-  FINANCING_BREAKDOWN_KEYS,
   formatFinancingLabel,
   formatProjectStatusLabel,
   formatPublicLabel,
@@ -58,6 +54,7 @@ import {
   resolveExecutiveLegislationInventoryScope,
 } from "@/lib/legislacao-profile-groups"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
+import { buildFinancingComposition } from "@/lib/financiamento-display"
 
 const LEGISLACAO_PAGE_SIZE = 25
 
@@ -71,6 +68,7 @@ const FINANCING_COLORS: Record<FinancingBreakdownKey, string> = {
   fundo_partidario: "#525252",
   pessoa_fisica: "#a3a3a3",
   recursos_proprios: "#d4d4d4",
+  outros_recursos: "#e5e5e5",
 }
 
 const PROJECT_STATUS_BADGES: Record<
@@ -200,20 +198,24 @@ export function MoneyTabSection({
                       {formatBRL(item.total_arrecadado)}
                     </span>
                   </div>
-                  <StackedBar
-                    segments={FINANCING_BREAKDOWN_KEYS.map((key) => ({
-                      label: formatFinancingLabel(key),
-                      value:
-                        key === "fundo_eleitoral"
-                          ? item.total_fundo_eleitoral
-                          : key === "fundo_partidario"
-                            ? item.total_fundo_partidario
-                            : key === "pessoa_fisica"
-                              ? item.total_pessoa_fisica
-                              : item.total_recursos_proprios,
-                      color: FINANCING_COLORS[key],
-                    }))}
-                  />
+                  {(() => {
+                    const composition = buildFinancingComposition(item)
+                    return composition.chartIsSafe ? (
+                      <StackedBar
+                        segments={composition.segments.map(({ key, value }) => ({
+                          label: formatFinancingLabel(key),
+                          value,
+                          color: FINANCING_COLORS[key],
+                        }))}
+                      />
+                    ) : (
+                      <NoticePanel
+                        tone="caution"
+                        eyebrow="Composição em revisão"
+                        description="As categorias disponíveis somam mais que o total registrado. O gráfico fica oculto até a reconciliação com a prestação oficial."
+                      />
+                    )
+                  })()}
                   {(item.maiores_doadores ?? []).length > 0 && (
                     <div className="mt-3 border-t border-border/50 pt-3">
                       <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
@@ -344,7 +346,7 @@ export function TrajectoryTabSection({
   freshness,
 }: TrajectoryTabSectionProps) {
   const historicoOrdenado = prepareHistoricoPoliticoPublicDisplayList(historico)
-  const mudancasLinhasTimeline = mudancasPartidoLinhasPublicas(mudancas)
+  const mudancasEfetivas = countPartySwitches(mudancas)
   const currentPartyLabel = [partidoAtualSigla, partidoAtualNome]
     .filter((value): value is string => Boolean(value) && !isUncertainParty(value))
     .join(" · ")
@@ -412,7 +414,7 @@ export function TrajectoryTabSection({
               eyebrow="Seção em curadoria"
               description={
                 <p>
-                  Detectamos uma row ampla de carreira convivendo com dois ou
+                  Detectamos um registro amplo de carreira convivendo com dois ou
                   mais mandatos segmentados do mesmo cargo. Ocultamos a lista
                   até a curadoria reconciliar os períodos.
                 </p>
@@ -470,7 +472,7 @@ export function TrajectoryTabSection({
 
       {shouldShowPartySection && partyTimelineBlocked && (
         <div data-pf-partidos-blocked="same-year-reversal">
-          <SectionLabel>Trocas de partido</SectionLabel>
+          <SectionLabel>Histórico partidário</SectionLabel>
           <SectionTitle>Histórico partidário</SectionTitle>
           <div className="mt-4">
             <NoticePanel
@@ -490,9 +492,15 @@ export function TrajectoryTabSection({
       )}
 
       {shouldShowPartySection && !partyTimelineBlocked && (
-        <div data-pf-partidos-count={mudancasLinhasTimeline}>
-          <SectionLabel>Trocas de partido ({mudancasLinhasTimeline})</SectionLabel>
-          <SectionTitle>Histórico partidário</SectionTitle>
+        <div data-pf-partidos-count={mudancasEfetivas}>
+          <SectionLabel>Histórico partidário</SectionLabel>
+          <SectionTitle>
+            {mudancasEfetivas === 0
+              ? "Partidos confirmados"
+              : mudancasEfetivas === 1
+                ? "1 troca de partido"
+                : `${mudancasEfetivas} trocas de partido`}
+          </SectionTitle>
           {mudancas.length > 0 ? (
             <>
               <div className="mt-4">
@@ -907,7 +915,7 @@ function ProjetoLeiList({
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex max-w-full items-center gap-1 break-words text-[length:var(--text-caption)] font-semibold text-foreground underline"
                   >
-                    Inteiro teor <ExternalLink className="size-3 shrink-0" />
+                    Página oficial da proposta <ExternalLink className="size-3 shrink-0" />
                   </a>
                 )}
               </div>

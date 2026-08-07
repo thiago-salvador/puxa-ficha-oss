@@ -13,9 +13,53 @@ export interface ProcessosOverviewDisplay {
   sub?: string
 }
 
+const TERMINAL_PROCESS_STATUS = new Set([
+  "absolvido",
+  "anulado",
+  "arquivado",
+  "extinto",
+  "prescrito",
+])
+
+function normalizeProcessStatus(status: string | null | undefined): string {
+  return (status ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+}
+
+/** Status terminal governa cor, gravidade e linguagem temporal da UI. */
+export function isTerminalProcessStatus(status: string | null | undefined): boolean {
+  const normalized = normalizeProcessStatus(status)
+  return [...TERMINAL_PROCESS_STATUS].some(
+    (terminal) => normalized === terminal || normalized.startsWith(`${terminal}_`),
+  )
+}
+
+export function processoBorderColor(
+  processo: Pick<import("@/lib/types").Processo, "status" | "tipo" | "gravidade">,
+): string {
+  if (isTerminalProcessStatus(processo.status)) return "#d4d4d4"
+  if (processo.tipo === "criminal" || processo.gravidade === "alta") return "#dc2626"
+  if (processo.gravidade === "media") return "#f59e0b"
+  return "#d4d4d4"
+}
+
+export function processoTemporalLabel(
+  processo: Pick<import("@/lib/types").Processo, "status" | "data_inicio" | "data_decisao">,
+): { label: string; date: string } | null {
+  if (isTerminalProcessStatus(processo.status)) {
+    return processo.data_decisao ? { label: "Decisão em", date: processo.data_decisao } : null
+  }
+  return processo.data_inicio ? { label: "Desde", date: processo.data_inicio } : null
+}
+
 export function processosOverviewDisplay(
   total: number | null | undefined,
   criminais?: number | null,
+  verificacao?: Pick<import("@/lib/types").ProcessosVerificacao, "resultado"> | null,
 ): ProcessosOverviewDisplay {
   const n = total ?? 0
   if (n > 0) {
@@ -23,6 +67,9 @@ export function processosOverviewDisplay(
       value: n,
       sub: (criminais ?? 0) > 0 ? `${criminais} criminal` : undefined,
     }
+  }
+  if (verificacao?.resultado === "vazio_confirmado") {
+    return { value: 0, sub: "escopo verificado" }
   }
   return { value: "—", sub: "não verificado" }
 }

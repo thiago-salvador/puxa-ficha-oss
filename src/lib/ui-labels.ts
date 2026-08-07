@@ -8,6 +8,7 @@ export const FINANCING_BREAKDOWN_KEYS = [
   "fundo_partidario",
   "pessoa_fisica",
   "recursos_proprios",
+  "outros_recursos",
 ] as const
 
 export type FinancingBreakdownKey = (typeof FINANCING_BREAKDOWN_KEYS)[number]
@@ -204,6 +205,7 @@ const tokenLabels = {
     fundo_partidario: fixedCopy.partyFund,
     pessoa_fisica: fixedCopy.naturalPerson,
     recursos_proprios: fixedCopy.ownResources,
+    outros_recursos: "Outras origens registradas no TSE",
   },
   gravity: {
     alta: "Alta",

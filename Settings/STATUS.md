@@ -11,7 +11,7 @@ nessa data. Reexecute os gates antes de usá-lo como prova futura.
 | Branch de produção | `main` |
 | Commit em produção | `0cf39b41` |
 | Vercel | Deployment Ready, criado em 06/08/2026 às 13:19 BRT |
-| Site | `https://puxaficha.com.br` responde 200 |
+| Site | `https://puxaficha.com.br` e `/api/deployment-info` responderam no início da execução `pf-completeness-20260807T022551Z` |
 | Universo público | 194 slugs únicos em `/api/candidato-slugs` |
 | Coorte | 11 Presidente, 164 Governador e 19 Vice-Governador, cobrindo 27 UFs |
 | Migrations | 360 locais e remotas; zero diferença de ledger |
@@ -38,8 +38,8 @@ medidos no índice.
 
 ## O que mudou na carga de 30/07 a 06/08
 
-O `main` recebeu 132 commits por 80 PRs mergeadas, com 416 arquivos e 62
-migrations SQL tocados. As principais frentes que chegaram ao código integrado
+O `main` recebeu 132 commits por 80 PRs mergeadas, com 431 arquivos únicos e 47
+migrations únicas no intervalo reconciliado. As principais frentes que chegaram ao código integrado
 foram:
 
 - régua única de cobertura, procedência por fonte e `coleta_log_ultima`;
@@ -77,9 +77,20 @@ até o componente público e reduzir a zero os campos aplicáveis sem conclusão
 
 O plano de execução está em
 [`CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md`](CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md).
-Ele está aguardando aprovação e separa auditoria e pesquisa paralelas da
-integração, migrations, banco e release, que permanecem seriais e protegidos por
-gates próprios.
+As Etapas 0 a 5 foram aprovadas e concluídas na execução
+`pf-completeness-20260807T022551Z`, na branch local
+`codex/profiles-complete-2026`. A baseline e a reconciliação da semana foram
+concluídas. A auditoria global somente leitura fechou seis manifestos com
+194/194 candidatos cada; a pesquisa dirigida fechou 4.923 propostas/estados.
+A integração local preparou com segurança 294 financiamentos, 39 patrimônios, 3.595 links de
+projetos, 45 pedidos de registro de 2026, 43 conjuntos de redes e metadados de
+verificação para 194 fichas. O ledger bruto tinha 342/41, mas 49 conflitos e um
+financiamento com SQ divergente foram bloqueados. Typecheck, 2.119 testes,
+build, allowlist 12/12, identidade 642/642 e o self-test 30/30 passaram. Três
+verificadores independentes aprovaram o código e as migrations no escopo local.
+Banco, publicação editorial, merge, deploy e email continuam protegidos pelos
+gates e não receberam autorização de aplicação em produção. O próximo passo é
+o segundo gate da Etapa 6, com aplicação ordenada e readback real.
 
 Critério de saída:
 
@@ -87,3 +98,5 @@ Critério de saída:
 universo atualizado + nenhuma lacuna aplicável silenciosa
 + cache revalidado + readback público + CI verde
 ```
+
+[codex-stamp: log feito pelo Codex; Claude deve ignorar se nao for util ou incorporar se fizer sentido]

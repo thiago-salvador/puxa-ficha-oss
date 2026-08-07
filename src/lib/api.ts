@@ -64,6 +64,7 @@ import {
 } from "@/lib/candidate-integrity"
 import { isHistoricoCandidaturaRow } from "@/lib/historico-tipo-evento"
 import { normalizeHistoricoPoliticoForDisplay } from "@/lib/historico-dedupe"
+import { isTerminalProcessStatus } from "@/lib/processos-display"
 import {
   normalizeFinanciamentoForDisplay,
   normalizePatrimonioForDisplay,
@@ -166,7 +167,15 @@ if (USE_MOCK && process.env.VERCEL) {
 }
 
 // Public columns only: excludes cpf, email_campanha, cpf_hash, tcu flags, wikidata_id
-const CANDIDATO_COLUMNS = "id, nome_completo, nome_urna, slug, data_nascimento, idade, naturalidade, formacao, profissao_declarada, genero, estado_civil, cor_raca, partido_atual, partido_sigla, cargo_atual, cargo_disputado, estado, status, situacao_candidatura, biografia, foto_url, site_campanha, redes_sociais, fonte_dados, ultima_atualizacao"
+const CANDIDATO_COLUMNS = "id, nome_completo, nome_urna, slug, data_nascimento, idade, naturalidade, formacao, profissao_declarada, genero, estado_civil, cor_raca, partido_atual, partido_sigla, cargo_atual, cargo_disputado, estado, status, situacao_candidatura, biografia, foto_url, site_campanha, redes_sociais, fonte_dados, ultima_atualizacao, verificacao_campos"
+
+function resolveCampaignSite(candidato: Candidato): string | null {
+  if (candidato.site_campanha?.trim()) return candidato.site_campanha.trim()
+  const official = candidato.redes_sociais?.site_oficial
+  return typeof official === "string" && /^https?:\/\//i.test(official.trim())
+    ? official.trim()
+    : null
+}
 
 /** Rejeições do loader não podem virar um 503 persistente no Data Cache. */
 function requireLiveResourceForCache<T>(resource: DataResource<T>): DataResource<T> {
@@ -391,6 +400,18 @@ function buildSectionFreshness(
   }
 ): Partial<Record<SectionFreshnessKey, SectionFreshnessInfo>> {
   const updatedAt = parseDate(candidato.ultima_atualizacao)
+  const fieldVerification = candidato.verificacao_campos ?? {}
+  const profileVerificationCandidates = [
+    ["candidate_registration", "TSE candidaturas 2026"],
+    ["candidate_complement", "TSE situação da candidatura 2026"],
+    ["social_networks", "TSE redes declaradas 2026"],
+    ["existing_profile_aggregate", "Perfil factual curado"],
+  ]
+    .map(([key, source]) => ({ date: parseDate(fieldVerification[key]), source }))
+    .filter((item): item is { date: Date; source: string } => item.date != null)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+  const profileVerification = profileVerificationCandidates[0] ??
+    (updatedAt ? { date: updatedAt, source: "Perfil factual curado" } : null)
   const latestHistoricoYear =
     data.historico.length > 0
       ? Math.max(
@@ -444,18 +465,18 @@ function buildSectionFreshness(
   const latestVoteDate = parseDate(latestVoteDateString)
 
   return {
-    perfil_atual: updatedAt
+    perfil_atual: profileVerification
       ? buildFreshnessInfo(
           "perfil_atual",
           "Perfil atual",
-          !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
-          !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS
-            ? `Perfil atual consolidado em ${formatDate(updatedAt)}.`
-            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Pode não refletir mudanças recentes.`,
-          updatedAt.toISOString(),
-          updatedAt.getFullYear(),
-          updatedAt.toISOString(),
-          "Perfil factual curado"
+          !IS_LAUNCH_PHASE || ageInDays(profileVerification.date) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
+          !IS_LAUNCH_PHASE || ageInDays(profileVerification.date) <= PROFILE_FRESHNESS_WINDOW_DAYS
+            ? `Perfil verificado em ${formatDate(profileVerification.date)} (${profileVerification.source}).`
+            : `Perfil verificado em ${formatDate(profileVerification.date)} (${profileVerification.source}). Pode não refletir mudanças recentes.`,
+          profileVerification.date.toISOString(),
+          profileVerification.date.getFullYear(),
+          profileVerification.date.toISOString(),
+          profileVerification.source
         )
       : buildFreshnessInfo(
           "perfil_atual",
@@ -1018,7 +1039,10 @@ const COLETA_RESULTADOS_VALIDOS = new Set<SancoesVerificacao["resultado"]>([
  * limpeza). O único estado que esta função pode "perder" com isso é um selo de
  * verificação, nunca um dado do candidato.
  */
-async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+async function fetchColetaVerificacao(
+  slug: string,
+  fonte: "transparencia-sanctions" | "processos-curadoria",
+): Promise<SancoesVerificacao | null> {
   try {
     const admin = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
     const { data, error } = await withSupabaseRetry(
@@ -1027,7 +1051,7 @@ async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao
         admin
           .from("coleta_log_ultima")
           .select("resultado, executado_em")
-          .eq("fonte", "transparencia-sanctions")
+          .eq("fonte", fonte)
           .eq("escopo", "candidato")
           .eq("alvo", slug)
           .abortSignal(signal)
@@ -1047,6 +1071,14 @@ async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao
     // seção da ficha.
     return null
   }
+}
+
+async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  return fetchColetaVerificacao(slug, "transparencia-sanctions")
+}
+
+async function fetchProcessosVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  return fetchColetaVerificacao(slug, "processos-curadoria")
 }
 
 async function getCandidatoBySlugFromRelationResource(
@@ -1144,7 +1176,7 @@ async function getCandidatoBySlugFromRelationResource(
     }
   }
 
-  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao] =
+  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao, processosVerificacao] =
     await Promise.all([
       // `despublicado_em` filtra candidatura atribuida por homonimo (migration
       // 20260726160000). O CPF divergente no cadastro desliga o casamento por
@@ -1271,6 +1303,9 @@ async function getCandidatoBySlugFromRelationResource(
       // Proveniência do zero de sanções (coleta_log_ultima, service role).
       // Nunca rejeita: degrada para null, que a UI lê como "não verificado".
       fetchSancoesVerificacao(slug),
+      // Mesma proveniência para o vazio judicial. Encontrado sem linha pública
+      // significa item em revisão, não ficha limpa.
+      fetchProcessosVerificacao(slug),
     ])
 
   const relatedErrors = [
@@ -1327,6 +1362,7 @@ async function getCandidatoBySlugFromRelationResource(
   // hasIncompletePartyTimeline (linha acima) ja foi calculado com a versao crua.
   const ficha: FichaCandidato = {
     ...sanitizePublicPartyFields(candidato),
+    site_campanha: resolveCampaignSite(candidato),
     historico: historicoConfiavel,
     mudancas_partido: mudancasRaw,
     patrimonio: patrimonioConfiavel,
@@ -1347,6 +1383,7 @@ async function getCandidatoBySlugFromRelationResource(
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
     sancoes_verificacao: sancoesVerificacao,
+    processos_verificacao: processosVerificacao,
     // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
     // 1C). A ingestao passou a descartar item cujo titulo nao cita o candidato,
     // mas as linhas ja gravadas continuam no banco: 3.984 de 17.498 (22,77%)
@@ -1358,7 +1395,9 @@ async function getCandidatoBySlugFromRelationResource(
     })),
     indicadores_estaduais: indicadores.data ?? [],
     total_processos: (processos.data ?? []).length,
-    processos_criminais: (processos.data ?? []).filter((p) => p.tipo === "criminal").length,
+    processos_criminais: (processos.data ?? []).filter(
+      (p) => p.tipo === "criminal" && !isTerminalProcessStatus(p.status)
+    ).length,
     total_mudancas_partido: countPartySwitches(mudancasRaw),
     total_pontos_atencao: pontosPublicos.length,
     pontos_criticos: pontosPublicos.filter((p) => isNegativeHighestSeverityAttentionPoint(p)).length,

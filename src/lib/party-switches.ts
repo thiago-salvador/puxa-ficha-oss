@@ -126,6 +126,10 @@ export function formatPartyTransitionLabel(
   const previous = formatPartyDisplayLabel(item.partido_anterior, { year })
   const next = formatPartyDisplayLabel(item.partido_novo, { year })
 
+  if (isInitialPartyAnchorToken(item.partido_anterior)) {
+    return `Partido confirmado: ${next}`
+  }
+
   if (isSamePartyTransition(item) || normalizePartyToken(previous) === normalizePartyToken(next)) {
     return `Filiação: ${next}`
   }
