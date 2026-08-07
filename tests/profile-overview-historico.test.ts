@@ -161,7 +161,7 @@ test("ProfileOverview teaser de carreira mostra observação útil e esconde boi
   assert.ok(!html.includes("ELEITO (TSE 2022)"))
 })
 
-test("ProfileOverview teaser de carreira não duplica Eduardo Leite com linha TSE do ano da eleição e linha do mandato", () => {
+test("ProfileOverview teaser de carreira exibe a eleição TSE como candidatura e o mandato uma única vez (Eduardo Leite)", () => {
   const historico = normalizeHistoricoPoliticoForDisplay([
     historicoRow({
       id: "gov-2018-eleito",
@@ -216,10 +216,11 @@ test("ProfileOverview teaser de carreira não duplica Eduardo Leite com linha TS
     })
   )
 
-  assert.equal((html.match(/Governador do Rio Grande do Sul/g) ?? []).length, 1)
-  assert.equal((html.match(/Prefeito de Pelotas/g) ?? []).length, 1)
+  // Eleição (candidatura) + mandato: dois eventos distintos para o governo.
+  assert.equal((html.match(/Governador do Rio Grande do Sul/g) ?? []).length, 2)
   assert.ok(html.includes("2019 - 2022"))
   assert.ok(html.includes("2013 - 2016"))
+  // O mandato não herda o período da eleição colapsada.
   assert.ok(!html.includes("2018 - 2022"))
   assert.ok(!html.includes("2012 - 2018"))
 })
