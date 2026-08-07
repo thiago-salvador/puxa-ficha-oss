@@ -11,6 +11,7 @@ import type {
   VotoCandidato,
 } from "@/lib/types"
 import { buildDoadorReverseHref } from "@/lib/doador-reverse-shared"
+import type { PatrimonioEleicaoPublico } from "@/lib/public-profile-dto"
 import {
   formatHistoricoCargoTituloPublico,
   formatHistoricoObservacaoPublica,
@@ -28,6 +29,7 @@ import {
   FINANCING_BREAKDOWN_KEYS,
   fixedCopy,
   formatFinancingLabel,
+  formatPatrimonioEleicaoEstadoLabel,
   formatProcessStatusLabel,
   formatProcessTypeLabel,
   formatPublicLabel,
@@ -70,6 +72,27 @@ function getPatrimonioSummary(patrimonio: Patrimonio[]): PatrimonioSummary {
   return { sorted, latest, earliest, growthPct }
 }
 
+/**
+ * Série pública de patrimônio por eleição (>= 2006). A ficha do client vem de
+ * /api/candidato-profile/[slug], cujo payload é o DTO público (que carrega
+ * `patrimonio_eleicoes`); em montagens sobre a view interna o campo pode não
+ * existir, e esta leitura degrada para lista vazia em vez de inventar estados.
+ */
+function getPatrimonioEleicoesDaFicha(ficha: FichaCandidato): PatrimonioEleicaoPublico[] {
+  const eleicoes = (ficha as FichaCandidato & { patrimonio_eleicoes?: unknown })
+    .patrimonio_eleicoes
+  if (!Array.isArray(eleicoes)) return []
+  return eleicoes.filter(
+    (item): item is PatrimonioEleicaoPublico =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as PatrimonioEleicaoPublico).ano === "number" &&
+      ((item as PatrimonioEleicaoPublico).estado === "publicado" ||
+        (item as PatrimonioEleicaoPublico).estado === "vazio_confirmado" ||
+        (item as PatrimonioEleicaoPublico).estado === "nao_coletado"),
+  )
+}
+
 function getLatestFinancing(financiamento: Financiamento[]): Financiamento | null {
   if (financiamento.length === 0) return null
   return [...financiamento].sort((a, b) => b.ano_eleicao - a.ano_eleicao)[0]
@@ -94,6 +117,7 @@ function getFinancingSegments(latestFin: Financiamento | null): FinancingSegment
 function hasOverviewData(ficha: FichaCandidato): boolean {
   return (
     (ficha.patrimonio?.length ?? 0) > 0 ||
+    getPatrimonioEleicoesDaFicha(ficha).length > 0 ||
     (ficha.financiamento?.length ?? 0) > 0 ||
     (ficha.processos?.length ?? 0) > 0 ||
     (ficha.votos?.length ?? 0) > 0 ||
@@ -175,14 +199,47 @@ function EmptyOverviewState() {
 function PatrimonioTeaser({
   patrimonio,
   summary,
+  eleicoes,
   onNavigate,
 }: {
   patrimonio: Patrimonio[]
   summary: PatrimonioSummary
+  eleicoes: PatrimonioEleicaoPublico[]
   onNavigate: () => void
 }) {
   const { latest, earliest, growthPct } = summary
-  if (!latest) return null
+  if (!latest) {
+    // Sem patrimônio publicado: a eleição ainda assim existe e não pode sumir
+    // da visão geral (ausência não é ficha limpa nem ano oculto).
+    const semDado = eleicoes
+      .filter((eleicao) => eleicao.estado !== "publicado")
+      .sort((a, b) => b.ano - a.ano)
+    if (semDado.length === 0) return null
+    return (
+      <TeaserCard title="Patrimônio declarado" linkLabel="DETALHES" onNavigate={onNavigate}>
+        <div className="space-y-2" data-pf-patrimonio-eleicoes-sem-dado={semDado.length}>
+          {semDado.slice(0, 4).map((eleicao) => (
+            <div
+              key={eleicao.ano}
+              data-pf-patrimonio-eleicao={eleicao.ano}
+              data-pf-patrimonio-eleicao-estado={eleicao.estado}
+              className="flex items-baseline justify-between gap-3"
+            >
+              <span className="shrink-0 text-[12px] font-bold tabular-nums text-foreground">
+                {eleicao.ano}
+              </span>
+              <span className="min-w-0 flex-1 text-right text-[12px] font-medium leading-snug text-muted-foreground">
+                {formatPatrimonioEleicaoEstadoLabel(eleicao.estado)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] font-medium leading-snug text-muted-foreground">
+          Eleições disputadas sem dado de patrimônio publicado.
+        </p>
+      </TeaserCard>
+    )
+  }
 
   if (patrimonio.length === 1) {
     return (
@@ -493,6 +550,7 @@ export function ProfileOverview({
   const contradicoes = votos.filter((v) => v.contradicao)
 
   const patrimonioSummary = getPatrimonioSummary(patrimonio)
+  const patrimonioEleicoes = getPatrimonioEleicoesDaFicha(ficha)
   const latestFin = getLatestFinancing(financiamento)
   const latestFinPleitoLabel =
     latestFin != null ? formatFinanciamentoPleitoPublicLabelForRow(latestFin, historico) : null
@@ -504,6 +562,7 @@ export function ProfileOverview({
       <PatrimonioTeaser
         patrimonio={patrimonio}
         summary={patrimonioSummary}
+        eleicoes={patrimonioEleicoes}
         onNavigate={() => onNavigateTab("dinheiro")}
       />
       <FinancingTeaser

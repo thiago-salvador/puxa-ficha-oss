@@ -35,6 +35,7 @@ import type {
   LegislacaoMandatoExecutivo,
   MudancaPartido,
   Patrimonio,
+  PatrimonioAusenciaOficial,
   ProjetoLei,
   SancoesVerificacao,
   SectionFreshnessInfo,
@@ -1340,6 +1341,24 @@ async function getCandidatoBySlugFromRelationResource(
     "error" in indicadores ? indicadores.error : null,
   ].filter(Boolean)
 
+  // Ausências oficiais de patrimônio por eleição (tabela criada pela migração
+  // 20260807181000). Enquanto a migração não é aplicada, degradar para lista
+  // vazia: ausência de tabela não é fato sobre o candidato.
+  let patrimonioAusenciasOficiais: PatrimonioAusenciaOficial[] = []
+  try {
+    const { data: patrimonioAusenciasData, error: patrimonioAusenciasError } = await supabase
+      .from("patrimonio_ausencia_oficial")
+      .select("ano_eleicao, fonte_url, verificado_em")
+      .in("candidato_id", personLevelIds)
+      .order("ano_eleicao", { ascending: false })
+    if (!patrimonioAusenciasError) {
+      patrimonioAusenciasOficiais = (patrimonioAusenciasData ??
+        []) as unknown as PatrimonioAusenciaOficial[]
+    }
+  } catch {
+    patrimonioAusenciasOficiais = []
+  }
+
   const historicoConfiavel = normalizeHistoricoPoliticoForDisplay(historico.data ?? [])
   const patrimonioConfiavel = normalizePatrimonioForDisplay(patrimonio.data ?? [])
   const financiamentoConfiavel = normalizeFinanciamentoForDisplay(financiamento.data ?? [])
@@ -1382,6 +1401,7 @@ async function getCandidatoBySlugFromRelationResource(
     historico: historicoConfiavel,
     mudancas_partido: mudancasRaw,
     patrimonio: patrimonioConfiavel,
+    patrimonio_ausencias_oficiais: patrimonioAusenciasOficiais,
     financiamento: shouldUseServiceRole
       ? financiamentoConfiavel
       : sanitizeFinanciamentoForPublic(financiamentoConfiavel),

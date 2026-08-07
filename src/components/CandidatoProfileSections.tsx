@@ -37,9 +37,11 @@ import { countPartySwitches, formatPartyTransitionLabel, hasSameYearPartyReversa
 import { isUncertainParty, normalizePartySigla } from "@/lib/party-utils"
 import { prepareHistoricoPoliticoPublicDisplayList } from "@/lib/trajetoria-public-display"
 import { formatFinanciamentoPleitoPublicLabelForRow } from "@/lib/financiamento-pleito-public-label"
+import type { PatrimonioEleicaoPublico } from "@/lib/public-profile-dto"
 import {
   type FinancingBreakdownKey,
   formatFinancingLabel,
+  formatPatrimonioEleicaoEstadoLabel,
   formatProjectStatusLabel,
   formatPublicLabel,
   formatTemaLabel,
@@ -86,6 +88,78 @@ function formatYearList(years: number[]) {
   return `${years.slice(0, -1).join(", ")} e ${years.at(-1)}`
 }
 
+/**
+ * Linha de eleição (>= 2006) cujo patrimônio não está publicado. Ausência não
+ * pode parecer ficha limpa nem ano oculto: vazio_confirmado mostra a fonte
+ * oficial conferida e a data da verificação; nao_coletado exibe a pendência
+ * sem insinuar que o candidato não tinha bens.
+ */
+function PatrimonioEleicaoSemDadoRow({ eleicao }: { eleicao: PatrimonioEleicaoPublico }) {
+  const fonteHref = safeHref(eleicao.fonte_url)
+  const verificadoEm = eleicao.verificado_em ? formatDate(eleicao.verificado_em) : null
+
+  return (
+    <div
+      data-pf-patrimonio-eleicao={eleicao.ano}
+      data-pf-patrimonio-eleicao-estado={eleicao.estado}
+      className="rounded-[12px] border border-border/60 bg-card px-4 py-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
+          {eleicao.ano}
+        </span>
+        <MetaBadge tone={eleicao.estado === "vazio_confirmado" ? "neutral" : "muted"}>
+          {formatPatrimonioEleicaoEstadoLabel(eleicao.estado)}
+        </MetaBadge>
+      </div>
+      <p className="mt-1.5 text-[length:var(--text-body-sm)] font-medium leading-relaxed text-muted-foreground">
+        {eleicao.estado === "vazio_confirmado"
+          ? `Sem bens declarados ao TSE em ${eleicao.ano}. O pacote oficial de bens desta eleição foi conferido e não traz registros para este candidato.`
+          : `A coleta de bens da eleição de ${eleicao.ano} ainda não foi realizada. A ausência de dados aqui não significa ausência de bens.`}
+      </p>
+      {eleicao.estado === "vazio_confirmado" && (verificadoEm || fonteHref) && (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--text-caption)] font-semibold text-muted-foreground">
+          {verificadoEm && <span>Verificado em {verificadoEm}</span>}
+          {fonteHref && (
+            <a
+              href={fonteHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-foreground underline"
+            >
+              Fonte oficial <ExternalLink className="size-3 shrink-0" />
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function PatrimonioEleicoesSemDado({
+  eleicoes,
+}: {
+  eleicoes: PatrimonioEleicaoPublico[]
+}) {
+  const semDadoPublicado = eleicoes
+    .filter((eleicao) => eleicao.estado !== "publicado")
+    .sort((a, b) => b.ano - a.ano)
+  if (semDadoPublicado.length === 0) return null
+
+  return (
+    <div data-pf-patrimonio-eleicoes-sem-dado={semDadoPublicado.length}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        Eleições sem dado publicado
+      </p>
+      <div className="mt-2 space-y-3">
+        {semDadoPublicado.map((eleicao) => (
+          <PatrimonioEleicaoSemDadoRow key={eleicao.ano} eleicao={eleicao} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface MoneyTabSectionProps {
   patrimonio: Patrimonio[]
   financiamento: Financiamento[]
@@ -94,6 +168,12 @@ interface MoneyTabSectionProps {
   gastos: GastoParlamentar[]
   historicoLength: number
   suggestion: SuggestAction | null
+  /**
+   * Série pública de patrimônio por eleição aplicável (>= 2006), mais recente
+   * primeiro, no formato do DTO público. Pleitos sem dado publicado
+   * (vazio_confirmado ou nao_coletado) são exibidos com estado explícito.
+   */
+  patrimonioEleicoes?: PatrimonioEleicaoPublico[] | null
   /** Id do evento na timeline (`patrimonio-…`, `gasto-…`) para abrir card e permitir scroll/highlight. */
   highlightTimelineRef?: string | null
   freshness?: {
@@ -110,9 +190,11 @@ export function MoneyTabSection({
   gastos,
   historicoLength,
   suggestion,
+  patrimonioEleicoes,
   highlightTimelineRef,
   freshness,
 }: MoneyTabSectionProps) {
+  const patrimonioEleicoesSemDado = patrimonioEleicoes ?? []
   return (
     <div className="space-y-12">
       {patrimonio.length > 0 && (
@@ -166,6 +248,11 @@ export function MoneyTabSection({
                 </div>
               ))}
           </div>
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
         </div>
       )}
 
@@ -257,10 +344,22 @@ export function MoneyTabSection({
             suggestLabel={suggestion?.label}
             onSuggest={suggestion?.go}
           />
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
         </div>
       )}
       {patrimonio.length === 0 && financiamento.length > 0 && (
-        <EmptyState {...getPatrimonioEmptyState(historicoLength > 0)} />
+        <div>
+          <EmptyState {...getPatrimonioEmptyState(historicoLength > 0)} />
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
+        </div>
       )}
       {financiamento.length === 0 && patrimonio.length > 0 && (
         <EmptyState {...getFinanciamentoEmptyState()} />

@@ -97,6 +97,17 @@ export interface BemDeclarado {
   valor: number;
 }
 
+/**
+ * Eleição em que o pacote oficial bem_candidato do TSE foi lido de ponta a
+ * ponta e não trouxe bens para o SQ_CANDIDATO. Não é um zero declarado: é a
+ * confirmação de que a fonte oficial não tem registro para aquele pleito.
+ */
+export interface PatrimonioAusenciaOficial {
+  ano_eleicao: number;
+  fonte_url: string | null;
+  verificado_em: string | null;
+}
+
 // --- Financiamento ---
 export interface Financiamento {
   id: string;
@@ -400,6 +411,7 @@ export interface FichaCandidato extends Candidato {
   historico: HistoricoPolitico[];
   mudancas_partido: MudancaPartido[];
   patrimonio: Patrimonio[];
+  patrimonio_ausencias_oficiais?: PatrimonioAusenciaOficial[];
   financiamento: Financiamento[];
   votos: VotoCandidato[];
   processos: Processo[];

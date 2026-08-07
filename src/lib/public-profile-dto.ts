@@ -113,6 +113,76 @@ function publicPatrimonio(row: Patrimonio, index: number) {
   }
 }
 
+export type PatrimonioEleicaoEstado = "publicado" | "vazio_confirmado" | "nao_coletado"
+
+export interface PatrimonioEleicaoPublico {
+  ano: number
+  estado: PatrimonioEleicaoEstado
+  fonte_url: string | null
+  verificado_em: string | null
+}
+
+/** Série bem_candidato nos dados abertos do TSE começa em 2006. */
+export const PATRIMONIO_ANO_INICIAL_APLICAVEL = 2006
+
+/**
+ * Estado de patrimônio por eleição aplicável (>= 2006). A ficha não pode
+ * ocultar o ano em que o candidato disputou eleição sem dado: ou o bem está
+ * publicado, ou a ausência foi confirmada no pacote oficial do TSE, ou a
+ * coleta ainda não aconteceu. Cada caso tem estado próprio, nunca um vazio
+ * silencioso.
+ */
+export function buildPatrimonioEleicoes(
+  patrimonio: ReadonlyArray<{ ano_eleicao: number }>,
+  ausenciasOficiais: ReadonlyArray<{
+    ano_eleicao: number
+    fonte_url?: string | null
+    verificado_em?: string | null
+  }>,
+  historico: ReadonlyArray<{
+    periodo_inicio?: number | null
+    periodo_fim?: number | null
+    proveniencia?: string | null
+  }>,
+): PatrimonioEleicaoPublico[] {
+  const anos = new Set<number>()
+  for (const row of patrimonio) {
+    if (row.ano_eleicao >= PATRIMONIO_ANO_INICIAL_APLICAVEL) anos.add(row.ano_eleicao)
+  }
+  for (const ausencia of ausenciasOficiais) {
+    if (ausencia.ano_eleicao >= PATRIMONIO_ANO_INICIAL_APLICAVEL) anos.add(ausencia.ano_eleicao)
+  }
+  for (const row of historico) {
+    // Eleições oficiais ancoram a aplicabilidade: ano de início de um registro
+    // com proveniência TSE é pleito declarado ao TSE.
+    if ((row.proveniencia ?? "") !== "tse") continue
+    if (row.periodo_inicio != null && row.periodo_inicio >= PATRIMONIO_ANO_INICIAL_APLICAVEL) {
+      anos.add(row.periodo_inicio)
+    }
+  }
+
+  const anosPublicados = new Set(patrimonio.map((row) => row.ano_eleicao))
+  const ausenciaPorAno = new Map(ausenciasOficiais.map((ausencia) => [ausencia.ano_eleicao, ausencia]))
+
+  return [...anos]
+    .sort((a, b) => b - a)
+    .map((ano) => {
+      if (anosPublicados.has(ano)) {
+        return { ano, estado: "publicado", fonte_url: null, verificado_em: null }
+      }
+      const ausencia = ausenciaPorAno.get(ano)
+      if (ausencia) {
+        return {
+          ano,
+          estado: "vazio_confirmado",
+          fonte_url: ausencia.fonte_url ?? null,
+          verificado_em: ausencia.verificado_em ?? null,
+        }
+      }
+      return { ano, estado: "nao_coletado", fonte_url: null, verificado_em: null }
+    })
+}
+
 function publicFinanciamento(row: Financiamento, index: number) {
   return {
     id: compactPublicId("fin", row.id, index),
@@ -353,6 +423,11 @@ export function toPublicCandidatoProfileDto(ficha: FichaCandidato) {
     historico: (ficha.historico ?? []).map(publicHistorico),
     mudancas_partido: (ficha.mudancas_partido ?? []).map(publicMudancaPartido),
     patrimonio: (ficha.patrimonio ?? []).map(publicPatrimonio),
+    patrimonio_eleicoes: buildPatrimonioEleicoes(
+      ficha.patrimonio ?? [],
+      ficha.patrimonio_ausencias_oficiais ?? [],
+      ficha.historico ?? [],
+    ),
     financiamento: (ficha.financiamento ?? []).map(publicFinanciamento),
     votos: (ficha.votos ?? []).map(publicVoto),
     processos: (ficha.processos ?? []).map(publicProcesso),

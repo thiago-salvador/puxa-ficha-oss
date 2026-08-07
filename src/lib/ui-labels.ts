@@ -225,6 +225,14 @@ const tokenLabels = {
     eleitoral: "Eleitoral",
     improbidade: "Improbidade",
   },
+  // Estado público do patrimônio por eleição (>= 2006). Ausência não pode
+  // parecer ficha limpa nem ano oculto: vazio_confirmado é a fonte oficial
+  // conferida sem bens; nao_coletado é coleta pendente, nunca ausência presumida.
+  patrimonioEleicaoEstado: {
+    publicado: "Patrimônio publicado",
+    vazio_confirmado: "Sem bens declarados ao TSE",
+    nao_coletado: "Ainda não coletado",
+  },
   projectStatus: {
     aprovado: "Aprovado",
     arquivado: "Arquivado",
@@ -335,6 +343,11 @@ export function formatProcessStatusLabel(raw: string | null | undefined): string
 
 export function formatProcessTypeLabel(raw: string | null | undefined): string {
   return resolveTokenLabel(tokenLabels.processType, raw, "title")
+}
+
+/** Rótulo público do estado de patrimônio de uma eleição (publicado, vazio confirmado ou não coletado). */
+export function formatPatrimonioEleicaoEstadoLabel(raw: string | null | undefined): string {
+  return resolveTokenLabel(tokenLabels.patrimonioEleicaoEstado, raw, "sentence")
 }
 
 export function formatAttentionCategoryLabel(raw: string | null | undefined): string {

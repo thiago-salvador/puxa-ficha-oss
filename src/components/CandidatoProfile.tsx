@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyn
 import dynamic from "next/dynamic"
 import type { FichaCandidato, LegislacaoMandatoExecutivo, ProjetoLei } from "@/lib/types"
 import { classifyAttentionPoints } from "@/lib/attention-points"
+import { buildPatrimonioEleicoes } from "@/lib/public-profile-dto"
 import {
   isTerminalProcessStatus,
   processoBorderColor,
@@ -250,6 +251,11 @@ export function CandidatoProfile({
 }) {
   // Null-safe arrays (Supabase can return null for empty relations)
   const patrimonio = ficha.patrimonio ?? []
+  const patrimonioEleicoes = buildPatrimonioEleicoes(
+    patrimonio,
+    ficha.patrimonio_ausencias_oficiais ?? [],
+    ficha.historico ?? [],
+  )
   const financiamento = ficha.financiamento ?? []
   const processos = ficha.processos ?? []
   const processosOverview = processosOverviewDisplay(
@@ -599,6 +605,7 @@ export function CandidatoProfile({
             {activeTab === "dinheiro" && (
               <MoneyTabSection
                 patrimonio={patrimonio}
+                patrimonioEleicoes={patrimonioEleicoes}
                 financiamento={financiamento}
                 historico={historico}
                 gastos={gastos}
