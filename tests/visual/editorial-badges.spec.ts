@@ -62,7 +62,7 @@ test.describe("/metodologia — linguagem editorial", () => {
 })
 
 test.describe("Editorial badges — ficha candidato", () => {
-  test("aba Alertas: selos com data-pf-editorial-kind quando há pontos", async ({
+  test("aba Destaques: selos com data-pf-editorial-kind quando há pontos", async ({
     page,
   }, testInfo) => {
     await page.goto(`/candidato/${FICHA_SLUG}?tab=alertas`)

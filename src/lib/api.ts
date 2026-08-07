@@ -1815,6 +1815,7 @@ async function getCandidatosComparaveisResourceUncached(
 
     const normalized = {
       ...row,
+      total_pontos_atencao: pontos.length,
       alertas_graves: alertasGraves.length,
       mudancas_partido: switchCountById.has(row.id)
         ? (switchCountById.get(row.id) ?? 0)
@@ -1824,7 +1825,7 @@ async function getCandidatosComparaveisResourceUncached(
         : null,
       total_votos_mapeados: votosCountById.get(row.id) ?? 0,
     }
-    // pontos_atencao só serve para derivar alertas_graves no servidor; o
+    // pontos_atencao só serve para derivar os contadores editoriais no servidor; o
     // ComparadorPanel nunca lê o array no cliente. Remove do payload público
     // (e do cache de comparáveis) em vez de serializar sem uso.
     delete (normalized as { pontos_atencao?: unknown }).pontos_atencao

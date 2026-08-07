@@ -459,6 +459,7 @@ export interface CandidatoComparavel {
   formacao: string | null;
   total_processos: number;
   mudancas_partido: number;
+  total_pontos_atencao: number;
   alertas_graves: number;
   patrimonio_declarado: number | null;
   /** Soma de `total_gasto` em `gastos_parlamentares` — alinhada ao ranking gastos-parlamentares. */

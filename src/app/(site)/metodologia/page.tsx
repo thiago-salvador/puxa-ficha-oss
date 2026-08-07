@@ -193,8 +193,8 @@ export default function MetodologiaPage() {
         <SectionTitle>O papel da IA e da curadoria</SectionTitle>
         <div className="mt-6 max-w-2xl space-y-5 sm:mt-8">
           <p className="text-[length:var(--text-body)] font-medium leading-relaxed text-foreground sm:text-[length:var(--text-body-lg)]">
-            Nos perfis, alertas e destaques positivos exibem selos que indicam a proveniência de
-            cada trecho:
+            Nos perfis, os destaques, incluindo alertas e pontos positivos, exibem selos que
+            indicam a proveniência de cada trecho:
           </p>
           <div className="space-y-3">
             {[

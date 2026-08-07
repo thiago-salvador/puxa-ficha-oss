@@ -8,7 +8,7 @@ import {
   Check,
   Scale,
   Landmark,
-  AlertTriangle,
+  Sparkles,
   ArrowRightLeft,
   ChevronDown,
   Vote,
@@ -322,7 +322,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                     { heading: "Votações", numeric: true },
                     { heading: "Gastos", numeric: true },
                     { heading: "Processos", numeric: true },
-                    { heading: "Alertas", numeric: true },
+                    { heading: "Destaques", numeric: true },
                   ].map(({ heading, numeric }) => (
                     <th
                       key={heading}
@@ -352,7 +352,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                       data-pf-comparador-votos={candidato.total_votos_mapeados}
                       data-pf-comparador-gastos={candidato.total_gasto_parlamentar ?? ""}
                       data-pf-comparador-processos={candidato.total_processos}
-                      data-pf-comparador-alertas={candidato.alertas_graves}
+                      data-pf-comparador-destaques={candidato.total_pontos_atencao}
                       className={`border-b transition-colors ${
                         selected
                           ? "border-border/50 bg-foreground/[0.03]"
@@ -442,7 +442,7 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                         )}
                       </td>
                       <td className="py-3 text-right text-[length:var(--text-body-sm)] font-bold tabular-nums text-foreground">
-                        {candidato.alertas_graves}
+                        {candidato.total_pontos_atencao}
                       </td>
                     </tr>
                   )
@@ -729,20 +729,20 @@ export function ComparadorPanel({ candidatos, initialSelectedSlugs, initialEixo 
                       </td>
                     ))}
                   </CompRow>
-                  <CompRow label="Alertas graves" icon={<AlertTriangle className="size-3.5" />} highlight={false}>
+                  <CompRow label="Destaques" icon={<Sparkles className="size-3.5" />} highlight={false}>
                     {selectedCandidatos.map((candidato) => {
-                      const values = selectedCandidatos.map((item) => item.alertas_graves)
+                      const values = selectedCandidatos.map((item) => item.total_pontos_atencao)
                       const max = Math.max(...values)
                       const allEqual = values.every((item) => item === max)
                       const isMax =
-                        candidato.alertas_graves === max &&
-                        candidato.alertas_graves > 0 &&
+                        candidato.total_pontos_atencao === max &&
+                        candidato.total_pontos_atencao > 0 &&
                         !allEqual
 
                       return (
                         <td key={candidato.id} className="py-3 text-center">
                           <span className="text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
-                            {candidato.alertas_graves}
+                            {candidato.total_pontos_atencao}
                           </span>
                           {isMax && (
                             <span className="ml-1.5 inline-block rounded-full bg-destructive/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-destructive">

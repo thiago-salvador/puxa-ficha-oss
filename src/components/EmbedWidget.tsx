@@ -1,6 +1,5 @@
 import Link from "next/link"
 import type { FichaCandidato } from "@/lib/types"
-import { classifyAttentionPoints } from "@/lib/attention-points"
 import { formatCompact } from "@/lib/utils"
 import { CandidatePhoto } from "@/components/CandidatePhoto"
 import { SITE_ORIGIN } from "@/lib/metadata"
@@ -42,7 +41,6 @@ export function EmbedWidget({ ficha }: { ficha: FichaCandidato }) {
   const patrimonioSorted = [...patrimonio].sort((a, b) => a.ano_eleicao - b.ano_eleicao)
   const latestPatrimonio = patrimonioSorted.at(-1) ?? null
   const pontos = ficha.pontos_atencao ?? []
-  const { alertasGraves } = classifyAttentionPoints(pontos)
   const historico = ficha.historico ?? []
   const fichaUrl = `${SITE_ORIGIN}/candidato/${ficha.slug}`
 
@@ -85,11 +83,11 @@ export function EmbedWidget({ ficha }: { ficha: FichaCandidato }) {
         />
         <StatRow label="Trocas de partido" value={ficha.total_mudancas_partido ?? 0} />
         <StatRow label="Histórico político (registros)" value={historico.length} />
-        {alertasGraves.length > 0 ? (
+        {pontos.length > 0 ? (
           <StatRow
-            label="Alertas graves"
-            value={alertasGraves.length}
-            sub="Pontos de atenção públicos"
+            label="Destaques"
+            value={pontos.length}
+            sub="Destaques editoriais públicos"
           />
         ) : null}
       </div>

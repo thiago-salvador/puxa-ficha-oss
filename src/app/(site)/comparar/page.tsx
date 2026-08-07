@@ -212,7 +212,7 @@ export default async function CompararPage({
           <p className="text-[length:var(--text-body)] font-medium leading-relaxed text-foreground sm:text-[15px]">
             O comparador foi pensado para busca orgânica e decisão prática:
             selecionar de 2 a 4 nomes, comparar por patrimônio, votações-chave ou gastos
-            parlamentares, além de processos e alertas graves, e seguir para a ficha
+            parlamentares, além de processos e destaques, e seguir para a ficha
             pública sem perder o contexto.
           </p>
           <p className="mt-3 text-[length:var(--text-body)] font-medium leading-relaxed text-muted-foreground sm:text-[15px]">

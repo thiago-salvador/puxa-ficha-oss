@@ -329,7 +329,7 @@ export const COLUNAS: ColunaDef[] = [
   { key: "votos", label: "Votações-chave" },
   { key: "contradicoes", label: "Contradições" },
   { key: "processos", label: "Processos judiciais" },
-  { key: "alertas", label: "Alertas" },
+  { key: "alertas", label: "Destaques" },
   { key: "projetos", label: "Projetos de lei" },
   { key: "destaques", label: "Proj. em destaque" },
   { key: "gastos", label: "Cota parlamentar" },

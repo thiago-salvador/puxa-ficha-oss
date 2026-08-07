@@ -61,7 +61,7 @@ import { hasLegislativeHistory as detectLegislativeHistory } from "@/lib/legisla
 import {
   Scale,
   Landmark,
-  AlertTriangle,
+  Sparkles,
   ArrowRightLeft,
   Banknote,
   FileText,
@@ -108,7 +108,6 @@ const StatCard = memo(function StatCard({
   value,
   label,
   icon: Icon,
-  alert,
   sub,
   trend,
   dataValueAttr,
@@ -117,7 +116,6 @@ const StatCard = memo(function StatCard({
   value: string | number
   label: string
   icon: React.ComponentType<{ className?: string }>
-  alert?: boolean
   sub?: string
   trend?: { value: string; positive?: boolean }
   dataValueAttr?: string
@@ -135,7 +133,7 @@ const StatCard = memo(function StatCard({
           {value}
         </span>
       </div>
-      <span className={`text-[10px] font-bold uppercase tracking-[0.08em] sm:text-[11px] ${alert ? "text-red-600" : "text-muted-foreground"}`}>
+      <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground sm:text-[11px]">
         {label}
       </span>
       {(sub || trend) && (
@@ -294,7 +292,7 @@ export function CandidatoProfile({
   })
   const gastos = ficha.gastos_parlamentares ?? []
   const sectionFreshness = ficha.section_freshness ?? {}
-  const { alertasGraves, alertasNaoPositivos, pontosPositivos } = classifyAttentionPoints(pontosAtencao)
+  const { alertasNaoPositivos, pontosPositivos } = classifyAttentionPoints(pontosAtencao)
   const attentionSourceLinkCount = pontosAtencao.reduce(
     (total, ponto) => total + (ponto.fontes ?? []).filter((fonte) => safeHref(fonte.url)).length,
     0,
@@ -311,7 +309,7 @@ export function CandidatoProfile({
       label: "Legislação",
       dataCount: legislacaoGroups.navigationCount + Math.max(0, projetosLeiTotal - projetosLei.length),
     },
-    alertas: { label: "Alertas", dataCount: pontosAtencao.length },
+    alertas: { label: "Destaques", dataCount: pontosAtencao.length },
   }
 
   const tabDefs: { id: CandidatoProfileNavTabId; label: string; dataCount: number }[] =
@@ -522,10 +520,9 @@ export function CandidatoProfile({
               dataRawValue={ficha.total_mudancas_partido ?? 0}
             />
             <StatCard
-              value={alertasGraves.length}
-              label="Alertas graves"
-              icon={AlertTriangle}
-              alert={alertasGraves.length > 0}
+              value={pontosAtencao.length}
+              label="Destaques"
+              icon={Sparkles}
             />
             {projetosLei.length > 0 ? (
             <StatCard
@@ -814,10 +811,10 @@ export function CandidatoProfile({
               />
             )}
 
-            {/* ALERTAS TAB */}
+            {/* DESTAQUES TAB */}
             {activeTab === "alertas" && (
               <div>
-                <SectionLabel>{fixedCopy.attentionPointsAndHighlights} ({pontosAtencao.length})</SectionLabel>
+                <SectionLabel>{fixedCopy.highlights} ({pontosAtencao.length})</SectionLabel>
                 <SectionTitle>O que você precisa saber</SectionTitle>
                 {alertasNaoPositivos.length === 0 && pontosPositivos.length === 0 ? (
                   <NoticePanel
@@ -832,7 +829,7 @@ export function CandidatoProfile({
                   <section className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="text-[length:var(--text-eyebrow)] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                        Alertas e Pontos de Atenção ({alertasNaoPositivos.length})
+                        Alertas ({alertasNaoPositivos.length})
                       </h3>
                     </div>
                     {alertasNaoPositivos.map((p) => (

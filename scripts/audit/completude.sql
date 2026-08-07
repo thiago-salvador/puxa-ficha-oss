@@ -184,7 +184,7 @@ where not exists (select 1 from public.patrimonio t where t.candidato_id = p.id)
   and not exists (select 1 from public.financiamento t where t.candidato_id = p.id)
 order by p.slug;
 
--- 3g. Aba ALERTAS totalmente vazia: zero pontos_atencao
+-- 3g. Aba DESTAQUES totalmente vazia: zero pontos_atencao
 with pub as (select id, slug, cargo_disputado from public.candidatos where publicavel)
 select p.slug, p.cargo_disputado
 from pub p
