@@ -7,7 +7,8 @@
 3. Inspecione chamadores, schema, contrato público e testes antes de editar.
 4. Faça a menor mudança que corrija a causa compartilhada.
 5. Rode os gates proporcionais e um teste que falharia sem a correção.
-6. Faça commit com Thiago Salvador como autor principal.
+6. Faça commit com Thiago Salvador como autor principal. Quando um agente
+   produzir a mudança, registre-o em um trailer `Co-Authored-By` válido.
 7. Abra PR sem fazer merge, salvo autorização explícita.
 8. Depois do merge/deploy, confirme commit, deployment e comportamento público.
 
