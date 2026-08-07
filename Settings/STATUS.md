@@ -75,6 +75,12 @@ O próximo marco não é "rodar mais buscas". É transformar a régua em uma fil
 fechada por ficha e frente, corrigir causas compartilhadas, integrar cada dado
 até o componente público e reduzir a zero os campos aplicáveis sem conclusão.
 
+O plano de execução está em
+[`CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md`](CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md).
+Ele está aguardando aprovação e separa auditoria e pesquisa paralelas da
+integração, migrations, banco e release, que permanecem seriais e protegidos por
+gates próprios.
+
 Critério de saída:
 
 ```text

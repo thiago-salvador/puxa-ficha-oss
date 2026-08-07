@@ -15,6 +15,7 @@ const settingsFiles = [
   "WORKFLOWS.md",
   "AUTOMATIONS_AND_ENVIRONMENTS.md",
   "STATUS.md",
+  "CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md",
 ] as const
 
 function read(relativePath: string): string {
@@ -61,4 +62,15 @@ test("toda task precisa demonstrar avanço de completude ou confiabilidade", () 
   assert.match(workflow, /Gate de entrada da task/)
   assert.match(workflow, /Se não houver\s+ligação concreta com o objetivo, não execute a task/)
   assert.match(agents, /Toda task deve demonstrar/)
+})
+
+test("workflow de completude protege universo, paralelismo e release", () => {
+  const workflow = read("Settings/CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md")
+
+  assert.match(workflow, /matriz dinâmica `candidato x frente x campo`/)
+  assert.match(workflow, /Onda A/)
+  assert.match(workflow, /Onda B/)
+  assert.match(workflow, /Um único integrador/)
+  assert.match(workflow, /readback público/)
+  assert.match(workflow, /APROVAR WORKFLOW DE COMPLETUDE/)
 })

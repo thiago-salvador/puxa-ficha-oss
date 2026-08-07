@@ -15,6 +15,9 @@ dados sem criar uma segunda verdade.
    segredos e rotinas automáticas.
 7. [STACK.md](STACK.md): ferramentas e versões suportadas.
 8. [STATUS.md](STATUS.md): fotografia datada do estado atual e das lacunas.
+9. [CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md](CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md):
+   plano com gates para transformar auditorias e pesquisas em dados
+   comprovados nas fichas de todo o universo.
 
 ## Hierarquia de autoridade
 
