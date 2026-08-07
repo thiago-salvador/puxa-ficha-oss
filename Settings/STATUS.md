@@ -23,14 +23,29 @@ de usá-lo como prova futura.
   nao_coletado); ficha exibe ausência oficial com fonte e data. 2.165 testes
   passando, gates verdes.
 - Cobertura pós-apply (`npm run audit:cobertura`, produção read-only): índice
-  médio 87,2; 37 fichas em 100; célula de patrimônio 92 ok / 67 parcial /
-  6 faltante / 29 n/a; 28 fichas com ausência confirmada. A régua agora mede
-  patrimônio por eleição aplicável (>= 2006), não por presença.
-- Produção: commit `0cf39b41` segue no ar; merge/deploy da branch
+  médio 87,3; 39 fichas em 100; célula de patrimônio 94 ok / 67 parcial /
+  6 faltante / 27 n/a; a régua agora mede patrimônio por eleição aplicável
+  (>= 2006), não por presença.
+- Ciclo 2026 fechado (migration `20260807183000`): 17 lacunas preenchidas com
+  bens do pacote oficial `bem_candidato_2026` e 13 ausências oficiais
+  registradas, todas declarando o snapshot 2026-08-04 (registros em fluxo;
+  revalidar quando o TSE atualizar). Ausências oficiais totais: 61/61.
+- Identidade (auditoria A2C): dos 29 slugs sem SQ no seed, 4 ganharam chave
+  verificada (jose-estevao e samara-mineiro por rota CPF, SQs 2026 curados no
+  seed; jarbas-soares e renan-santos em quarentena). Universo pré-2010
+  auditado (2002-2008 por SQ+UF): 26 pares verificados, todos já cobertos na
+  trajetória; nenhum SQ <= 2000 no seed dos publicados.
+- Correção de dado falso: removidos os patrimônios 2008/2020 de jarbas-soares
+  (homônimo, migração `20260807184000`); as candidaturas correspondentes já
+  estavam despublicadas desde 05/08.
+- Produção: commit `0cf39b41` segue no ar; dados novos revalidam sozinhos na
+  janela de cache de 3600s; merge/deploy da branch
   `codex/profiles-complete-2026` permanece no gate de completude.
-- Bloqueios remanescentes: snapshot 2026 do TSE parcial (13 ausências e 17
-  lacunas de 2026 adiadas); 27 slugs sem rota de casamento exata; pré-2010 fora
-  do universo de candidaturas (SQ antigo colide por UF).
+- Bloqueios remanescentes: 25 slugs sem rota de casamento exata (pré-candidatos
+  2026 sem registro no snapshot ou sem chave); renan-santos com linha 2022 de
+  homônimo em quarentena (decisão editorial); jarbas-soares em quarentena de
+  identidade; rui-costa-pimenta 2002/2006 com UF=BR (candidaturas presidenciais,
+  exceção estrutural da regra de UF, já cobertas na trajetória).
 
 ## Snapshot 06/08/2026 (anterior)
 
