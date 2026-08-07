@@ -253,20 +253,22 @@ function FinancingTeaserSegments({
 }) {
   if (segments.length === 0) return null
   return (
-    <div className="mt-3 flex items-center gap-5">
-      <DonutChart
-        segments={segments}
-        centerValue={formatCompact(total)}
-        centerLabel="Total"
-        size={100}
-        strokeWidth={16}
-      />
-      <div className="min-w-0 flex-1 space-y-1.5">
+    <div className="mt-3 grid grid-cols-1 items-center gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:gap-5">
+      <div className="flex justify-center sm:justify-start">
+        <DonutChart
+          segments={segments}
+          centerLabel="Total"
+          size={112}
+          strokeWidth={16}
+          showLegend={false}
+        />
+      </div>
+      <div className="min-w-0 space-y-2">
         {segments.map((s) => (
-          <div key={s.label} className="flex items-center gap-2">
-            <div className="size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground">
-              {s.label}
+          <div key={s.label} className="flex items-start gap-2">
+            <div className="mt-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+            <span className="min-w-0 flex-1 text-[11px] font-medium leading-snug text-muted-foreground">
+              {s.label} ({Math.round((s.value / total) * 100)}%)
             </span>
             <span className="shrink-0 text-[11px] font-bold tabular-nums text-foreground">
               {formatCompact(s.value)}
