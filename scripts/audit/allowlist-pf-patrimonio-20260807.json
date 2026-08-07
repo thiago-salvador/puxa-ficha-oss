@@ -34,6 +34,7 @@
   "hertz-dias",
   "ivan-moraes",
   "izadora-dias",
+  "jarbas-soares",
   "jayme-campos",
   "jeferson-bezerra",
   "jeremias-cosmo",
@@ -1076,6 +1077,14 @@
     "fonte_url",
     "verificado_em",
     "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "jarbas-soares",
+   "campos": [
+    "remocao_registros_homonimo"
    ],
    "max_registros": 1
   }
