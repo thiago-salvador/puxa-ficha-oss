@@ -18,6 +18,8 @@ dados sem criar uma segunda verdade.
 9. [CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md](CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md):
    plano com gates para transformar auditorias e pesquisas em dados
    comprovados nas fichas de todo o universo.
+10. [CANDIDATE_DATA_COMPLETENESS_EVAL.md](CANDIDATE_DATA_COMPLETENESS_EVAL.md):
+    critérios pass/fail, graders, custo esperado e golden set do workflow.
 
 ## Hierarquia de autoridade
 

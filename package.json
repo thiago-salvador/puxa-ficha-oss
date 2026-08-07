@@ -63,6 +63,8 @@
     "data:curadoria:processos:lote": "tsx scripts/curadoria-processos-lote.ts",
     "audit:cobertura": "tsx scripts/audit/coverage-report.ts",
     "audit:cobertura:check": "tsx scripts/audit/check-report.ts",
+    "eval:completude": "node scripts/eval-profile-completeness.mjs",
+    "eval:completude:self-test": "node scripts/eval-profile-completeness.mjs --self-test",
     "settings:check": "node --import tsx --test tests/settings-contract.test.ts",
     "audit:cobertura:allowlist": "tsx scripts/audit/check-migrations-allowlist.ts",
     "audit:link-check-snapshot": "tsx scripts/audit/link-check-from-snapshot.ts",

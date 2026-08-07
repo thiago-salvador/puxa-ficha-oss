@@ -17,6 +17,11 @@ Este workflow transforma a amostragem de bugs dos presidenciáveis e todo o
 trabalho acumulado da semana em uma fila fechada por candidato e frente. Ele não
 autoriza pesquisa, escrita no banco, merge, deploy ou envio de email por si só.
 
+O eval obrigatório está em
+[`CANDIDATE_DATA_COMPLETENESS_EVAL.md`](CANDIDATE_DATA_COMPLETENESS_EVAL.md).
+Nenhuma onda começa sem o self-test do golden set, e nenhum marco termina sem
+100% dos graders daquele marco em `PASS`.
+
 ## Objetivo final
 
 Cada candidato publicável à Presidência, aos governos estaduais e ao Governo do
@@ -114,6 +119,7 @@ identidade e checksum dos snapshots de banco/API/site.
 provisória e interromper qualquer decisão de publicação até o readback voltar.
 
 **Gate 0:** nenhum agente começa pesquisa sem roster e esquema de saída iguais.
+O self-test `npm run eval:completude:self-test` também precisa passar.
 
 ### Etapa 1: reconciliação do trabalho da semana
 
@@ -165,6 +171,9 @@ agente escreve apenas no diretório temporário exclusivo da sua frente.
 **Verificação da etapa:** 100% dos candidatos têm uma conclusão para cada frente:
 valor encontrado, vazio confirmado, não aplicável, inconclusivo, não coletado ou
 erro. “Sem linha” não é conclusão.
+
+Os agentes também produzem os resultados dos casos do golden set que pertencem
+à sua frente. O próprio agente não gradua esses resultados.
 
 **Fallback:** identidade ambígua bloqueia só o candidato/campo afetado; fonte
 indisponível preserva o dado anterior e registra erro. O agente não tenta outra
@@ -225,6 +234,9 @@ A curadoria editorial é verificada contra o recibo de aprovação item a item. 
 204 CNJs revisados não são publicados em bloco só porque foram classificados.
 
 **Entregável:** parecer `pass`, `fail` ou `partial` por gate, com evidência.
+
+O release exige `PASS`, não `partial`, em todos os critérios do eval. V1-V3
+rodam os graders e registram a evidência sem editar o objeto verificado.
 
 **Fallback:** qualquer `fail` volta ao integrador com reprodução mínima. O mesmo
 erro repetido duas vezes sem nova evidência interrompe a frente e pede decisão.
@@ -425,6 +437,10 @@ A aprovação deste documento libera apenas as Etapas 0 a 5: baseline,
 reconciliação, auditorias, pesquisa dirigida, implementação em branch e
 verificação. Ela **não** libera escrita no banco de produção, merge, deploy,
 publicação editorial ou envio/ativação de email.
+
+A aprovação também congela os critérios do eval. Se um critério precisar mudar,
+a alteração deve ser aprovada antes de ver o resultado que ela afetará. Critério
+não pode ser rebaixado depois de um `FAIL`.
 
 Para começar, responder:
 
