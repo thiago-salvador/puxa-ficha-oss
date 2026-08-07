@@ -85,6 +85,7 @@ import {
 import {
   SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS,
   withSupabaseRetry,
+  type SupabaseRunResult,
 } from "@/lib/supabase-retry"
 import { getCanonicalPerson } from "@/lib/canonical-person-map"
 import { formatDate } from "@/lib/utils"
@@ -168,6 +169,11 @@ if (USE_MOCK && process.env.VERCEL) {
 
 // Public columns only: excludes cpf, email_campanha, cpf_hash, tcu flags, wikidata_id
 const CANDIDATO_COLUMNS = "id, nome_completo, nome_urna, slug, data_nascimento, idade, naturalidade, formacao, profissao_declarada, genero, estado_civil, cor_raca, partido_atual, partido_sigla, cargo_atual, cargo_disputado, estado, status, situacao_candidatura, biografia, foto_url, site_campanha, redes_sociais, fonte_dados, ultima_atualizacao, verificacao_campos"
+const CANDIDATO_COLUMNS_LEGACY = CANDIDATO_COLUMNS.replace(/, verificacao_campos$/, "")
+
+function isMissingVerificationColumnError(error: { message?: string } | null | undefined): boolean {
+  return /verificacao_campos|column .* does not exist/i.test(error?.message ?? "")
+}
 
 function resolveCampaignSite(candidato: Candidato): string | null {
   if (candidato.site_campanha?.trim()) return candidato.site_campanha.trim()
@@ -632,22 +638,22 @@ async function getCandidatosResourceUncached(
   }
 
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("getCandidatos", async (signal) => {
+  const load = (columns: string) => withSupabaseRetry<Candidato[]>("getCandidatos", async (signal) => {
     let query = supabase
       .from(CANDIDATO_PUBLIC_RELATION)
-      .select(CANDIDATO_COLUMNS)
+      .select(columns)
       .neq("status", "removido")
 
-    if (cargo) {
-      query = query.eq("cargo_disputado", cargo)
-    }
+    if (cargo) query = query.eq("cargo_disputado", cargo)
+    if (estado) query = query.ilike("estado", estado)
 
-    if (estado) {
-      query = query.ilike("estado", estado)
-    }
-
-    return query.order("nome_urna").abortSignal(signal)
+    return query.order("nome_urna").abortSignal(signal) as unknown as SupabaseRunResult<Candidato[]>
   }, { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS })
+  let result = await load(CANDIDATO_COLUMNS)
+  if (isMissingVerificationColumnError(result.error)) {
+    result = await load(CANDIDATO_COLUMNS_LEGACY)
+  }
+  const { data, error } = result
 
   if (error || !data) {
     if (IS_DEV) {
@@ -900,12 +906,12 @@ const getCandidatoPublicRowForRequest = cache(async function loadCandidatoPublic
   }
 
   const supabase = createServerSupabaseClient(cacheMode ? { cacheMode } : undefined)
-  const { data, error } = await withSupabaseRetry<Candidato>(
+  const load = (columns: string) => withSupabaseRetry<Candidato>(
     `getCandidatoPublicRow(${slug})`,
     async (signal) =>
       supabase
         .from(CANDIDATO_PUBLIC_RELATION)
-        .select(CANDIDATO_COLUMNS)
+        .select(columns)
         .eq("slug", slug)
         // `.abortSignal()` vem antes de `.single()`: o `.single()` estreita o tipo
         // para PostgrestBuilder, que nao expoe `abortSignal`. A ordem nao muda o
@@ -913,6 +919,11 @@ const getCandidatoPublicRowForRequest = cache(async function loadCandidatoPublic
         .abortSignal(signal)
         .single()
   )
+  let result = await load(CANDIDATO_COLUMNS)
+  if (isMissingVerificationColumnError(result.error)) {
+    result = await load(CANDIDATO_COLUMNS_LEGACY)
+  }
+  const { data, error } = result
 
   if (isSupabaseNoRowError(error)) {
     // Slug inexistente: precisa virar HTTP 404 na rota, nao uma ficha degradada com 200.
@@ -1115,18 +1126,23 @@ async function getCandidatoBySlugFromRelationResource(
     candidato = rowRes.data
     if (!candidato) return liveResource(null)
   } else {
-    const { data, error: candidatoError } = await withSupabaseRetry<Candidato>(
+    const load = (columns: string) => withSupabaseRetry<Candidato>(
       `getCandidatoBySlug(${slug})`,
       async (signal) =>
         supabase
           .from(relation)
-          .select(CANDIDATO_COLUMNS)
+          .select(columns)
           .eq("slug", slug)
           // Mesma ordem de getCandidatoPublicRow: `.abortSignal()` antes de
           // `.single()`, que estreita o tipo e esconde o metodo.
           .abortSignal(signal)
           .single()
     )
+    let result = await load(CANDIDATO_COLUMNS)
+    if (isMissingVerificationColumnError(result.error)) {
+      result = await load(CANDIDATO_COLUMNS_LEGACY)
+    }
+    const { data, error: candidatoError } = result
 
     if (isSupabaseNoRowError(candidatoError)) {
       // Slug inexistente: precisa virar HTTP 404 na rota, nao uma ficha degradada com 200.
