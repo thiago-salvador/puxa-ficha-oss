@@ -93,29 +93,57 @@ export async function consultar<T>(sql: string, ref: string, token: string): Pro
 
 const MARCA_COLETA_INICIO = "-- @coleta-opcional-inicio"
 const MARCA_COLETA_FIM = "-- @coleta-opcional-fim"
+const MARCA_AUSENCIAS_INICIO = "-- @ausencias-opcionais-inicio"
+const MARCA_AUSENCIAS_FIM = "-- @ausencias-opcionais-fim"
 
 /**
- * Remove do SQL o bloco que lê `coleta_log_ultima`.
+ * Remove do SQL um bloco opcional delimitado por marcadores.
  *
  * Existe porque a guarda não cabe dentro do próprio SELECT: a relação é
  * resolvida na análise do comando, então `to_regclass` em tempo de execução
  * chegaria tarde e a consulta inteira falharia em banco sem a migration. O
- * relatório precisa continuar saindo ali (banco novo, rollback, fork), com a
- * procedência marcada como não lida em vez de nada.
+ * relatório precisa continuar saindo ali (banco novo, rollback, fork), com o
+ * campo marcado como não lido (ou lista vazia) em vez de nada.
  *
  * Marcador ausente é erro e não silêncio: significa que alguém renomeou os
  * delimitadores no `.sql` e que a degradação parou de funcionar sem avisar.
  */
-export function removerBlocoDeColeta(sql: string): string {
-  const inicio = sql.indexOf(MARCA_COLETA_INICIO)
-  const fim = sql.indexOf(MARCA_COLETA_FIM)
+function removerBlocoOpcional(
+  sql: string,
+  marcaInicio: string,
+  marcaFim: string,
+  nome: string,
+  migration: string
+): string {
+  const inicio = sql.indexOf(marcaInicio)
+  const fim = sql.indexOf(marcaFim)
   if (inicio === -1 || fim === -1 || fim < inicio) {
     throw new Error(
-      `coverage-snapshot.sql sem os marcadores ${MARCA_COLETA_INICIO}/${MARCA_COLETA_FIM}: ` +
-        "o bloco de coleta não pode mais ser removido em banco sem a migration coleta_log"
+      `coverage-snapshot.sql sem os marcadores ${marcaInicio}/${marcaFim}: ` +
+        `o bloco ${nome} não pode mais ser removido em banco sem a migration ${migration}`
     )
   }
-  return sql.slice(0, inicio) + sql.slice(fim + MARCA_COLETA_FIM.length)
+  return sql.slice(0, inicio) + sql.slice(fim + marcaFim.length)
+}
+
+export function removerBlocoDeColeta(sql: string): string {
+  return removerBlocoOpcional(
+    sql,
+    MARCA_COLETA_INICIO,
+    MARCA_COLETA_FIM,
+    "de coleta",
+    "coleta_log"
+  )
+}
+
+export function removerBlocoDeAusencias(sql: string): string {
+  return removerBlocoOpcional(
+    sql,
+    MARCA_AUSENCIAS_INICIO,
+    MARCA_AUSENCIAS_FIM,
+    "de ausências oficiais de patrimônio",
+    "patrimonio_ausencia_oficial"
+  )
 }
 
 /**
@@ -123,7 +151,11 @@ export function removerBlocoDeColeta(sql: string): string {
  * O SQL devolve uma linha e uma coluna (`snapshot`) com o array inteiro.
  *
  * O campo `coleta` de cada candidato sai daqui junto com o resto, numa consulta
- * só. Em banco sem `coleta_log_ultima` o bloco é removido antes do envio.
+ * só. Em banco sem `coleta_log_ultima` o bloco é removido antes do envio; em
+ * banco sem `patrimonio_ausencia_oficial` (migration ainda não aplicada), o
+ * bloco de ausências é removido e o snapshot sai sem ausências confirmadas —
+ * o relatório continua funcionando, com toda eleição sem dado contada como
+ * lacuna.
  */
 export async function obterSnapshot(
   caminhoSql: string,
@@ -133,17 +165,28 @@ export async function obterSnapshot(
   const token = opcoes.token || resolverToken()
   let sql = readFileSync(caminhoSql, "utf8")
 
-  const [{ existe }] = await consultar<{ existe: boolean }>(
-    "select to_regclass('public.coleta_log_ultima') is not null as existe",
+  const [{ existe_coleta, existe_ausencias }] = await consultar<{
+    existe_coleta: boolean
+    existe_ausencias: boolean
+  }>(
+    "select to_regclass('public.coleta_log_ultima') is not null as existe_coleta, " +
+      "to_regclass('public.patrimonio_ausencia_oficial') is not null as existe_ausencias",
     ref,
     token
   )
-  if (!existe) {
+  if (!existe_coleta) {
     console.error(
       "[cobertura] coleta_log_ultima não existe neste banco; " +
         "o snapshot sai sem procedência e todo zero fica como não lido"
     )
     sql = removerBlocoDeColeta(sql)
+  }
+  if (!existe_ausencias) {
+    console.error(
+      "[cobertura] patrimonio_ausencia_oficial não existe neste banco; " +
+        "o snapshot sai sem ausências confirmadas e toda eleição aplicável sem dado conta como lacuna"
+    )
+    sql = removerBlocoDeAusencias(sql)
   }
 
   const linhas = await consultar<{ snapshot: unknown[] | null }>(sql, ref, token)

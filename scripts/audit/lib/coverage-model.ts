@@ -25,6 +25,14 @@
  *                         conta (ainda não houve registro), e cargo por nomeação
  *                         (ministro, secretário, presidência de partido) também não.
  *
+ * Patrimônio mede POR ELEIÇÃO aplicável, não por presença (2026-08-07): o
+ * denominador são as eleições a partir de `PATRIMONIO_ANO_INICIAL_APLICAVEL`
+ * (2006, janela da série bem_candidato dos dados abertos do TSE) vindas do
+ * histórico com proveniência `tse`, unidas aos anos com bem publicado e aos anos
+ * com ausência oficial confirmada (`patrimonioAusenciasOficiais`). Quem publicou
+ * bens em 2006 e 2010 mas deve a eleição de 2014 não sai mais como completo.
+ * Evolução patrimonial e bens ano a ano continuam medindo só o conjunto publicado.
+ *
  * Histórico incompleto pode gerar falso `na`: é limitação conhecida e está escrita
  * na própria página do relatório.
  */
@@ -80,6 +88,13 @@ export const ROTULO_PROVENIENCIA: Record<Proveniencia, string> = {
 
 /** Último ano de registro no TSE considerado para "já declarou". */
 export const ANO_ULTIMA_ELEICAO_REGISTRADA = 2024
+/**
+ * Primeira eleição medida pela régua de patrimônio. A série `bem_candidato` dos
+ * dados abertos do TSE começa em 2006; antes disso não há pacote oficial para
+ * confirmar dado nem ausência. Declarada aqui com o mesmo valor usado nas
+ * etapas de coleta da execução pf-patrimonio-20260807T170643Z.
+ */
+export const PATRIMONIO_ANO_INICIAL_APLICAVEL = 2006
 /** Cota parlamentar digital (CEAP) só existe a partir de 2009. */
 export const ANO_INICIO_COTA_PARLAMENTAR = 2009
 /** Primeira das votações-chave carregadas no banco (2012-05-25). */
@@ -110,6 +125,13 @@ export interface HistoricoEvento {
   tipo_evento: string | null
   periodo_inicio: number | null
   periodo_fim: number | null
+  /**
+   * Origem da linha no histórico. Só `tse` alimenta a régua de patrimônio por
+   * eleição: é a proveniência cujos anos casam com a série bem_candidato do
+   * TSE. Ausente em snapshots anteriores a 2026-08-07, quando o SQL não a
+   * carregava; aí a linha simplesmente não cria eleição aplicável.
+   */
+  proveniencia?: string | null
 }
 
 export type FotoOrigem = "local" | "tse" | "wikimedia" | "oficial" | "terceiro"
@@ -143,6 +165,14 @@ export interface CandidatoCoverage {
   mudancas: number
   patrimonioAnos: number[]
   patrimonioAnosComBens: number[]
+  /**
+   * Eleições em que o pacote oficial `bem_candidato` do TSE foi lido de ponta a
+   * ponta e não trouxe bens para o SQ_CANDIDATO (tabela
+   * `patrimonio_ausencia_oficial`). Lista vazia quando o banco ainda não tem a
+   * tabela ou o snapshot é anterior a ela: ausência de prova não vira prova de
+   * ausência, e a eleição segue contada como lacuna.
+   */
+  patrimonioAusenciasOficiais: number[]
   financiamentoAnos: number[]
   financiamentoAnosComDoadores: number[]
   votos: number
@@ -307,6 +337,56 @@ export function calcularFontesNaoAplicaveis(
   return naoAplicaveis
 }
 
+/**
+ * Patrimônio por eleição aplicável (2026-08-07).
+ *
+ * Eleições aplicáveis: anos a partir de `PATRIMONIO_ANO_INICIAL_APLICAVEL`
+ * vindos de três fontes, em união deduplicada:
+ *   1. histórico com proveniência `tse` (o ingest do TSE grava o ANO DA
+ *      ELEIÇÃO em `periodo_inicio`, mesmo quando o evento é mandato);
+ *   2. anos com bem publicado (`patrimonioAnos`);
+ *   3. anos com ausência oficial confirmada (`patrimonioAusenciasOficiais`).
+ *
+ * Por ano, o estado é: publicado (há bem), vazio_confirmado (o pacote oficial
+ * bem_candidato foi lido sem bens para o SQ) ou lacuna (eleição aplicável sem
+ * dado nem confirmação). Publicado precede vazio_confirmado se os dois
+ * aparecerem para o mesmo ano.
+ */
+export interface PatrimonioPorEleicao {
+  aplicaveis: number[]
+  publicados: number[]
+  ausenciasConfirmadas: number[]
+  lacunas: number[]
+}
+
+export function patrimonioPorEleicao(c: CandidatoCoverage): PatrimonioPorEleicao {
+  const anos = new Set<number>()
+  for (const h of c.historico) {
+    if (h.proveniencia !== "tse") continue
+    if (h.periodo_inicio === null) continue
+    if (h.periodo_inicio >= PATRIMONIO_ANO_INICIAL_APLICAVEL) anos.add(h.periodo_inicio)
+  }
+  for (const ano of c.patrimonioAnos) {
+    if (ano >= PATRIMONIO_ANO_INICIAL_APLICAVEL) anos.add(ano)
+  }
+  for (const ano of c.patrimonioAusenciasOficiais) {
+    if (ano >= PATRIMONIO_ANO_INICIAL_APLICAVEL) anos.add(ano)
+  }
+
+  const aplicaveis = [...anos].sort((a, b) => a - b)
+  const publicadosSet = new Set(c.patrimonioAnos)
+  const ausenciasSet = new Set(c.patrimonioAusenciasOficiais)
+  const publicados: number[] = []
+  const ausenciasConfirmadas: number[] = []
+  const lacunas: number[] = []
+  for (const ano of aplicaveis) {
+    if (publicadosSet.has(ano)) publicados.push(ano)
+    else if (ausenciasSet.has(ano)) ausenciasConfirmadas.push(ano)
+    else lacunas.push(ano)
+  }
+  return { aplicaveis, publicados, ausenciasConfirmadas, lacunas }
+}
+
 export interface ColunaDef {
   key: string
   label: string
@@ -448,20 +528,75 @@ export function calcularCelulas(c: CandidatoCoverage): Record<string, Cell> {
       ? cell("ok", String(c.mudancas))
       : cellZero("partidos", c, "sem troca registrada")
 
+  // Patrimônio mede POR ELEIÇÃO aplicável, não por presença: o denominador são
+  // as eleições >= 2006 (histórico tse, bens publicados, ausências confirmadas),
+  // e candidatura aplicável sem dado nem confirmação é lacuna ainda que haja bem
+  // publicado em outro ano. O rótulo mostra a conta (cobertos/aplicáveis).
   const pat = c.patrimonioAnos.length
+  const porEleicao = patrimonioPorEleicao(c)
+
+  if (!ap.declarouAoTse) {
+    out.patrimonio = cell(
+      "na",
+      "n/a",
+      "nunca disputou eleição nem teve mandato eletivo: não há declaração ao TSE"
+    )
+  } else if (porEleicao.aplicaveis.length === 0) {
+    out.patrimonio =
+      pat > 0
+        ? cell("ok", anos(pat), "bem publicado fora da janela medida (a partir de 2006)")
+        : cell(
+            "na",
+            "n/a",
+            "declarou ao TSE, mas nenhuma eleição aplicável na janela medida (a partir de 2006)"
+          )
+  } else {
+    const { aplicaveis, publicados, ausenciasConfirmadas, lacunas } = porEleicao
+    const cobertos = publicados.length + ausenciasConfirmadas.length
+    const texto =
+      ausenciasConfirmadas.length > 0
+        ? `${cobertos}/${aplicaveis.length} · ${ausenciasConfirmadas.length} ausência${
+            ausenciasConfirmadas.length > 1 ? "s" : ""
+          } confirmada${ausenciasConfirmadas.length > 1 ? "s" : ""}`
+        : `${cobertos}/${aplicaveis.length}`
+    const partes = [
+      `eleições aplicáveis a partir de ${PATRIMONIO_ANO_INICIAL_APLICAVEL}: ${aplicaveis.join(", ")}`
+    ]
+    if (publicados.length > 0) partes.push(`com dado publicado: ${publicados.join(", ")}`)
+    if (ausenciasConfirmadas.length > 0) {
+      partes.push(
+        `ausência confirmada (pacote oficial bem_candidato do TSE sem bens para o SQ): ${ausenciasConfirmadas.join(", ")}`
+      )
+    }
+    if (lacunas.length > 0) partes.push(`sem dado nem confirmação: ${lacunas.join(", ")}`)
+    out.patrimonio = cell(
+      lacunas.length === 0 ? "ok" : publicados.length > 0 ? "partial" : "missing",
+      texto,
+      partes.join(". ")
+    )
+  }
+
+  // Evolução e bens continuam medindo o conjunto PUBLICADO: a régua por eleição
+  // muda a célula de patrimônio, não o denominador delas. Sem publicado e sem
+  // lacuna (nada aplicável na janela, ou tudo com ausência oficial confirmada),
+  // não há conjunto a medir: n/a, não lacuna.
   if (pat > 0) {
-    out.patrimonio = cell("ok", anos(pat))
     out.evolucao =
       pat >= 2 ? cell("ok", "✓") : cell("partial", "1 ano", "evolução precisa de 2 anos ou mais")
     const bens = c.patrimonioAnosComBens.length
     out.bens = cell(bens === pat ? "ok" : bens > 0 ? "partial" : "missing", `${bens}/${pat}`)
   } else if (!ap.declarouAoTse) {
     const tip = "nunca disputou eleição nem teve mandato eletivo: não há declaração ao TSE"
-    out.patrimonio = cell("na", "n/a", tip)
+    out.evolucao = cell("na", "n/a", tip)
+    out.bens = cell("na", "n/a", tip)
+  } else if (porEleicao.lacunas.length === 0) {
+    const tip =
+      porEleicao.aplicaveis.length === 0
+        ? "declarou ao TSE, mas nenhuma eleição aplicável na janela medida (a partir de 2006)"
+        : "ausência oficial confirmada para todas as eleições aplicáveis: não há conjunto publicado a medir"
     out.evolucao = cell("na", "n/a", tip)
     out.bens = cell("na", "n/a", tip)
   } else {
-    out.patrimonio = cell("missing", "—")
     out.evolucao = cell("missing", "—")
     out.bens = cell("missing", "—")
   }

@@ -67,7 +67,8 @@ from (
         'cargo_canonico', h.cargo_canonico,
         'tipo_evento', h.tipo_evento,
         'periodo_inicio', h.periodo_inicio,
-        'periodo_fim', h.periodo_fim))
+        'periodo_fim', h.periodo_fim,
+        'proveniencia', h.proveniencia))
       from historico_politico h
       where h.candidato_id = c.id and h.despublicado_em is null), '[]'::jsonb),
     'mudancas', (select count(*) from mudancas_partido m where m.candidato_id = c.id),
@@ -77,6 +78,25 @@ from (
       select jsonb_agg(p.ano_eleicao) from patrimonio p
       where p.candidato_id = c.id and jsonb_typeof(p.bens) = 'array'
         and jsonb_array_length(p.bens) > 0), '[]'::jsonb),
+    -- Ausencias oficiais de patrimonio: eleicoes em que o pacote oficial
+    -- bem_candidato do TSE foi lido de ponta a ponta e nao trouxe bens para o
+    -- SQ_CANDIDATO (tabela patrimonio_ausencia_oficial). A regua de patrimonio
+    -- conta esses anos como cobertura, nao como lacuna.
+    --
+    -- BLOCO OPCIONAL, delimitado pelos marcadores abaixo, pelos mesmos motivos
+    -- do bloco de coleta: a relacao e resolvida na analise do comando, entao
+    -- `to_regclass` dentro do proprio SELECT chegaria tarde. Em banco sem a
+    -- migration (a tabela so existe apos o apply), `lib/snapshot-fetch.ts`
+    -- remove daqui ate o marcador de fim e o snapshot sai sem a chave
+    -- `patrimonioAusenciasOficiais`, que o leitor normaliza para lista vazia:
+    -- ausencia de prova nao vira prova de ausencia. Mexer nos marcadores exige
+    -- mexer no strip; `tests/coverage-proveniencia.test.ts` cobre os dois.
+    -- @ausencias-opcionais-inicio
+    'patrimonioAusenciasOficiais', coalesce((
+      select jsonb_agg(a.ano_eleicao order by a.ano_eleicao)
+      from patrimonio_ausencia_oficial a
+      where a.candidato_id = c.id), '[]'::jsonb),
+    -- @ausencias-opcionais-fim
     'financiamentoAnos', coalesce((
       select jsonb_agg(f.ano_eleicao) from financiamento f where f.candidato_id = c.id), '[]'::jsonb),
     'financiamentoAnosComDoadores', coalesce((

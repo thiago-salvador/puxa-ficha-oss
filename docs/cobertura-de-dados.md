@@ -43,6 +43,50 @@ posição com `verificado = true`, porque é o que `src/lib/api.ts` consome. Pos
 gravada e não revisada não vai ao ar, e por isso não vira verde: vira item na
 coluna "Aguardando aprovação".
 
+### Patrimônio por eleição aplicável
+
+Até 07/08/2026 a célula de patrimônio media por PRESENÇA: qualquer bem publicado
+dava "ok", e com isso escondia eleições aplicáveis sem dado. Caso real que motivou
+a mudança: `rui-costa-pimenta` tem bens de 2006 e 2010 publicados, mas a eleição
+de 2014, confirmada sem bens no pacote oficial do TSE, não aparecia em lugar
+nenhum; e candidaturas de 2018/2022 sem coleta contavam como ficha completa.
+
+Agora a coluna mede **cobertos sobre aplicáveis**, por eleição:
+
+- **Eleições aplicáveis**: anos a partir de 2006 (janela da série `bem_candidato`
+  dos dados abertos do TSE; antes disso não há pacote oficial para confirmar dado
+  nem ausência), vindos de três fontes em união deduplicada: o histórico político
+  com proveniência `tse` (cujo `periodo_inicio` é o ano da eleição), os anos com
+  bem publicado e os anos com ausência oficial confirmada.
+- **Por ano, o estado é um de três:**
+
+| Estado | Significado |
+|---|---|
+| Publicado | Há bem declarado na tabela `patrimonio` para aquela eleição. |
+| Vazio confirmado | O pacote oficial `bem_candidato` daquele ano foi lido de ponta a ponta e não traz bens para o SQ_CANDIDATO. Registrado na tabela `patrimonio_ausencia_oficial`. Não é zero fabricado: é a confirmação, com fonte e data, de que a fonte oficial não tem registro para aquele pleito. |
+| Lacuna | Eleição aplicável sem dado nem confirmação. É o que a célula cobra. |
+
+A célula é `ok` quando não há lacuna, `partial` quando há publicado e lacuna, e
+`missing` quando nada foi publicado e há eleição aplicável. O rótulo mostra a
+conta (cobertos/aplicáveis) e quantas ausências confirmadas entram nela. Quem
+declarou ao TSE mas não tem nenhuma eleição aplicável na janela (ex.: carreira
+só anterior a 2006) sai como `n/a`, não como lacuna. **Evolução patrimonial e
+bens ano a ano continuam medindo apenas o conjunto publicado**: a régua por
+eleção muda a célula de patrimônio, não o denominador delas.
+
+**2026 fica de fora até o snapshot do TSE estabilizar.** Nenhuma ausência de
+2026 é registrada enquanto os pacotes oficiais estão em andamento (registros em
+aberto), e candidatura de 2026 ainda não tem registro no histórico com
+proveniência `tse`. Quando o TSE publicar o snapshot definitivo, a janela passa
+a cobrir 2026 pelos mesmos três caminhos.
+
+O relatório funciona em banco **sem** a tabela `patrimonio_ausencia_oficial`
+(migration ainda não aplicada, banco novo, fork): o bloco que lê a tabela é
+removido do SQL antes do envio (mesmo mecanismo do bloco de `coleta`), o
+snapshot sai sem a chave e o leitor normaliza para lista vazia. Ausência de
+prova não vira prova de ausência: sem a tabela, toda eleição aplicável sem dado
+conta como lacuna, que é o lado conservador do erro.
+
 **Índice de preenchimento: 15 colunas.** Entram foto, bio, redes sociais, dados
 pessoais, patrimônio, evolução patrimonial, bens ano a ano, financiamento,
 doadores detalhados, votações-chave, projetos de lei, cota parlamentar,
@@ -169,10 +213,10 @@ tsx scripts/audit/coverage-report.ts --from-snapshot=caminho/do/snapshot.json
 
 | Arquivo | Papel |
 |---|---|
-| `scripts/audit/coverage-snapshot.sql` | Os fatos, incluindo o campo `coleta` de cada candidato. Uma linha, uma coluna `snapshot` com o array inteiro. |
+| `scripts/audit/coverage-snapshot.sql` | Os fatos, incluindo o campo `coleta` de cada candidato, a proveniência de cada linha do histórico e as ausências oficiais de patrimônio (`patrimonioAusenciasOficiais`). Uma linha, uma coluna `snapshot` com o array inteiro. |
 | `scripts/audit/lib/coleta-proveniencia.ts` | Mapa coluna → fontes e veredito da procedência do zero. Lógica pura. |
-| `scripts/audit/lib/coverage-model.ts` | A régua: cinco estados de célula, aplicabilidade, índice. Lógica pura. |
-| `scripts/audit/lib/snapshot-fetch.ts` | Transporte e credencial. Não interpreta nada, mas remove o bloco de `coleta` quando o banco não tem a view. |
+| `scripts/audit/lib/coverage-model.ts` | A régua: cinco estados de célula, aplicabilidade, patrimônio por eleição aplicável, índice. Lógica pura. |
+| `scripts/audit/lib/snapshot-fetch.ts` | Transporte e credencial. Não interpreta nada, mas remove os blocos opcionais de `coleta` e de ausências oficiais de patrimônio quando o banco não tem a view/tabela. |
 | `scripts/audit/coverage-report.ts` | Monta e desenha. |
 | `scripts/audit/check-report.ts` | `npm run audit:cobertura:check`, confere o relatório. |
 | `scripts/registrar-revisao-curadoria.ts` | Valida e registra a revisão manual; dry-run por padrão. |
