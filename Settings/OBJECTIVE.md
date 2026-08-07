@@ -12,6 +12,31 @@ Cada ficha deve exibir no frontend todos os dados públicos possíveis e
 aplicáveis ao candidato. Implementar a lógica, criar uma tabela ou coletar um
 dado sem fazê-lo aparecer corretamente na ficha não conclui o trabalho.
 
+## Filtro obrigatório para toda task
+
+Toda task feita neste projeto deve nos levar para mais perto de construir a base
+mais completa e confiável possível sobre cada candidato. Antes de começar, a
+task precisa declarar qual avanço verificável pretende produzir em pelo menos um
+destes eixos:
+
+- ampliar o universo de candidatos corretamente cobertos;
+- preencher, corrigir ou atualizar dados aplicáveis nas fichas públicas;
+- aumentar a confiabilidade de identidade, fonte, proveniência ou atualidade;
+- reduzir lacunas, ambiguidades, erros, duplicatas ou falsos estados de zero;
+- garantir que dados coletados cheguem ao frontend e permaneçam atualizados;
+- proteger a disponibilidade, segurança e capacidade de manter essa base.
+
+Infraestrutura, refatoração, design, testes e manutenção não são objetivos
+isolados. Essas tasks só entram quando explicam qual risco removem ou qual ganho
+mensurável habilitam para completude e confiabilidade. Se essa ligação não puder
+ser demonstrada, a task não deve ser priorizada, executada nem contada como
+progresso do projeto.
+
+Ao fechar a task, compare o resultado com a intenção inicial. A evidência pode
+ser uma redução na régua de lacunas, um readback público corrigido, uma fonte
+mais forte, um gate que bloqueia dado incorreto ou uma proteção necessária para
+manter as fichas disponíveis e auditáveis.
+
 ## O que significa "todos"
 
 - Todos os presidenciáveis publicáveis.

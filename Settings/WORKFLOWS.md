@@ -1,5 +1,15 @@
 # Workflows
 
+## Gate de entrada da task
+
+Antes de planejar ou editar, responda em uma frase: "Como esta task aproxima o
+Puxa Ficha da base mais completa e confiável possível sobre cada candidato?"
+
+A resposta deve indicar um efeito verificável na cobertura, atualidade,
+identidade, proveniência, publicação no frontend ou capacidade de manter esses
+resultados. Registre também a menor prova que confirmará o avanço. Se não houver
+ligação concreta com o objetivo, não execute a task.
+
 ## Mudança de código
 
 1. Comece do `main` atual e limpo na pasta canônica.
@@ -75,6 +85,10 @@ CI verde -> PR revisada -> merge conhecido -> deployment Ready
 Um status Ready sem readback é apenas prova de infraestrutura.
 
 ## Fechamento
+
+No fechamento, informe qual avanço previsto aconteceu e qual prova o confirma.
+Não conte arquivos, commits, buscas ou pipelines como progresso quando eles não
+mudaram a completude, a confiabilidade ou a capacidade de sustentar as fichas.
 
 Atualize `Settings/STATUS.md` quando houver mudança relevante de produção,
 cobertura, automação, fonte ou risco. Registre trabalho significativo no log

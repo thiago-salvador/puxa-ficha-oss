@@ -32,6 +32,8 @@ produção, as fontes ou a cobertura mudarem, ele deve ser atualizado no mesmo P
 
 ## Contrato de manutenção
 
+- Toda task deve passar pelo filtro de contribuição ao objetivo descrito em
+  `OBJECTIVE.md` antes de entrar em execução.
 - Toda mudança estrutural atualiza o arquivo correspondente deste diretório.
 - Toda nova fonte só pode ser anunciada quando existe dado publicado e uma
   superfície pública que o renderiza.

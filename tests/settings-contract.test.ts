@@ -50,3 +50,15 @@ test("objetivo protege universo, frontend e estados de cobertura", () => {
   assert.match(objective, /nao_coletado/)
   assert.match(objective, /readback público/)
 })
+
+test("toda task precisa demonstrar avanço de completude ou confiabilidade", () => {
+  const objective = read("Settings/OBJECTIVE.md")
+  const workflow = read("Settings/WORKFLOWS.md")
+  const agents = read("AGENTS.md")
+
+  assert.match(objective, /Toda task feita neste projeto/)
+  assert.match(objective, /base\s+mais completa e confiável possível/)
+  assert.match(workflow, /Gate de entrada da task/)
+  assert.match(workflow, /Se não houver\s+ligação concreta com o objetivo, não execute a task/)
+  assert.match(agents, /Toda task deve demonstrar/)
+})
