@@ -1,40 +1,63 @@
 {
  "execution_id": "pf-patrimonio-20260807T170643Z",
  "coorte": [
+  "acm-neto",
+  "alan-rick",
+  "alvaro-dias-rn",
+  "andre-marinho",
   "arthur-henrique",
   "cabo-daciolo",
   "cicero-lucena",
   "cintia-dias",
+  "ciro-gomes-gov-ce",
   "cleber-rabelo",
   "clecio-luis",
   "coronel-busnello",
   "david-almeida",
   "dr-daniel",
+  "dr-furlan",
+  "dr-luisinho",
   "edilson-damiao",
   "eduardo-braide",
   "eduardo-paes",
+  "eduardo-riedel",
+  "efraim-filho",
+  "elizeu-aguiar",
   "gabriel-azevedo",
   "garotinho",
   "gelson-merisio",
+  "geraldo-carvalho",
+  "gilberto-vasconcelos",
+  "guilherme-fonseca",
   "gustavo-henrique",
   "henrique-areas",
   "hertz-dias",
+  "ivan-moraes",
   "izadora-dias",
   "jayme-campos",
   "jeferson-bezerra",
   "jeremias-cosmo",
   "jeronimo",
+  "joao-campos",
   "joao-henrique-catan",
+  "joel-rodrigues",
+  "jorginho-mello",
   "jose-roberto-arruda",
   "juliete-pantoja",
   "laudicerio-aguiar",
   "lourdes-melo",
   "luan-monteiro",
+  "luciana-gurgel",
   "mailza-assis",
   "marcus-sodre",
   "mauricio-tonha",
+  "omar-aziz",
   "patrus-ananias",
+  "preta-lu",
+  "priscila-voigt",
+  "rafael-fonteles",
   "rafael-greca",
+  "raquel-lyra",
   "renan-filho",
   "robson-raymundo",
   "ronaldo-mansur",
@@ -44,6 +67,7 @@
   "serley-leal",
   "tiao-bocalom",
   "tulio-lopes",
+  "valmir-de-francisquinho",
   "vera-lucia",
   "vittorio-medioli",
   "william-siri"
@@ -166,7 +190,7 @@
     "verificado_em",
     "detalhe"
    ],
-   "max_registros": 4
+   "max_registros": 5
   },
   {
    "tabela": "patrimonio_ausencia_oficial",
@@ -465,7 +489,7 @@
     "verificado_em",
     "detalhe"
    ],
-   "max_registros": 4
+   "max_registros": 5
   },
   {
    "tabela": "patrimonio_ausencia_oficial",
@@ -705,6 +729,353 @@
     "valor_total",
     "bens",
     "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "acm-neto",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "alan-rick",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "alvaro-dias-rn",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "ciro-gomes-gov-ce",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "david-almeida",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "dr-furlan",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "eduardo-riedel",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "elizeu-aguiar",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "guilherme-fonseca",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "jorginho-mello",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "omar-aziz",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "priscila-voigt",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "rafael-fonteles",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "robson-raymundo",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "ronaldo-mansur",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "valmir-de-francisquinho",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio",
+   "slug": "william-siri",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "valor_total",
+    "bens",
+    "fonte"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "andre-marinho",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "dr-luisinho",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "efraim-filho",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "geraldo-carvalho",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "gilberto-vasconcelos",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "ivan-moraes",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "joao-campos",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "joel-rodrigues",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "luciana-gurgel",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "preta-lu",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "patrimonio_ausencia_oficial",
+   "slug": "raquel-lyra",
+   "campos": [
+    "candidato_id",
+    "ano_eleicao",
+    "sq_candidato",
+    "fonte_url",
+    "verificado_em",
+    "detalhe"
    ],
    "max_registros": 1
   }
