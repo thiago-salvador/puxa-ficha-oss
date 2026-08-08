@@ -86,13 +86,44 @@ function statementApos(linhas: string[], inicio: number): string {
   return buffer.join("\n").trim()
 }
 
+/**
+ * Tabelas temporárias declaradas no próprio arquivo. Duplicado de propósito em
+ * `check-migrations-allowlist.ts`: os dois módulos precisam concordar sobre o que
+ * é rascunho, e uma dependência cruzada entre eles inverteria a direção do import
+ * (o checker é quem consome este arquivo, não o contrário).
+ */
+function tabelasTemporarias(sql: string): Set<string> {
+  const encontradas = new Set<string>()
+  const padrao = /\bCREATE\s+(?:GLOBAL\s+|LOCAL\s+)?TEMP(?:ORARY)?\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][\w$]*)/gi
+  for (const m of sql.matchAll(padrao)) encontradas.add(m[1].toLowerCase())
+  return encontradas
+}
+
+/** A anotação da linha `i` precede um statement que escreve em tabela temporária? */
+function attrs_ehTemporaria(linhas: string[], i: number, temporarias: Set<string>): boolean {
+  if (temporarias.size === 0) return false
+  const statement = statementApos(linhas, i + 1)
+  if (!statement) return false
+  const alvo =
+    /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\.)?([a-zA-Z_][\w$]*)/i.exec(statement)
+  return alvo ? temporarias.has(alvo[1].toLowerCase()) : false
+}
+
 export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[] {
   const linhas = sql.split("\n")
   const writes: PendingWrite[] = []
+  const temporarias = tabelasTemporarias(sql)
 
   for (let i = 0; i < linhas.length; i += 1) {
     const m = ANOTACAO.exec(linhas[i].trim())
     if (!m) continue
+
+    // Escrita em tabela temporária declarada neste arquivo não persiste e não
+    // entra no gate. A anotação, se existir, é ruído: o `ref` dela nomeia a fila
+    // de curadoria, não um literal do SQL, e a checagem de menção abaixo a
+    // reprovaria para sempre. Foi esse o caso de 20260805123929, que deixou o
+    // comando inteiro vermelho desde 05/08/2026.
+    if (attrs_ehTemporaria(linhas, i, temporarias)) continue
 
     const attrs = parseAtributos(m[1])
     const tabela = attrs.tabela ?? ""
