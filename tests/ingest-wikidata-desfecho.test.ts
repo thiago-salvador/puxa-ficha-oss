@@ -21,7 +21,10 @@ type DbOptions = {
   updateError?: string
 }
 
-function database(options: DbOptions = {}): IngestWikidataDependencies["database"] {
+function database(
+  options: DbOptions = {},
+  updates: Record<string, unknown>[] = [],
+): IngestWikidataDependencies["database"] {
   const row = options.row === undefined
     ? {
         redes_sociais: {},
@@ -42,12 +45,15 @@ function database(options: DbOptions = {}): IngestWikidataDependencies["database
           }),
         }),
       }),
-      update: () => ({
-        eq: async () => ({
-          data: null,
-          error: options.updateError ? { message: options.updateError } : null,
-        }),
-      }),
+      update: (payload: Record<string, unknown>) => {
+        updates.push(payload)
+        return {
+          eq: async () => ({
+            data: null,
+            error: options.updateError ? { message: options.updateError } : null,
+          }),
+        }
+      },
     }),
   } as unknown as IngestWikidataDependencies["database"]
 }
@@ -67,19 +73,20 @@ async function executar(overrides: {
   fetch?: IngestWikidataDependencies["fetchJson"]
 }) {
   let fetchCalls = 0
+  const updates: Record<string, unknown>[] = []
   const fetchJson = overrides.fetch ?? fetchSequence({ results: { bindings: [] } })
   const countedFetch: IngestWikidataDependencies["fetchJson"] = async <T>(...args: Parameters<IngestWikidataDependencies["fetchJson"]>) => {
     fetchCalls++
     return fetchJson<T>(...args)
   }
   const [result] = await ingestWikidata({
-    database: database(overrides.db),
+    database: database(overrides.db, updates),
     loadCandidates: async () => [overrides.candidate ?? candidatoBase],
     resolveCandidateId: async () => "candidate-id",
     fetchJson: countedFetch,
     wait: async () => {},
   })
-  return { result, fetchCalls }
+  return { result, fetchCalls, updates }
 }
 
 describe("ingestWikidata: desfecho da coleta", () => {
@@ -119,11 +126,246 @@ describe("ingestWikidata: desfecho da coleta", () => {
     assert.equal(result.coleta_volume, 1)
   })
 
+  it("preserva redes existentes e o objeto Instagram integralmente", async () => {
+    const instagramCurado = {
+      username: "perfil_curado",
+      url: "https://instagram.com/perfil_curado",
+      followers: 12345,
+    }
+    const { result, updates } = await executar({
+      db: {
+        row: {
+          redes_sociais: {
+            instagram: instagramCurado,
+            twitter: "twitter_curado",
+            facebook: "facebook_curado",
+          },
+          wikidata_id: "Q123",
+          foto_url: null,
+          data_nascimento: null,
+          profissao_declarada: null,
+        },
+      },
+      fetch: fetchSequence({
+        results: {
+          bindings: [{
+            item: { value: "http://www.wikidata.org/entity/Q123" },
+            instagram: { value: "perfil_wikidata" },
+            twitter: { value: "twitter_wikidata" },
+            facebook: { value: "facebook_wikidata" },
+            site: { value: "https://site-wikidata.example" },
+          }],
+        },
+      }),
+    })
+
+    assert.equal(result.coleta_resultado, "encontrado")
+    assert.equal(result.rows_upserted, 1)
+    assert.deepEqual(updates, [{
+      redes_sociais: {
+        instagram: instagramCurado,
+        twitter: "twitter_curado",
+        facebook: "facebook_curado",
+        site_oficial: "https://site-wikidata.example",
+      },
+    }])
+  })
+
+  it("preenche apenas redes ausentes ou vazias com dados do Wikidata", async () => {
+    const { result, updates } = await executar({
+      db: {
+        row: {
+          redes_sociais: {
+            instagram: { username: "", url: "" },
+            twitter: "   ",
+            facebook: "facebook_curado",
+          },
+          wikidata_id: "Q123",
+          foto_url: null,
+          data_nascimento: null,
+          profissao_declarada: null,
+        },
+      },
+      fetch: fetchSequence({
+        results: {
+          bindings: [{
+            item: { value: "http://www.wikidata.org/entity/Q123" },
+            instagram: { value: "perfil_wikidata" },
+            twitter: { value: "twitter_wikidata" },
+            facebook: { value: "facebook_wikidata" },
+            site: { value: "https://site-wikidata.example" },
+          }],
+        },
+      }),
+    })
+
+    assert.equal(result.coleta_resultado, "encontrado")
+    assert.equal(result.rows_upserted, 1)
+    assert.deepEqual(updates, [{
+      redes_sociais: {
+        instagram: {
+          username: "perfil_wikidata",
+          url: "https://instagram.com/perfil_wikidata",
+        },
+        twitter: "twitter_wikidata",
+        facebook: "facebook_curado",
+        site_oficial: "https://site-wikidata.example",
+      },
+    }])
+  })
+
+  for (const scenario of [
+    {
+      name: "objeto com apenas followers",
+      current: { followers: 321, campo_desconhecido: "preservado" },
+      expected: {
+        followers: 321,
+        campo_desconhecido: "preservado",
+        username: "perfil_wikidata",
+        url: "https://instagram.com/perfil_wikidata",
+      },
+    },
+    {
+      name: "username preenchido e url vazia",
+      current: { username: "perfil_curado", url: "", followers: 123 },
+      expected: {
+        username: "perfil_curado",
+        url: "https://instagram.com/perfil_curado",
+        followers: 123,
+      },
+    },
+    {
+      name: "url de perfil coincidente preenche username sem diferenciar maiusculas",
+      current: {
+        username: "",
+        url: "https://instagram.com/Perfil_Wikidata",
+        campo_desconhecido: true,
+      },
+      expected: {
+        username: "Perfil_Wikidata",
+        url: "https://instagram.com/Perfil_Wikidata",
+        campo_desconhecido: true,
+      },
+    },
+    {
+      name: "url de perfil divergente preserva username vazio",
+      current: {
+        username: "",
+        url: "https://instagram.com/perfil_curado_por_url",
+        campo_desconhecido: true,
+      },
+      expected: null,
+    },
+    {
+      name: "url local nao reconhecivel nao recebe username remoto",
+      current: {
+        username: "",
+        url: "https://perfil-curado.example/instagram",
+        followers: 456,
+        campo_desconhecido: "preservado",
+      },
+      expected: null,
+    },
+    {
+      name: "rota institucional about nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/about" },
+      expected: null,
+    },
+    {
+      name: "rota institucional terms nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/terms" },
+      expected: null,
+    },
+    {
+      name: "rota institucional privacy nao recebe username remoto",
+      current: { username: "", url: "https://instagram.com/privacy" },
+      expected: null,
+    },
+    {
+      name: "objeto completo preservado",
+      current: {
+        username: "perfil_curado",
+        url: "https://instagram.com/perfil_curado",
+        followers: 987,
+        campo_desconhecido: "preservado",
+      },
+      expected: null,
+    },
+    {
+      name: "campos totalmente vazios preenchidos",
+      current: { username: "", url: "" },
+      expected: {
+        username: "perfil_wikidata",
+        url: "https://instagram.com/perfil_wikidata",
+      },
+    },
+  ]) {
+    it(`faz merge do Instagram por propriedade: ${scenario.name}`, async () => {
+      const { result, updates } = await executar({
+        db: {
+          row: {
+            redes_sociais: { instagram: scenario.current },
+            wikidata_id: "Q123",
+            foto_url: null,
+            data_nascimento: null,
+            profissao_declarada: null,
+          },
+        },
+        fetch: fetchSequence({
+          results: {
+            bindings: [{
+              item: { value: "http://www.wikidata.org/entity/Q123" },
+              instagram: { value: "perfil_wikidata" },
+            }],
+          },
+        }),
+      })
+
+      assert.equal(result.coleta_resultado, "encontrado")
+      if (scenario.expected === null) {
+        assert.equal(result.rows_upserted, 0)
+        assert.deepEqual(updates, [])
+      } else {
+        assert.equal(result.rows_upserted, 1)
+        assert.deepEqual(updates, [{
+          redes_sociais: { instagram: scenario.expected },
+        }])
+      }
+    })
+  }
+
+  it("preserva Instagram legado em string quando nao vazio", async () => {
+    const { result, updates } = await executar({
+      db: {
+        row: {
+          redes_sociais: { instagram: "perfil_legado_curado" },
+          wikidata_id: "Q123",
+          foto_url: null,
+          data_nascimento: null,
+          profissao_declarada: null,
+        },
+      },
+      fetch: fetchSequence({
+        results: {
+          bindings: [{
+            item: { value: "http://www.wikidata.org/entity/Q123" },
+            instagram: { value: "perfil_wikidata" },
+          }],
+        },
+      }),
+    })
+
+    assert.equal(result.coleta_resultado, "encontrado")
+    assert.equal(result.rows_upserted, 0)
+    assert.deepEqual(updates, [])
+  })
+
   it("SPARQL valido vazio vira vazio_confirmado", async () => {
-    const { result } = await executar({ fetch: fetchSequence({ results: { bindings: [] } }) })
+    const { result, updates } = await executar({ fetch: fetchSequence({ results: { bindings: [] } }) })
     assert.equal(result.coleta_resultado, "vazio_confirmado")
     assert.equal(result.coleta_volume, undefined)
     assert.deepEqual(result.errors, [])
+    assert.equal(updates.length, 0)
   })
 
   it("sem QID e sem rota Wikipedia e nao_aplicavel sem consulta inventada", async () => {
@@ -192,7 +434,7 @@ describe("ingestWikidata: desfecho da coleta", () => {
       new Error("timeout apos 10000ms"),
       { query: { pages: [] } },
     ]) {
-      const { result } = await executar({
+      const { result, updates } = await executar({
         candidate: { ...candidatoBase, wikipedia_title: "Pagina Teste" },
         db: {
           row: {
@@ -205,6 +447,7 @@ describe("ingestWikidata: desfecho da coleta", () => {
       assert.equal(result.coleta_resultado, "erro")
       assert.notEqual(result.coleta_resultado, "vazio_confirmado")
       assert.ok(result.errors.length > 0)
+      assert.equal(updates.length, 0)
     }
   })
 
