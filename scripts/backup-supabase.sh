@@ -54,13 +54,24 @@ fi
 # que nao menciona a variavel, nao menciona a URI e manda quem le procurar um
 # Postgres local que nunca existiu. Aconteceu no primeiro apply de 08/08/2026.
 if [[ ! "${SUPABASE_DB_URL}" =~ ^postgres(ql)?:// ]]; then
+  # NUNCA ecoar o valor, nem um prefixo dele. O log do Actions e publico neste
+  # repositorio, e o valor recebido aqui e, por definicao, algo que nao era para
+  # estar nesta variavel: pode ser outro segredo colado por engano. A primeira
+  # versao desta validacao imprimia os 12 primeiros caracteres e vazou um
+  # fragmento de chave em 08/08/2026. O diagnostico vem da FORMA, nao do
+  # conteudo.
   echo "ERRO: SUPABASE_DB_URL nao parece uma URI de conexao." >&2
   echo "Esperado comecar com postgresql:// (ou postgres://)." >&2
-  echo "Recebido comecando com: '${SUPABASE_DB_URL:0:12}...'" >&2
+  echo "Recebido: ${#SUPABASE_DB_URL} caracteres, sem esse prefixo." >&2
   echo >&2
-  echo "Causa comum: copiar o bloco 'Connection parameters' (host, port, user)" >&2
-  echo "em vez do campo 'Connection string', ou copiar so o trecho visivel de um" >&2
-  echo "campo truncado na tela." >&2
+  echo "Causas comuns, em ordem de frequencia:" >&2
+  echo "  1. colar o valor de OUTRO secret (a chave de criptografia, por exemplo);" >&2
+  echo "  2. copiar o bloco 'Connection parameters' (host, port, user) em vez do" >&2
+  echo "     campo 'Connection string';" >&2
+  echo "  3. copiar so o trecho visivel de um campo truncado na tela." >&2
+  echo >&2
+  echo "Se caiu no caso 1: o outro segredo esta agora no log de um workflow, e" >&2
+  echo "este repositorio e publico. Rotacione aquele segredo antes de seguir." >&2
   exit 1
 fi
 
