@@ -1,7 +1,14 @@
 import { supabase } from "./lib/supabase"
 
 const PAGE_SIZE = 500
+// MARKER_RE tem /g porque .replace() precisa. NUNCA use .test() com ela:
+// regex global carrega lastIndex entre chamadas e a busca seguinte comeca no
+// meio da string, gerando falso negativo. Todo teste passa por MARKER_TEST_RE,
+// que e sem estado. Bug encontrado na auditoria de 08/08 no caminho de
+// historico_politico, onde o reset ficava dentro do .map() e so rodava para
+// as linhas ja aprovadas pelo .filter().
 const MARKER_RE = /#(?:NULO|NE)#?/gi
+const MARKER_TEST_RE = /#(?:NULO|NE)#?/i
 const ONLY_MARKER_RE = /^\s*#(?:NULO|NE)#?\s*$/i
 const APPLY = process.argv.includes("--apply")
 
@@ -38,12 +45,10 @@ function normalizePatrimonioBens(value: unknown): unknown {
     if (!item || typeof item !== "object" || Array.isArray(item)) return item
 
     const bem = item as Record<string, unknown>
-    if (typeof bem.descricao !== "string" || !MARKER_RE.test(bem.descricao)) {
-      MARKER_RE.lastIndex = 0
+    if (typeof bem.descricao !== "string" || !MARKER_TEST_RE.test(bem.descricao)) {
       return item
     }
 
-    MARKER_RE.lastIndex = 0
     return { ...bem, descricao: normalizeMarkerText(bem.descricao) }
   })
 }
@@ -54,8 +59,7 @@ function patrimonioHasMarker(value: unknown): boolean {
     if (!item || typeof item !== "object" || Array.isArray(item)) return false
     const descricao = (item as Record<string, unknown>).descricao
     if (typeof descricao !== "string") return false
-    const found = MARKER_RE.test(descricao)
-    MARKER_RE.lastIndex = 0
+    const found = MARKER_TEST_RE.test(descricao)
     return found
   })
 }
@@ -116,9 +120,8 @@ async function main(): Promise<void> {
     .map(({ id, value }) => ({ id, value }))
 
   const historicoUpdates = historico
-    .filter((row) => typeof row.observacoes === "string" && MARKER_RE.test(row.observacoes))
+    .filter((row) => typeof row.observacoes === "string" && MARKER_TEST_RE.test(row.observacoes))
     .map((row) => {
-      MARKER_RE.lastIndex = 0
       return { id: row.id, value: normalizeMarkerText(row.observacoes ?? "") }
     })
 
@@ -151,8 +154,7 @@ async function main(): Promise<void> {
     readHistorico(candidateIds),
   ])
   const remainingPatrimonio = patrimonioReadback.filter((row) => patrimonioHasMarker(row.bens)).length
-  const remainingHistorico = historicoReadback.filter((row) => typeof row.observacoes === "string" && MARKER_RE.test(row.observacoes)).length
-  MARKER_RE.lastIndex = 0
+  const remainingHistorico = historicoReadback.filter((row) => typeof row.observacoes === "string" && MARKER_TEST_RE.test(row.observacoes)).length
 
   if (remainingPatrimonio > 0 || remainingHistorico > 0) {
     throw new Error(

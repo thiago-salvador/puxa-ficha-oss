@@ -40,10 +40,19 @@ export type SupabaseRunResult<T> = {
 /**
  * Codigos PostgREST/Postgres deterministicos: o mesmo erro volta identico na
  * segunda e na terceira tentativa. PGRST116 e `.single()` sem linha (a ficha
- * inexistente vira 404) e 42501 e permissao negada. Retentar so gasta 3 round
- * trips, 750ms de backoff e um issue de Sentry para chegar na mesma resposta.
+ * inexistente vira 404), 42501 e permissao negada e 42703 e coluna inexistente.
+ * Retentar so gasta 3 round trips, 750ms de backoff e um issue de Sentry para
+ * chegar na mesma resposta.
+ *
+ * 42703 entrou em 2026-08-08 por custo medido, nao por elegancia. O codigo
+ * consulta `verificacao_campos` e cai para CANDIDATO_COLUMNS_LEGACY quando a
+ * coluna nao existe (ver isMissingVerificationColumnError em api.ts). Enquanto
+ * a migration que cria a coluna nao roda, TODA carga fria de ficha pagava as
+ * 3 tentativas com timeout antes de chegar no fallback que sempre funciona:
+ * `/candidato/lula` levou 20,9s, sendo 18,2s so nisso, contra 86ms na carga
+ * quente. Falha deterministica nao merece retry.
  */
-const NON_RETRYABLE_ERROR_CODES = new Set(["PGRST116", "42501"])
+const NON_RETRYABLE_ERROR_CODES = new Set(["PGRST116", "42501", "42703"])
 
 function errorCode(error: { code?: string } | null | undefined): string | undefined {
   const code = error?.code

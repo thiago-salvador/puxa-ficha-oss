@@ -15,6 +15,7 @@ import { resolve } from "node:path"
 import { execSync } from "node:child_process"
 import { dedupeTsePatrimonioRows } from "../src/lib/tse-patrimonio-dedupe"
 import { maskDocumentLikeSequences } from "../src/lib/public-profile-dto"
+import { sanitizePublicText } from "../src/lib/public-text"
 import { parseCSV } from "./lib/parse-csv-local"
 
 const EXEC_DIR = "/tmp/pf-patrimonio-20260807T170643Z"
@@ -131,7 +132,11 @@ async function coletarBens(
     const deduped = dedupeTsePatrimonioRows(rows)
     const bens = deduped.map((item) => ({
       tipo: item.tipo,
-      descricao: maskDocumentLikeSequences(item.descricao),
+      // sanitizePublicText antes da mascara: sem ele os marcadores tecnicos do
+      // TSE (#NULO#, #NE#) entram literais no SQL gerado. Foi assim que a
+      // 20260807182000 reintroduziu 9 marcadores horas depois da limpeza de
+      // 07/08 (auditoria de 08/08).
+      descricao: maskDocumentLikeSequences(sanitizePublicText(item.descricao)),
       valor: item.valor,
     }))
     const total = Math.round(bens.reduce((acc, bem) => acc + bem.valor, 0) * 100) / 100

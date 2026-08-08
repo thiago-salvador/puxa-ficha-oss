@@ -1,8 +1,47 @@
 # Status atual
 
-Snapshot verificado em **07/08/2026** (workflow `pf-patrimonio-20260807T170643Z`).
-Este arquivo descreve o estado observado nessa data. Reexecute os gates antes
-de usá-lo como prova futura.
+Snapshot verificado em **08/08/2026**. Este arquivo descreve o estado observado
+nessa data. Reexecute os gates antes de usá-lo como prova futura.
+
+## Snapshot 08/08/2026: consolidação em uma branch e deploy
+
+- **Uma branch local só, `main`.** A `codex/profiles-complete-2026` foi mergeada
+  (`ae73df1`), junto com a PR #127 (`71264a9`). Dezessete branches remotas
+  superadas foram apagadas, com o SHA de cada uma em
+  `docs/arquivo/branches-apagadas-20260808.md`. Preservadas:
+  `codex/lacunas-publicaveis-20260805`, `codex/reconciliacao-cobertura-zero`
+  (PR #114) e `perf/ficha-em-cache` (PR #72).
+- **Produção deixou de ser `0cf39b41`.** O deploy da consolidação subiu e a CI da
+  `main` voltou a ficar verde pela primeira vez desde 06/08. O que a destravou
+  foi `ec5ae2b`: o `npm audit` de produção reprovava por `nanoid <3.3.17`
+  (GHSA-2v37-7h3g-55p8, severidade high), e o job `verify` é o único check
+  exigido pela branch protection.
+- **As 5 migrations da completude continuam fora do banco**
+  (`20260807050000` a `20260807053000`). O código que as pressupõe está em
+  produção e degrada com elegância: `isMissingVerificationColumnError` em
+  `src/lib/api.ts` cai para `CANDIDATO_COLUMNS_LEGACY`. Estado deliberado, não
+  esquecimento.
+- **Correções de defeito nesta rodada:** `42703` (coluna inexistente) entrou em
+  `NON_RETRYABLE_ERROR_CODES`, porque toda carga fria de ficha pagava 3
+  tentativas com timeout antes do fallback que sempre funciona
+  (`/candidato/lula` levava 20,9s; passou a 0,7 a 1,6s); os geradores de
+  backfill de patrimônio passaram a aplicar `sanitizePublicText`, que faltava e
+  fez a `20260807182000` reintroduzir marcadores `#NULO#` horas depois da
+  limpeza; e `20260808010000` saneou os 9 itens que sobraram.
+
+### Correções de registro (auditoria de 08/08)
+
+Afirmações destes documentos que não se sustentaram quando reconferidas:
+
+- "readback confirmou zero marcador restante" (`QA/2026-08-07-resumo-sessao.md`)
+  era falsa duas vezes: o readback do script rodava sem o filtro dos publicados,
+  e a `20260807182000` reintroduziu marcadores depois da limpeza.
+- "gates verdes" e "allowlist da execução OK": `npm run audit:cobertura:allowlist`
+  falha hoje em qualquer recorte, por inconsistência preexistente em
+  `20260805123929`. Continua em aberto.
+- Números com deriva: régua "6 faltante / 27 n/a" mede hoje 5 e 28; gate de
+  identidade "643 pares" mede 645; "29 linhas com a fonte nova" não fecha em
+  nenhum recorte (o padrão exato dá 27).
 
 ## Snapshot 07/08/2026: patrimônio por eleição e candidaturas na trajetória
 

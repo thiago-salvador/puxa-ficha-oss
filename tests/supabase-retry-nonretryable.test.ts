@@ -62,6 +62,29 @@ test("42501 (permission denied) devolve na primeira tentativa, sem Sentry", asyn
   assert.equal(result.error?.code, "42501")
 })
 
+// Regressao de 08/08/2026. Enquanto a migration de verificacao_campos nao roda,
+// getCandidatoPublicRow consulta uma coluna inexistente e cai para
+// CANDIDATO_COLUMNS_LEGACY. Retentar 3x uma falha deterministica antes do
+// fallback que sempre funciona custava ate 18s por carga fria de ficha.
+test("42703 (coluna inexistente) devolve na primeira tentativa, sem Sentry", async () => {
+  let calls = 0
+  const result = await withSupabaseRetry<Row>("getCandidatoPublicRow(lula)", async () => {
+    calls += 1
+    return {
+      data: null,
+      error: {
+        code: "42703",
+        message: "column candidatos_publico.verificacao_campos does not exist",
+      },
+    }
+  })
+  await Sentry.flush(1_000)
+
+  assert.equal(calls, 1, "coluna que nao existe nao passa a existir na 2a tentativa")
+  assert.equal(captured.length, 0, "fallback previsto nao e incidente")
+  assert.equal(result.error?.code, "42703")
+})
+
 test("erro sem codigo continua retentando 3x e reportando um evento", async () => {
   let calls = 0
   const result = await withSupabaseRetry<Row>("processos(aecio-neves)", async () => {
