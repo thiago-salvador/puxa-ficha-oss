@@ -146,7 +146,10 @@ async function main(): Promise<void> {
   await updateRows("patrimonio", patrimonioUpdates)
   await updateRows("historico_politico", historicoUpdates)
 
-  const [patrimonioReadback, historicoReadback] = await Promise.all([readPatrimonio(), readHistorico()])
+  const [patrimonioReadback, historicoReadback] = await Promise.all([
+    readPatrimonio(candidateIds),
+    readHistorico(candidateIds),
+  ])
   const remainingPatrimonio = patrimonioReadback.filter((row) => patrimonioHasMarker(row.bens)).length
   const remainingHistorico = historicoReadback.filter((row) => typeof row.observacoes === "string" && MARKER_RE.test(row.observacoes)).length
   MARKER_RE.lastIndex = 0
