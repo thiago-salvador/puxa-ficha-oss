@@ -125,3 +125,41 @@ UPDATE public.pontos_atencao
 `
   assert.throws(() => parsePendingWrites(soComentario, "limpeza.sql"), /não menciona esse ref/)
 })
+
+test("escrita em tabela temporária do próprio arquivo não é escrita de produção", () => {
+  // Regressao de 08/08/2026. O checker tratava INSERT em CREATE TEMP TABLE ...
+  // ON COMMIT DROP como escrita em producao e exigia entrada de allowlist para um
+  // dado que some no commit. Efeito: 20260805123929 reprovava em QUALQUER recorte
+  // e o comando ficou vermelho desde 05/08. Gate que falha sempre para de ser lido,
+  // e foi o que aconteceu: dois documentos declararam "allowlist OK" enquanto ele
+  // nao passava.
+  const sql = [
+    "CREATE TEMP TABLE rascunho_x (id uuid PRIMARY KEY, decisao text) ON COMMIT DROP;",
+    "",
+    "INSERT INTO rascunho_x (id, decisao) VALUES ('11111111-1111-1111-1111-111111111111', 'aprovar');",
+    "",
+    "-- @write tabela=candidatos slug=lula campos=biografia",
+    "UPDATE public.candidatos SET biografia = 'x' WHERE slug = 'lula';",
+  ].join("\n")
+
+  assert.deepEqual(
+    escritasSemAnotacao(sql),
+    [],
+    "o INSERT na temporaria nao precisa de anotacao; o UPDATE em candidatos tem a dele",
+  )
+
+  const writes = parsePendingWrites(sql, "teste.sql")
+  assert.equal(writes.length, 1, "so o UPDATE em tabela real entra no gate")
+  assert.equal(writes[0].tabela, "candidatos")
+})
+
+test("escrita em tabela real continua exigindo anotação", () => {
+  const sql = [
+    "CREATE TEMP TABLE rascunho_y (id uuid) ON COMMIT DROP;",
+    "UPDATE public.candidatos SET biografia = 'x' WHERE slug = 'lula';",
+  ].join("\n")
+
+  const orfas = escritasSemAnotacao(sql)
+  assert.equal(orfas.length, 1, "a temporaria nao pode servir de disfarce para escrita real")
+  assert.match(orfas[0].texto, /candidatos/)
+})

@@ -92,7 +92,9 @@ WHERE slug = 'jarbas-soares'
 -- Rastro da decisão, na mesma tabela que registra tentativa de coleta.
 -- `coleta_log` é append-only: correção é linha nova, nunca UPDATE.
 --
--- @write tabela=coleta_log ref=jarbas-soares-identidade campos=fonte,escopo,alvo,candidato_id,resultado,volume,detalhe,url,execucao
+-- Endereçada pelo slug do candidato no `alvo`/`WHERE`; o `ref` abaixo é o
+-- rótulo da fila de curadoria e não aparece no SQL.
+-- @write tabela=coleta_log chave=jarbas-soares ref=jarbas-soares-identidade campos=fonte,escopo,alvo,candidato_id,resultado,volume,detalhe,url,execucao
 INSERT INTO public.coleta_log (fonte, escopo, alvo, candidato_id, resultado, volume, detalhe, url, execucao)
 SELECT 'mpmg', 'candidato', 'jarbas-soares', c.id, 'encontrado', 1,
        'data_nascimento reapurada em fonte oficial: MPMG, galeria de procuradores-gerais, ficha Jarbas Soares Junior, NASCIMENTO Montes Claros/MG 06/09/1964. Substitui 1954-03-17, que tinha procedencia TSE por casamento de nome com homonimo.',
