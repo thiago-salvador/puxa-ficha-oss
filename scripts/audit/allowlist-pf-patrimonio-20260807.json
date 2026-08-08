@@ -60,6 +60,7 @@
   "rafael-greca",
   "raquel-lyra",
   "renan-filho",
+  "renato-gomes",
   "robson-raymundo",
   "ronaldo-mansur",
   "rui-costa-pimenta",
@@ -1085,6 +1086,43 @@
    "slug": "jarbas-soares",
    "campos": [
     "remocao_registros_homonimo"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "historico_politico",
+   "slug": "renato-gomes",
+   "campos": [
+    "id",
+    "candidato_id",
+    "cargo",
+    "periodo_inicio",
+    "periodo_fim",
+    "partido",
+    "estado",
+    "eleito_por",
+    "observacoes",
+    "cargo_canonico",
+    "tipo_evento",
+    "proveniencia",
+    "despublicacao_motivo",
+    "despublicado_em"
+   ],
+   "max_registros": 1
+  },
+  {
+   "tabela": "coleta_log",
+   "slug": "renato-gomes",
+   "campos": [
+    "fonte",
+    "escopo",
+    "alvo",
+    "candidato_id",
+    "resultado",
+    "volume",
+    "detalhe",
+    "url",
+    "execucao"
    ],
    "max_registros": 1
   }
