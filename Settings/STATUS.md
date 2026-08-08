@@ -27,7 +27,35 @@ nessa data. Reexecute os gates antes de usá-lo como prova futura.
   (`/candidato/lula` levava 20,9s; passou a 0,7 a 1,6s); os geradores de
   backfill de patrimônio passaram a aplicar `sanitizePublicText`, que faltava e
   fez a `20260807182000` reintroduzir marcadores `#NULO#` horas depois da
-  limpeza; e `20260808010000` saneou os 9 itens que sobraram.
+  limpeza; e `20260808032540` saneou os 9 itens que sobraram.
+
+- **Divergência de ledger na migration dos marcadores, e o rename que a
+  fechou.** Ela nasceu no repositório como `20260808010000` e foi aplicada pelo
+  `apply_migration` do MCP da Management API, que carimba timestamp próprio em
+  vez de usar o nome do arquivo. O banco registrou `20260808032540`, e o
+  repositório passou a afirmar uma versão que nunca existiu em produção. A
+  comparação entre o ledger remoto e `supabase/migrations/` na mesma data
+  achou o par: 6 versões só locais e 1 só remota, sendo que a única remota tem
+  o mesmo `name` e statements idênticos aos do arquivo local (md5 igual após
+  normalizar comentário e espaço). As outras 5 só locais são as retidas da
+  completude, divergência deliberada. O arquivo foi renomeado para
+  `20260808032540`, porque quem tem razão sobre o que aconteceu é o banco;
+  escrever no ledger para acomodar um nome de arquivo seria mudar produção
+  para salvar o repositório. Terceiro caso do padrão da issue #131, registrado
+  em `docs/arquivo/ledger-divergencia-20260808.md`.
+
+- **O gate `@write` voltou a rodar, e agora existe guard de ledger.**
+  `npm run audit:cobertura:allowlist` sem janela morria por exceção de parse. Não
+  era um caso isolado: o parser rodado sobre as 373 migrations acusou quatro
+  falhas distintas, e a quarta (`20260805137000`) era bug de parser de SQL, com
+  `statementApos` sem entender dollar-quoting. O módulo ganhou a forma
+  `chave=<literal>` para escrita endereçada por chave, que exige o literal ancorado
+  no statement e joga essas escritas numa seção separada do relatório, rotulada
+  como não verificável estaticamente. Anotação sem `chave=` cujo identificador não
+  aparece no SQL continua reprovando. Em paralelo, `ledger-guard.yml` passou a
+  comparar ledger e repositório por um invariante de três regras, com a função de
+  comparação pura e coberta por 12 testes. Detalhe e verificação em
+  `QA/2026-08-08-issue-131-ledger.md`.
 
 - **Cinco correções de durabilidade (revisão das soluções do QA, 08/08).** A
   releitura das cinco tasks olhou a forma da solução, não os números, e achou

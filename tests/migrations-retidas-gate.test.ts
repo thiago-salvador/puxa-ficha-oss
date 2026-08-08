@@ -10,7 +10,7 @@ import { describe, it } from "node:test"
  * `supabase db push` de qualquer maquina aplicar as cinco de uma vez.
  *
  * Agrava: o timestamp delas e ANTERIOR ao de oito migrations ja aplicadas
- * (`20260807054000` a `20260808010000`), entao um push as aplicaria fora de
+ * (`20260807054000` a `20260808032540`), entao um push as aplicaria fora de
  * ordem em relacao ao estado real do banco.
  *
  * Este teste nao substitui um hook: ele garante que a retencao esteja escrita
