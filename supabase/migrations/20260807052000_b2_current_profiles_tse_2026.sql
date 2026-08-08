@@ -1,3 +1,12 @@
+-- MIGRATION RETIDA: nao aplicar sem decisao registrada.
+--
+-- Pertence ao gate de completude. Escreve em producao e NAO esta no ledger.
+-- O timestamp e anterior ao de migrations ja aplicadas (20260807054000 a
+-- 20260808010000), entao um `supabase db push` a aplica FORA DE ORDEM em
+-- relacao ao estado real do banco. Antes de liberar: registrar a decisao em
+-- Settings/STATUS.md, remover este aviso e atualizar
+-- tests/migrations-retidas-gate.test.ts no mesmo commit.
+--
 BEGIN;
 
 -- Atualizacao de perfil baseada no TSE 2026 e no readback publico da fila fechada.

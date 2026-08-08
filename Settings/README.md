@@ -35,6 +35,33 @@ Em caso de divergência, use esta ordem:
 `Settings/STATUS.md` é um snapshot, não uma fonte dinâmica. Quando o código, a
 produção, as fontes ou a cobertura mudarem, ele deve ser atualizado no mesmo PR.
 
+## Fonte única de verdade, e como não perdê-la
+
+Decisão do dono em 08/08/2026. Local, GitHub e Vercel ficam alinhados, com um
+lugar só respondendo cada pergunta:
+
+| Pergunta | Fonte única |
+|---|---|
+| Qual o estado atual do projeto | `Settings/STATUS.md` |
+| Qual versão está no ar | `/api/deployment-info`, comparado a `git rev-parse origin/main` |
+| Qual a cobertura de dados | `npm run audit:cobertura` |
+| Quais fontes existem | `src/data/methodology-sources.ts` |
+| O que o banco tem | `supabase/migrations/` mais o ledger, hoje divergentes (issue #131) |
+
+Três regras que decorrem disso:
+
+- **Uma branch local só, `main`.** Branch de trabalho existe enquanto o trabalho
+  existe; depois de mergear, é apagada, com o SHA registrado em `docs/arquivo/`.
+  Em 07/08 havia 19 branches remotas, 17 delas superadas linha a linha.
+- **`STATUS.md` não pode descrever um mundo que não existe.** Em 08/08 ele ainda
+  dizia que merge e deploy estavam pendentes, depois de ambos terem acontecido.
+  Snapshot velho é pior que snapshot ausente: parece informação.
+- **Rótulo público e chave interna não se confundem.** Antes de reusar uma
+  palavra que já tem sentido na superfície pública, checar se ela já nomeia outra
+  conta em outro lugar. A renomeação de Alertas para Destaques criou dois números
+  homônimos, e `tests/destaques-rotulo-sem-colisao.test.ts` existe para impedir a
+  repetição.
+
 ## Contrato de manutenção
 
 - Toda task deve passar pelo filtro de contribuição ao objetivo descrito em

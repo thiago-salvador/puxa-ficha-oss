@@ -29,6 +29,26 @@ nessa data. Reexecute os gates antes de usá-lo como prova futura.
   fez a `20260807182000` reintroduzir marcadores `#NULO#` horas depois da
   limpeza; e `20260808010000` saneou os 9 itens que sobraram.
 
+- **Cinco correções de durabilidade (revisão das soluções do QA, 08/08).** A
+  releitura das cinco tasks olhou a forma da solução, não os números, e achou
+  cinco coisas que iam doer depois:
+  1. Contornar o ledger virou padrão (dois casos de escrita sem rastro). Virou a
+     issue #131; depende do backup existir primeiro.
+  2. O gate das 5 migrations retidas era só uma frase, e o timestamp delas é
+     anterior ao de oito já aplicadas. Agora é mecânico:
+     `tests/migrations-retidas-gate.test.ts` mais aviso no topo de cada arquivo.
+  3. O selo `Destaque editorial` na legislação do Executivo prometia curadoria
+     onde a seleção é regex de palavra-chave, e aquela tabela não tem campo
+     editorial (medido: 4 de 14.061 linhas de `projetos_lei` têm curadoria real).
+     Passou a `Relevância pública`, com regressão. O selo editorial de verdade
+     segue na lista parlamentar, condicionado a `projeto.destaque`.
+  4. A renomeação para Destaques criou dois números homônimos: a ficha conta
+     todos os pontos públicos, a régua conta os visíveis menos os positivos. A
+     coluna da régua passou a `Alertas (sem positivos)`, com teste de colisão.
+  5. Limpeza de dado sem gate que impeça a volta. Agora existe
+     `npm run audit:marcadores-tse:gate`, que reprova se `#NULO#` ou `#NE#`
+     aparecer no recorte publicado.
+
 ### Correções de registro (auditoria de 08/08)
 
 Afirmações destes documentos que não se sustentaram quando reconferidas:

@@ -99,3 +99,25 @@ describe("aba Legislação com o inventário do Executivo carregado sob demanda"
     assert.match(html, new RegExp(`inventário completo de ${completo.length} atos`))
   })
 })
+
+describe("rotulo do recorte de destaques do Executivo", () => {
+  // Regressao de 08/08/2026. O selo era "Destaque editorial", mas a selecao deste
+  // recorte e algoritmica (scoreLegislationTextPublicRelevance, regex de palavra-chave
+  // na ementa) e `legislacao_mandato_executivo` nao tem campo de curadoria: medido no
+  // banco, 4 de 14.061 linhas de projetos_lei tem destaque editorial de verdade, e a
+  // tabela do Executivo nao tem a coluna. Prometer julgamento editorial onde ha
+  // heuristica e a mesma classe de erro dos alertas que eram so ausencia de mandato.
+  it("nomeia o critério real e não promete curadoria que não existe", () => {
+    const html = renderLegislationTab({
+      legislacaoExecutivoTotal: TOTAL_CAIADO,
+      legislacaoExecutivoLoadState: "loaded",
+    })
+
+    assert.match(html, /Relev[aâ]ncia p[uú]blica/)
+    assert.doesNotMatch(
+      html,
+      /Destaque editorial/,
+      "o selo editorial pertence a lista parlamentar, condicionado a projeto.destaque",
+    )
+  })
+})

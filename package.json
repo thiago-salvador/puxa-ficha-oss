@@ -46,6 +46,8 @@
     "validate:seed": "tsx scripts/validate-seed.ts",
     "audit:fotos": "tsx scripts/check-candidate-photo-resolution.ts",
     "audit:fotos:gate": "tsx scripts/check-candidate-photo-resolution.ts --gate",
+    "audit:marcadores-tse": "tsx scripts/audit-marcadores-tse-publicos.ts",
+    "audit:marcadores-tse:gate": "tsx scripts/audit-marcadores-tse-publicos.ts --gate",
     "audit:seed-sq-identity": "tsx scripts/audit-seed-sq-identity.ts",
     "audit:seed-sq-identity:gate": "tsx scripts/audit-seed-sq-identity.ts --gate",
     "audit:ids-cohort": "tsx scripts/check-ids-cohort.ts",

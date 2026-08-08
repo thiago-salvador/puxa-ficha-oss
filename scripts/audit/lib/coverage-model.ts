@@ -409,7 +409,14 @@ export const COLUNAS: ColunaDef[] = [
   { key: "votos", label: "Votações-chave" },
   { key: "contradicoes", label: "Contradições" },
   { key: "processos", label: "Processos judiciais" },
-  { key: "alertas", label: "Destaques" },
+  // NAO chamar de "Destaques". A ficha publica tem um contador com esse nome que
+  // conta TODOS os pontos publicos, inclusive feito_positivo; esta coluna conta os
+  // visiveis MENOS os positivos (ver coverage-snapshot.sql). Sao numeros diferentes
+  // para o mesmo candidato. Em 04/08/2026 duas medidas homonimas discordaram e a
+  // discordancia virou alarme de regressao que nao existia; a licao esta escrita em
+  // docs/cobertura-de-dados.md. A renomeacao publica de Alertas para Destaques
+  // reabriu o mesmo buraco aqui, e o rotulo volta a dizer o que a coluna mede.
+  { key: "alertas", label: "Alertas (sem positivos)" },
   { key: "projetos", label: "Projetos de lei" },
   { key: "destaques", label: "Proj. em destaque" },
   { key: "gastos", label: "Cota parlamentar" },

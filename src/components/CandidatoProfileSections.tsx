@@ -833,7 +833,15 @@ function ExecutiveLegislationList({
                 <span className="min-w-0 break-words text-[length:var(--text-body)] font-bold text-foreground">
                   {identifier || "Norma"}
                 </span>
-                {featured && <MetaBadge tone="neutral">Destaque editorial</MetaBadge>}
+                {/* "Relevância pública", não "Destaque editorial": a seleção deste
+                    recorte é algorítmica (scoreLegislationTextPublicRelevance, regex
+                    de palavra-chave na ementa) e `legislacao_mandato_executivo` não
+                    tem campo de curadoria. Prometer julgamento editorial aqui seria
+                    afirmar além do que se sabe, o mesmo erro dos alertas que eram só
+                    ausência de mandato. O selo editorial de verdade vive na lista
+                    parlamentar, condicionado a `projeto.destaque`, com o
+                    `destaque_motivo` exibido embaixo. */}
+                {featured && <MetaBadge tone="neutral">Relevância pública</MetaBadge>}
                 <MetaBadge tone="muted">{tipoRelacaoLabel}</MetaBadge>
                 {lei.data_norma && (
                   <span className="text-[10px] font-semibold text-muted-foreground">
