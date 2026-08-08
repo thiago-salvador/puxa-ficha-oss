@@ -73,13 +73,44 @@ interface Allowlist {
 
 const ESCRITA = /^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i
 
+/**
+ * Tabelas temporárias declaradas no próprio arquivo.
+ *
+ * `CREATE TEMP TABLE ... ON COMMIT DROP` é rascunho: existe dentro da transação
+ * da migration, some no commit e nunca chega à superfície pública. Escrever nela
+ * não é escrita em produção, e exigir entrada de allowlist para isso é pedir que
+ * alguém declare um dado que não persiste.
+ *
+ * Isso não é conveniência, é precisão do gate. Enquanto o checker tratava
+ * rascunho como produção, `20260805123929` reprovava em qualquer recorte, e o
+ * comando inteiro ficou vermelho desde 05/08/2026. Um gate que falha sempre para
+ * de ser lido, e foi o que aconteceu: dois documentos declararam "allowlist OK"
+ * enquanto ele não passava. Gate barulhento é gate desligado.
+ */
+export function tabelasTemporarias(sql: string): Set<string> {
+  const encontradas = new Set<string>()
+  const padrao = /\bCREATE\s+(?:GLOBAL\s+|LOCAL\s+)?TEMP(?:ORARY)?\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][\w$]*)/gi
+  for (const m of sql.matchAll(padrao)) encontradas.add(m[1].toLowerCase())
+  return encontradas
+}
+
+/** O statement escreve numa tabela temporária declarada neste mesmo arquivo? */
+export function escreveEmTemporaria(statement: string, temporarias: Set<string>): boolean {
+  if (temporarias.size === 0) return false
+  const alvo =
+    /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:public\.)?([a-zA-Z_][\w$]*)/i.exec(statement)
+  return alvo ? temporarias.has(alvo[1].toLowerCase()) : false
+}
+
 /** Statements de escrita sem anotação `@write` logo acima. */
 export function escritasSemAnotacao(sql: string): { linha: number; texto: string }[] {
   const linhas = sql.split("\n")
   const orfas: { linha: number; texto: string }[] = []
+  const temporarias = tabelasTemporarias(sql)
 
   for (let i = 0; i < linhas.length; i += 1) {
     if (!ESCRITA.test(linhas[i])) continue
+    if (escreveEmTemporaria(linhas[i], temporarias)) continue
     let j = i - 1
     let anotada = false
     // Sobe por linhas em branco e comentários até achar (ou não) a anotação.
@@ -214,13 +245,31 @@ function main(): void {
   const writes = lerPendingWrites(MIGRATIONS, desde, ate)
   erros.push(...violacoesDeAllowlist(writes, allow))
 
+  // Duas listas, nunca uma só. Escrita endereçada por chave (`chave=`) tem o
+  // identificador provado contra o SQL, mas o slug declarado NÃO: resolver
+  // `chave='<uuid>'` para um candidato exige o banco, e este checker não toca
+  // banco. Misturar as duas na mesma lista de `OK` faria o relatório afirmar
+  // uma prova que não existe. Seção separada é o preço de aceitar a forma:
+  // a escrita fica visível e nomeada para revisão humana, em vez de aceita
+  // em silêncio no meio de duzentas linhas iguais.
+  const verificadas = writes.filter((w) => w.chave === undefined)
+  const porChave = writes.filter((w) => w.chave !== undefined)
+
+  const descreve = (w: PendingWrite): string =>
+    `${w.tabela}/${w.slug || `ref=${w.ref}`}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
+
   console.error(
-    `[allowlist] ${arquivos.length} migration(s) na janela, ${comAnotacao} anotada(s), ${writes.length} write(s) declarado(s)`
+    `[allowlist] ${arquivos.length} migration(s) na janela, ${comAnotacao} anotada(s), ${writes.length} write(s) declarado(s)` +
+      `, ${verificadas.length} com identificador conferido no SQL, ${porChave.length} endereçado(s) por chave`
   )
-  for (const w of writes) {
+  for (const w of verificadas) console.error(`  OK ${descreve(w)}`)
+
+  if (porChave.length) {
     console.error(
-      `  OK ${w.tabela}/${w.slug || `ref=${w.ref}`}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
+      `\n[nao verificavel estaticamente] ${porChave.length} escrita(s) endereçada(s) por chave.` +
+        ` A chave declarada aparece literal no SQL; o slug/ref declarado NÃO, e só a allowlist responde por ele.`
     )
+    for (const w of porChave) console.error(`  CHAVE chave=${w.chave} ${descreve(w)}`)
   }
 
   if (erros.length) {
