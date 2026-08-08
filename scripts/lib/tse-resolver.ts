@@ -1,5 +1,6 @@
 import { supabase } from "./supabase"
 import { normalizeForMatch } from "./normalize-for-match"
+import { carregarBloqueios } from "./identidade-bloqueada"
 import type { CandidatoConfig } from "./types"
 
 export type ResolveMethod = "sq-preloaded" | "cpf" | "name-unique" | "name-uf"
@@ -16,6 +17,8 @@ export interface ResolverStats {
   nameUf: number
   ambiguous: number
   noMatch: number
+  /** Linhas recusadas por `data/identidades-bloqueadas.json` (issue #130). */
+  bloqueado: number
 }
 
 export interface TSEResolver {
@@ -150,15 +153,21 @@ export async function createTSEResolver(
   // global no TSE, e sim sequencial POR UF (valores curtos como "10354"). Sem
   // a UF aqui, um SQ curto do seed casa com a primeira linha que tiver aquele
   // numero em qualquer estado.
+  const bloqueios = carregarBloqueios()
+
   const sqToCandidato = new Map<string, { slug: string; estado: string }>()
   for (const candidato of candidatos) {
     const sq = candidato.ids.tse_sq_candidato?.[String(ano)]?.trim()
-    if (sq) {
-      sqToCandidato.set(sq, {
-        slug: candidato.slug,
-        estado: (candidato.estado || "").trim().toUpperCase(),
-      })
-    }
+    if (!sq) continue
+    // Um SQ rejeitado por curadoria nao pode entrar no indice nem que alguem o
+    // reponha no seed. Este e o degrau de MAIOR prioridade do resolver: se ele
+    // ancorar, os degraus de CPF e nome nem sao consultados, entao filtrar aqui
+    // e a unica forma de o bloqueio valer contra o caminho mais forte.
+    if (bloqueios.bloqueio({ slug: candidato.slug, sq, ano })) continue
+    sqToCandidato.set(sq, {
+      slug: candidato.slug,
+      estado: (candidato.estado || "").trim().toUpperCase(),
+    })
   }
 
   const { data, error } = await supabase
@@ -186,11 +195,34 @@ export async function createTSEResolver(
     nameUf: 0,
     ambiguous: 0,
     noMatch: 0,
+    bloqueado: 0,
   }
   const ambiguousSlugs = new Set<string>()
 
-  return {
-    resolveRow(row) {
+  function contabilizar(method: ResolveMethod): void {
+    switch (method) {
+      case "sq-preloaded":
+        stats.sqPreloaded++
+        break
+      case "cpf":
+        stats.cpf++
+        break
+      case "name-unique":
+        stats.nameUnique++
+        break
+      case "name-uf":
+        stats.nameUf++
+        break
+    }
+  }
+
+  /**
+   * Os degraus de resolucao, sem contabilidade e sem o filtro de identidade
+   * bloqueada. Separado de `resolveRow` para que a contagem aconteca DEPOIS do
+   * filtro: linha recusada por bloqueio nao pode aparecer tambem como "resolvida
+   * por CPF" no relatorio, senao a estatistica passa a somar mais do que existe.
+   */
+  function resolverDegraus(row: Record<string, string>): ResolveResult | null {
       const sq = (row.SQ_CANDIDATO || "").trim()
       if (sq) {
         const candidato = sqToCandidato.get(sq)
@@ -205,7 +237,6 @@ export async function createTSEResolver(
             Boolean(rowUfSq) && Boolean(candidato.estado) && rowUfSq !== candidato.estado
 
           if (!ufDivergeNoSq) {
-            stats.sqPreloaded++
             return { slug: candidato.slug, method: "sq-preloaded" }
           }
           // UF diverge: nao ancora por SQ e deixa os degraus seguintes (CPF e
@@ -217,7 +248,6 @@ export async function createTSEResolver(
       if (cpf) {
         const slug = cpfToSlug.get(cpf)
         if (slug) {
-          stats.cpf++
           return { slug, method: "cpf" }
         }
       }
@@ -241,7 +271,6 @@ export async function createTSEResolver(
           stats.noMatch++
           return null
         }
-        stats.nameUnique++
         return { slug: matches[0].slug, method: "name-unique" }
       }
 
@@ -252,7 +281,6 @@ export async function createTSEResolver(
         )
 
         if (ufMatches.length === 1) {
-          stats.nameUf++
           return { slug: ufMatches[0].slug, method: "name-uf" }
         }
 
@@ -270,6 +298,31 @@ export async function createTSEResolver(
       }
       stats.ambiguous++
       return null
+  }
+
+  return {
+    resolveRow(row) {
+      const resultado = resolverDegraus(row)
+      if (!resultado) return null
+
+      // Filtro de identidade rejeitada (issue #130). Fica DEPOIS de todos os
+      // degraus de propósito: o bloqueio por SQ já foi aplicado na montagem do
+      // índice, e o que sobra aqui é a linha que chegou ao slug por CPF ou por
+      // nome. Foi por um desses caminhos que as candidaturas 2008/2020 do
+      // homônimo de `renato-gomes` voltaram à ficha horas depois de terem sido
+      // removidas.
+      const bloqueado = bloqueios.bloqueio({
+        slug: resultado.slug,
+        sq: (row.SQ_CANDIDATO || "").trim(),
+        ano,
+      })
+      if (bloqueado) {
+        stats.bloqueado++
+        return null
+      }
+
+      contabilizar(resultado.method)
+      return resultado
     },
     stats,
     get ambiguousSlugs() {

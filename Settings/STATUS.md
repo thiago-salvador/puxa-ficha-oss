@@ -140,8 +140,19 @@ Afirmações destes documentos que não se sustentaram quando reconferidas:
   já tinham confirmado ausência em 2010-2026), mas encontrou reincidência do
   homônimo de renato-gomes (candidaturas 2008/2020 reinseridas por ingestão
   após a remoção de 05/08) — removida de novo pela migração `20260807185000`.
-  Causa raiz pendente: a ingestão não respeita bloqueio de identidade
-  registrado. cadu-xavier 2020 segue corretamente despublicado.
+  cadu-xavier 2020 segue corretamente despublicado.
+- Causa raiz da reincidência, fechada em 08/08 (#130): a decisão de rejeitar uma
+  identidade vivia só em comentário de migration, texto livre de `coleta_log` e
+  na própria remoção, e remoção não deixa marca no lugar de onde a linha saiu.
+  Passou a existir em `data/identidades-bloqueadas.json`, que a ingestão lê
+  ANTES de escrever, em dois pontos: o índice de SQ do `tse-resolver` (o degrau
+  de maior prioridade, que não degrada para os seguintes) e o laço de
+  `buildSQMap` em `ingest-tse.ts`, que lê o seed direto e por isso escapava do
+  primeiro. Bloqueio com SQ atinge só aquele SQ, para não apagar a candidatura
+  verdadeira de juliana-brizola no mesmo ano de 2020; bloqueio sem SQ atinge o
+  par (slug, ano), que é o que a decisão de renato-gomes 2008 diz. Fail-closed:
+  arquivo ausente ou entrada malformada lança. Gate contra SQ bloqueado voltar
+  ao seed, provado por mutação.
 - Produção: commit `0cf39b41` segue no ar; dados novos revalidam sozinhos na
   janela de cache de 3600s; merge/deploy da branch
   `codex/profiles-complete-2026` permanece no gate de completude.
