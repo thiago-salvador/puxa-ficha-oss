@@ -59,9 +59,30 @@ export async function POST(req: NextRequest) {
     body,
     providedSecret,
     envSecret: process.env.PF_REVALIDATE_SECRET,
-    // Next 16 exige profile como segundo argumento; "max" mapeia para o lifecycle
-    // mais longo registrado, equivalente ao comportamento legado de revalidateTag(tag).
-    revalidateFn: (tag) => revalidateTag(tag, "max"),
+    // `{ expire: 0 }` no lugar de `"max"`. A diferença decide se a correção de um
+    // erro factual aparece agora ou só na requisição seguinte:
+    //
+    //   revalidateTag(tag, "max")        -> marca como stale. A PRÓXIMA requisição
+    //     ainda recebe a versão ANTIGA, e só a de depois vê a corrigida.
+    //   revalidateTag(tag, { expire: 0 }) -> expira de imediato. A próxima já é um
+    //     miss bloqueante e devolve a versão corrigida.
+    //
+    // Num site de checagem, servir o dado errado mais uma vez depois de já o ter
+    // corrigido não é aceitável, e era o que tornava este endpoint inútil como
+    // ferramenta de verificação de release.
+    //
+    // Verificado em next@16.2.12, `node_modules/next/dist/server/web/spec-extension/
+    // revalidate.js`: o ramo que marca `pathWasRevalidated` é
+    // `if (!profile || cacheLife?.expire === 0)`, e o profile `"max"` resolve para
+    // um `cacheLife` cujo `expire` não é 0.
+    //
+    // `updateTag(tag)` seria a API nova para expiração imediata, mas ela LANÇA
+    // fora de Server Action: o próprio Next checa `workStore.page.endsWith("/route")`
+    // e joga E872. Esta rota é um Route Handler, então não é opção. Omitir o
+    // argumento também expiraria de imediato, mas não compila (o tipo exige dois)
+    // e emite aviso de depreciação; `{ expire: 0 }` é a forma tipada de pedir a
+    // mesma coisa, sem aviso.
+    revalidateFn: (tag) => revalidateTag(tag, { expire: 0 }),
   })
 
   if (result.ok) {
