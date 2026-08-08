@@ -1,4 +1,7 @@
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
+
+const SCRIPT = "normalizar-marcadores-publicos"
 
 const PAGE_SIZE = 500
 // MARKER_RE tem /g porque .replace() precisa. NUNCA use .test() com ela:
@@ -96,15 +99,43 @@ async function readHistorico(candidateIds: string[]): Promise<HistoricoRow[]> {
   }
 }
 
+/**
+ * Aplica as correcoes de uma tabela numa unica escrita auditada.
+ *
+ * O laco roda DENTRO de escreverAuditado, e nao ao redor dele, de proposito.
+ * Uma linha de trilha por registro corrigido encheria coleta_log com milhares
+ * de linhas que dizem a mesma coisa; uma linha por tabela diz o que interessa
+ * (motivo, recorte e quantos registros o banco confirmou ter tocado). O volume
+ * vem do .select("id"), ou seja, da resposta do banco, nunca do tamanho da
+ * fila enviada.
+ */
 async function updateRows(
   table: "patrimonio" | "historico_politico",
   rows: Array<{ id: string; value: unknown }>
 ): Promise<void> {
-  for (const row of rows) {
-    const payload = table === "patrimonio" ? { bens: row.value } : { observacoes: row.value }
-    const { error } = await supabase.from(table).update(payload).eq("id", row.id)
-    if (error) throw new Error(`${table} update failed: ${error.message}`)
-  }
+  const campo = table === "patrimonio" ? "bens" : "observacoes"
+
+  await escreverAuditado(
+    {
+      script: SCRIPT,
+      tabela: table,
+      motivo: `remove marcador #NULO#/#NE# residual do campo ${campo}, exposto na ficha publica`,
+      recorte: `${rows.length} registro(s) de candidato publicavel com marcador`,
+    },
+    async () => {
+      const tocadas: Array<{ id: string }> = []
+      for (const row of rows) {
+        const payload = table === "patrimonio" ? { bens: row.value } : { observacoes: row.value }
+        const { data, error } = await supabase.from(table).update(payload).eq("id", row.id).select("id")
+        // Interrompe na primeira falha, como antes. A diferenca e que agora o
+        // que ja foi escrito ate aqui vira volume na linha de erro da trilha,
+        // em vez de desaparecer.
+        if (error) return { data: tocadas, error: { message: `${table} update failed: ${error.message}` } }
+        tocadas.push(...((data ?? []) as Array<{ id: string }>))
+      }
+      return { data: tocadas, error: null }
+    }
+  )
 }
 
 async function main(): Promise<void> {

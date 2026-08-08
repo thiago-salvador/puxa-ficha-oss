@@ -11,10 +11,17 @@ export interface PatchRequest {
   body: Record<string, unknown>
 }
 
+export interface PostRequest {
+  table: string
+  rows: Record<string, unknown>[]
+}
+
 export interface PostgRESTMock {
   url: string
   port: number
   patches: PatchRequest[]
+  /** INSERTs recebidos. É por aqui que a trilha de escrita auditada aparece. */
+  posts: PostRequest[]
   close: () => Promise<void>
 }
 
@@ -23,6 +30,7 @@ export async function startPostgRESTMock(
   options?: { debug?: boolean }
 ): Promise<PostgRESTMock> {
   const patches: PatchRequest[] = []
+  const posts: PostRequest[] = []
   const debug = options?.debug ?? false
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -63,6 +71,27 @@ export async function startPostgRESTMock(
       return
     }
 
+    // INSERT. Existe desde que os scripts de operador passaram a gravar a
+    // trilha de `escreverAuditado()` em coleta_log: sem tratar POST, o mock
+    // devolveria 404 e o script falharia por causa do mock, não do código.
+    if (req.method === "POST") {
+      const bodyChunks: Buffer[] = []
+      for await (const chunk of req) bodyChunks.push(chunk as Buffer)
+      const parsed = JSON.parse(Buffer.concat(bodyChunks).toString("utf-8"))
+      const rows = (Array.isArray(parsed) ? parsed : [parsed]) as Record<string, unknown>[]
+
+      posts.push({ table, rows })
+      const alvo = fixturesByTable[table] as Record<string, unknown>[] | undefined
+      if (alvo) alvo.push(...rows)
+
+      // PostgREST só devolve as linhas com Prefer: return=representation, que é
+      // o que o supabase-js manda quando o chamador encadeia .select().
+      const querRepresentacao = (req.headers["prefer"] ?? "").toString().includes("return=representation")
+      res.writeHead(201)
+      res.end(JSON.stringify(querRepresentacao ? rows : []))
+      return
+    }
+
     if (req.method === "PATCH") {
       const bodyChunks: Buffer[] = []
       for await (const chunk of req) bodyChunks.push(chunk as Buffer)
@@ -83,13 +112,21 @@ export async function startPostgRESTMock(
 
       // Apply to in-memory fixture
       const rows = fixturesByTable[table] as Record<string, unknown>[] | undefined
+      const atingidas: Record<string, unknown>[] = []
       if (rows) {
         const target = rows.find((r) => String(r[filterField]) === filterValue)
-        if (target) Object.assign(target, body)
+        if (target) {
+          Object.assign(target, body)
+          atingidas.push(target)
+        }
       }
 
+      // Devolver as linhas atingidas quando o cliente pede representação é o
+      // que faz `.select()` encadeado num UPDATE ter contagem de verdade. Sem
+      // isso o chamador não distingue "mudou 1 linha" de "não casou nenhuma".
+      const querRepresentacao = (req.headers["prefer"] ?? "").toString().includes("return=representation")
       res.writeHead(200)
-      res.end(JSON.stringify([]))
+      res.end(JSON.stringify(querRepresentacao ? atingidas : []))
       return
     }
 
@@ -105,6 +142,7 @@ export async function startPostgRESTMock(
         url: `http://127.0.0.1:${port}`,
         port,
         patches,
+        posts,
         close: () => new Promise<void>((r) => server.close(() => r())),
       })
     })

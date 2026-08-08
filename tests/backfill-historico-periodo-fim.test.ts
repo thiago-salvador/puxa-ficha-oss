@@ -443,7 +443,20 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
       },
     ])
 
-    const deps = createBackfillDepsFromClient(fixture.createClient(), { apply: true })
+    const cliente = fixture.createClient()
+    const deps = createBackfillDepsFromClient(cliente, {
+      apply: true,
+      // O script de produção só escreve dentro de escreverAuditado(), em main().
+      // Aqui a cadeia de UPDATE é do teste, contra o cliente de fixture, que é
+      // justamente o que este bloco existe para conferir.
+      updateRow: async (id, periodoFim) => {
+        const { error } = await cliente
+          .from("historico_politico")
+          .update({ periodo_fim: periodoFim })
+          .eq("id", id)
+        if (error) throw new Error("fixture: update falhou")
+      },
+    })
     const result = await runBackfillHistoricoPeriodoFim(deps)
 
     // Vereador 2016 com fechador em 2022: capa no teto de 4 anos, 2020
@@ -497,7 +510,20 @@ describe("backfill-historico-periodo-fim (chain-level DB I/O)", () => {
       { id: "h6", candidato_id: "c4", cargo_canonico: "Deputado Federal", periodo_inicio: 2008, periodo_fim: null, observacoes: "curadoria editorial", tipo_evento: "mandato", candidatos: { slug: "dave" } },
     ])
 
-    const deps = createBackfillDepsFromClient(fixture.createClient(), { apply: true })
+    const cliente = fixture.createClient()
+    const deps = createBackfillDepsFromClient(cliente, {
+      apply: true,
+      // O script de produção só escreve dentro de escreverAuditado(), em main().
+      // Aqui a cadeia de UPDATE é do teste, contra o cliente de fixture, que é
+      // justamente o que este bloco existe para conferir.
+      updateRow: async (id, periodoFim) => {
+        const { error } = await cliente
+          .from("historico_politico")
+          .update({ periodo_fim: periodoFim })
+          .eq("id", id)
+        if (error) throw new Error("fixture: update falhou")
+      },
+    })
     const result = await runBackfillHistoricoPeriodoFim(deps)
 
     // Verify business logic results

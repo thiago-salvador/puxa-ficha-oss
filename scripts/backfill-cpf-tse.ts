@@ -62,6 +62,7 @@ import { supabase } from "./lib/supabase"
 import { loadCandidatos, parseCSV, normalizeForMatch } from "./lib/helpers"
 import { cpfEhValido, somenteDigitos } from "./lib/ingest-transparencia-sanctions"
 import { registrarColetas, type EntradaColeta } from "./lib/coleta-log"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { log, warn, error } from "./lib/logger"
 
 const DATA_DIR = resolve(process.cwd(), "data/tse-cpf")
@@ -539,17 +540,38 @@ async function main() {
       const anos = [...new Set(decisao.evidencias.map((e) => e.ano))].sort((a, b) => b - a)
       const detalhe = `backfill-cpf: consulta_cand via ${decisao.metodo} (${anos.join(", ")})`
       if (apply) {
-        const { error: errUp, count } = await supabase
-          .from("candidatos")
-          .update({ cpf: decisao.cpf }, { count: "exact" })
-          .eq("slug", alvo.slug)
-          .is("cpf", null)
-        if (errUp) {
-          error("tse-cpf", `  ${alvo.slug}: falha ao persistir: ${errUp.message}`)
-          entradasLog.push({ fonte: "tse-cpf", alvo: alvo.slug, resultado: "erro", detalhe: `backfill-cpf: update falhou: ${errUp.message}` })
+        // Duas linhas diferentes em coleta_log, e nenhuma duplica a outra: a de
+        // coleta (fonte `tse-cpf`, registrada mais abaixo) diz que o CPF foi
+        // ENCONTRADO no consulta_cand; esta, de escrita, diz que a tabela
+        // `candidatos` MUDOU, por quê, e quantas linhas o banco confirmou. Sem
+        // a segunda, uma decisão de persistir e uma persistência que não pegou
+        // ficam indistinguíveis na trilha, que é o defeito da issue #131.
+        let linhasTocadas: Array<{ slug: string }>
+        try {
+          linhasTocadas = await escreverAuditado(
+            {
+              script: "backfill-cpf-tse",
+              tabela: "candidatos",
+              motivo: `persiste CPF do consulta_cand do TSE, casado por ${decisao.metodo}`,
+              recorte: `${alvo.slug}, evidência nos pleitos ${anos.join(", ")}`,
+            },
+            // O `.is("cpf", null)` é a guarda de concorrência: quem já tem CPF
+            // não é sobrescrito, e nesse caso o banco devolve zero linhas.
+            () =>
+              supabase
+                .from("candidatos")
+                .update({ cpf: decisao.cpf })
+                .eq("slug", alvo.slug)
+                .is("cpf", null)
+                .select("slug"),
+          )
+        } catch (err) {
+          const mensagem = err instanceof Error ? err.message : String(err)
+          error("tse-cpf", `  ${alvo.slug}: falha ao persistir: ${mensagem}`)
+          entradasLog.push({ fonte: "tse-cpf", alvo: alvo.slug, resultado: "erro", detalhe: `backfill-cpf: update falhou: ${mensagem}` })
           continue
         }
-        if ((count ?? 0) === 0) {
+        if (linhasTocadas.length === 0) {
           warn("tse-cpf", `  ${alvo.slug}: cpf já preenchido por outra sessão, não sobrescrito`)
           continue
         }

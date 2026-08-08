@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url"
 import { writeFileSync } from "fs"
 import { resolve } from "path"
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { log, warn } from "./lib/logger"
 
 const ELECTIVE_CARGOS = new Set([
@@ -308,9 +309,31 @@ export interface SupabaseLikeClient {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/**
+ * Guarda para quem monta as deps sem dizer como escrever.
+ *
+ * A única escrita de produção deste arquivo mora dentro de `escreverAuditado()`
+ * em `main()`, e não aqui. Isso não é estilo: uma cadeia de UPDATE solta neste
+ * módulo seria uma segunda porta para escrever em `historico_politico` sem
+ * trilha, e o gate da issue #131 (`scripts/audit/check-escrita-auditada.ts`)
+ * acusaria o arquivo com razão. Quem quiser escrever declara como.
+ */
+async function escritaNaoInjetada(): Promise<never> {
+  throw new Error(
+    "backfill-periodo-fim: updateRow não foi injetado. A escrita de produção passa por " +
+      "escreverAuditado() em main(); um teste que queira escrever injeta o próprio updateRow.",
+  )
+}
+
 export function createBackfillDepsFromClient(
   client: SupabaseLikeClient,
-  options: { apply: boolean; logFn?: (msg: string) => void; warnFn?: (msg: string) => void }
+  options: {
+    apply: boolean
+    logFn?: (msg: string) => void
+    warnFn?: (msg: string) => void
+    /** Como escrever. Sem isto, escrever é erro alto, nunca escrita sem trilha. */
+    updateRow?: BackfillDeps["updateRow"]
+  }
 ): BackfillDeps {
   return {
     apply: options.apply,
@@ -343,14 +366,7 @@ export function createBackfillDepsFromClient(
         tipo_evento: (row.tipo_evento ?? null) as string | null,
       }))
     },
-    async updateRow(id, periodoFim) {
-      const { error: updateErr } = await client
-        .from("historico_politico")
-        .update({ periodo_fim: periodoFim })
-        .eq("id", id)
-
-      if (updateErr) throw new Error(updateErr.message)
-    },
+    updateRow: options.updateRow ?? escritaNaoInjetada,
     log: options.logFn ?? (() => {}),
     warn: options.warnFn ?? (() => {}),
   }
@@ -364,6 +380,25 @@ async function main() {
     apply,
     logFn: (msg) => log(SRC, msg),
     warnFn: (msg) => warn(SRC, msg),
+    // Uma linha de trilha por registro fechado, e não uma por rodada: cada
+    // periodo_fim aqui é uma dedução própria (qual evento fechou o mandato), e
+    // é isso que alguém vai querer conferir daqui a seis meses.
+    updateRow: async (id, periodoFim) => {
+      await escreverAuditado(
+        {
+          script: SRC,
+          tabela: "historico_politico",
+          motivo: "fecha periodo_fim de mandato aberto, deduzido da cadeia de eventos do candidato",
+          recorte: `linha ${id}, periodo_fim = ${periodoFim}`,
+        },
+        () =>
+          supabase
+            .from("historico_politico")
+            .update({ periodo_fim: periodoFim })
+            .eq("id", id)
+            .select("id"),
+      )
+    },
   })
   deps.writeCSV = (filename, content) => {
     const csvPath =

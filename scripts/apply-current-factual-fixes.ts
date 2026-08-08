@@ -9,6 +9,7 @@ import { rankPartyTimelineConsistencyRow } from "./lib/party-timeline-consistenc
 import { sanitizeTemplateText } from "./lib/ptbr-sanitize"
 import { selectCurrentFactualFixes } from "./lib/current-factual-fixes-selection"
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { sanitizeNullablePtBrText } from "../src/lib/ptbr-text"
 
 interface PartyTimelineDeleteRule {
@@ -8528,6 +8529,33 @@ export const FIXES: CandidateFix[] = [
   },
 ]
 
+/** Identidade deste programa na trilha de `coleta_log`. */
+const SCRIPT = "apply-current-factual-fixes"
+
+/**
+ * Contexto da trilha para um fix curado.
+ *
+ * Todo sitio de escrita deste arquivo passa por aqui, e por isso toda linha de
+ * `coleta_log` carrega o slug e a FONTE do fix. E o que transforma a trilha em
+ * algo utilizavel: seis meses depois, a pergunta nunca e "o que mudou", e sim
+ * "com base em que este dado mudou".
+ */
+function escritaDoFix(
+  tabela: string,
+  motivo: string,
+  fix: CandidateFix,
+  recorteExtra?: string,
+): { script: string; tabela: string; motivo: string; recorte: string } {
+  return {
+    script: SCRIPT,
+    tabela,
+    motivo: `${motivo} (fix curado de ${fix.slug})`,
+    recorte: [`candidato ${fix.slug}`, `fonte: ${fix.source}`, recorteExtra]
+      .filter(Boolean)
+      .join(" | "),
+  }
+}
+
 function mergeFonteDados(existing: string[] | null | undefined): string[] {
   return [...new Set([...(existing ?? []), "curadoria"])]
 }
@@ -8540,7 +8568,11 @@ function canonicalParty(value: string | null | undefined): string | null {
 async function ensureHistorico(candidatoId: string, fix: CandidateFix) {
   if (!fix.historicoFix) return
 
-  const cargoCanonico = canonicalCargo(fix.historicoFix.cargo)
+  // Alias local porque o estreitamento de `fix.historicoFix` nao sobrevive ao
+  // fechamento passado para escreverAuditado(): dentro do callback, o
+  // compilador volta a ver `HistoricoFix | undefined`.
+  const historicoFix = fix.historicoFix
+  const cargoCanonico = canonicalCargo(historicoFix.cargo)
 
   const { data: historico, error } = await supabase
     .from("historico_politico")
@@ -8554,27 +8586,27 @@ async function ensureHistorico(candidatoId: string, fix: CandidateFix) {
   }
 
   const existing = findHistoricoRowForFix(historico ?? [], {
-    cargo: fix.historicoFix.cargo,
-    periodo_inicio: fix.historicoFix.periodo_inicio,
-    periodo_fim: fix.historicoFix.periodo_fim ?? null,
+    cargo: historicoFix.cargo,
+    periodo_inicio: historicoFix.periodo_inicio,
+    periodo_fim: historicoFix.periodo_fim ?? null,
   })
 
   if (existing) {
-    const provenienciaCol = fix.historicoFix.proveniencia ?? "manual"
+    const provenienciaCol = historicoFix.proveniencia ?? "manual"
     const updatePayload = {
-      cargo: fix.historicoFix.cargo,
+      cargo: historicoFix.cargo,
       cargo_canonico: cargoCanonico,
-      periodo_fim: fix.historicoFix.periodo_fim,
-      partido: fix.historicoFix.partido ?? null,
-      estado: fix.historicoFix.estado ?? null,
-      eleito_por: fix.historicoFix.eleito_por ?? null,
-      observacoes: sanitizeTemplateText(fix.historicoFix.observacoes ?? ""),
+      periodo_fim: historicoFix.periodo_fim,
+      partido: historicoFix.partido ?? null,
+      estado: historicoFix.estado ?? null,
+      eleito_por: historicoFix.eleito_por ?? null,
+      observacoes: sanitizeTemplateText(historicoFix.observacoes ?? ""),
       proveniencia: provenienciaCol,
       tipo_evento: inferHistoricoTipoEventoFromRow({
         tipo_evento: (existing as { tipo_evento?: string | null }).tipo_evento,
-        observacoes: fix.historicoFix.observacoes ?? existing.observacoes,
-        periodo_inicio: fix.historicoFix.periodo_inicio ?? existing.periodo_inicio,
-        periodo_fim: fix.historicoFix.periodo_fim ?? existing.periodo_fim,
+        observacoes: historicoFix.observacoes ?? existing.observacoes,
+        periodo_inicio: historicoFix.periodo_inicio ?? existing.periodo_inicio,
+        periodo_fim: historicoFix.periodo_fim ?? existing.periodo_fim,
       }),
     }
 
@@ -8595,42 +8627,57 @@ async function ensureHistorico(candidatoId: string, fix: CandidateFix) {
       return
     }
 
-    const { error: updateError } = await supabase
-      .from("historico_politico")
-      .update(updatePayload)
-      .eq("id", existing.id)
-
-    if (updateError) {
-      throw new Error(`Erro ao atualizar historico existente: ${updateError.message}`)
-    }
+    await escreverAuditado(
+      escritaDoFix(
+        "historico_politico",
+        "alinha mandato ja registrado ao que o fix curado afirma",
+        fix,
+        `linha ${existing.id}, cargo ${historicoFix.cargo}`,
+      ),
+      () =>
+        supabase
+          .from("historico_politico")
+          .update(updatePayload)
+          .eq("id", existing.id)
+          .select("id"),
+    )
 
     return
   }
 
-  const { error: insertError } = await supabase.from("historico_politico").insert({
+  await escreverAuditado(
+    escritaDoFix(
+      "historico_politico",
+      "cria mandato ausente que o fix curado afirma existir",
+      fix,
+      `cargo ${historicoFix.cargo}, inicio ${historicoFix.periodo_inicio}`,
+    ),
+    () =>
+      supabase.from("historico_politico").insert({
     candidato_id: candidatoId,
-    cargo: fix.historicoFix.cargo,
+    cargo: historicoFix.cargo,
     cargo_canonico: cargoCanonico,
-    periodo_inicio: fix.historicoFix.periodo_inicio,
-    periodo_fim: fix.historicoFix.periodo_fim,
-    partido: fix.historicoFix.partido ?? null,
-    estado: fix.historicoFix.estado ?? null,
-    eleito_por: fix.historicoFix.eleito_por ?? null,
-    observacoes: sanitizeTemplateText(fix.historicoFix.observacoes ?? ""),
-    proveniencia: fix.historicoFix.proveniencia ?? "manual",
+    periodo_inicio: historicoFix.periodo_inicio,
+    periodo_fim: historicoFix.periodo_fim,
+    partido: historicoFix.partido ?? null,
+    estado: historicoFix.estado ?? null,
+    eleito_por: historicoFix.eleito_por ?? null,
+    observacoes: sanitizeTemplateText(historicoFix.observacoes ?? ""),
+    proveniencia: historicoFix.proveniencia ?? "manual",
     tipo_evento: inferHistoricoTipoEventoFromRow({
-      observacoes: fix.historicoFix.observacoes ?? null,
-      periodo_inicio: fix.historicoFix.periodo_inicio,
-      periodo_fim: fix.historicoFix.periodo_fim,
+      observacoes: historicoFix.observacoes ?? null,
+      periodo_inicio: historicoFix.periodo_inicio,
+      periodo_fim: historicoFix.periodo_fim,
     }),
-  })
-
-  if (insertError) {
-    throw new Error(`Erro ao inserir historico: ${insertError.message}`)
-  }
+      }).select("id"),
+  )
 }
 
-async function deleteTimelineRows(candidatoId: string, rules: PartyTimelineDeleteRule[] | undefined) {
+async function deleteTimelineRows(
+  candidatoId: string,
+  rules: PartyTimelineDeleteRule[] | undefined,
+  fix: CandidateFix,
+) {
   if (!rules || rules.length === 0) return
 
   const { data: rows, error } = await supabase
@@ -8642,25 +8689,50 @@ async function deleteTimelineRows(candidatoId: string, rules: PartyTimelineDelet
     throw new Error(`Erro ao buscar timeline: ${error.message}`)
   }
 
-  for (const row of rows ?? []) {
-    const shouldDelete = rules.some((rule) => {
+  const alvos = (rows ?? []).filter((row) =>
+    rules.some((rule) => {
       if (rule.partido_anterior && !canonicalPartiesEquivalent(rule.partido_anterior, row.partido_anterior)) return false
       if (!canonicalPartiesEquivalent(rule.partido_novo, row.partido_novo)) return false
       if (rule.ano != null && row.ano !== rule.ano) return false
       if (rule.contexto_includes && !(row.contexto ?? "").includes(rule.contexto_includes)) return false
       return true
-    })
+    }),
+  )
+  if (alvos.length === 0) return
 
-    if (!shouldDelete) continue
-
-    const { error: deleteError } = await supabase.from("mudancas_partido").delete().eq("id", row.id)
-    if (deleteError) {
-      throw new Error(`Erro ao remover timeline stale: ${deleteError.message}`)
-    }
-  }
+  // Um DELETE por id, como antes, so que o laco inteiro conta como UM ato na
+  // trilha: apagar N linhas de timeline obsoleta do mesmo candidato e uma
+  // decisao editorial, nao N decisoes.
+  await escreverAuditado(
+    escritaDoFix(
+      "mudancas_partido",
+      "remove troca de partido obsoleta que o fix curado desmente",
+      fix,
+      `${alvos.length} linha(s) de timeline`,
+    ),
+    async () => {
+      const removidas: Array<{ id: string }> = []
+      for (const row of alvos) {
+        const { data, error: deleteError } = await supabase
+          .from("mudancas_partido")
+          .delete()
+          .eq("id", row.id)
+          .select("id")
+        if (deleteError) {
+          return { data: removidas, error: { message: `ao remover timeline stale: ${deleteError.message}` } }
+        }
+        removidas.push(...((data ?? []) as Array<{ id: string }>))
+      }
+      return { data: removidas, error: null }
+    },
+  )
 }
 
-async function ensureTimelineRows(candidatoId: string, rows: PartyTimelineEnsureRow[] | undefined) {
+async function ensureTimelineRows(
+  candidatoId: string,
+  rows: PartyTimelineEnsureRow[] | undefined,
+  fix: CandidateFix,
+) {
   if (!rows || rows.length === 0) return
 
   for (const spec of rows) {
@@ -8689,35 +8761,46 @@ async function ensureTimelineRows(candidatoId: string, rows: PartyTimelineEnsure
     )
 
     if (sameYearAndTarget) {
-      const { error: updateError } = await supabase
-        .from("mudancas_partido")
-        .update({
+      await escreverAuditado(
+        escritaDoFix(
+          "mudancas_partido",
+          "reescreve troca de partido do mesmo ano com os valores do fix curado",
+          fix,
+          `linha ${sameYearAndTarget.id}, ${partidoAnterior} -> ${partidoNovo} em ${spec.ano}`,
+        ),
+        () =>
+          supabase
+            .from("mudancas_partido")
+            .update({
+              partido_anterior: partidoAnterior,
+              partido_novo: partidoNovo,
+              ano: spec.ano,
+              data_mudanca: dataMudanca,
+              contexto: sanitizeTemplateText(spec.contexto),
+            })
+            .eq("id", sameYearAndTarget.id)
+            .select("id"),
+      )
+      continue
+    }
+
+    await escreverAuditado(
+      escritaDoFix(
+        "mudancas_partido",
+        "cria troca de partido que o fix curado afirma e a timeline nao tinha",
+        fix,
+        `${partidoAnterior} -> ${partidoNovo} em ${spec.ano}`,
+      ),
+      () =>
+        supabase.from("mudancas_partido").insert({
+          candidato_id: candidatoId,
           partido_anterior: partidoAnterior,
           partido_novo: partidoNovo,
           ano: spec.ano,
           data_mudanca: dataMudanca,
           contexto: sanitizeTemplateText(spec.contexto),
-        })
-        .eq("id", sameYearAndTarget.id)
-
-      if (updateError) {
-        throw new Error(`Erro ao atualizar linha de timeline curada: ${updateError.message}`)
-      }
-      continue
-    }
-
-    const { error: insertError } = await supabase.from("mudancas_partido").insert({
-      candidato_id: candidatoId,
-      partido_anterior: partidoAnterior,
-      partido_novo: partidoNovo,
-      ano: spec.ano,
-      data_mudanca: dataMudanca,
-      contexto: sanitizeTemplateText(spec.contexto),
-    })
-
-    if (insertError) {
-      throw new Error(`Erro ao inserir linha de timeline curada: ${insertError.message}`)
-    }
+        }).select("id"),
+    )
   }
 }
 
@@ -8754,7 +8837,11 @@ function matchesHistoricoDeleteRule(
   return true
 }
 
-async function deleteHistoricoRows(candidatoId: string, rules: HistoricoDeleteRule[] | undefined) {
+async function deleteHistoricoRows(
+  candidatoId: string,
+  rules: HistoricoDeleteRule[] | undefined,
+  fix: CandidateFix,
+) {
   if (!rules || rules.length === 0) return
   const { data: rows, error: fetchError } = await supabase
     .from("historico_politico")
@@ -8765,29 +8852,57 @@ async function deleteHistoricoRows(candidatoId: string, rules: HistoricoDeleteRu
     throw new Error(`Erro ao buscar historico para limpeza: ${fetchError.message}`)
   }
 
-  for (const row of rows ?? []) {
-    const shouldDelete = rules.some((rule) => matchesHistoricoDeleteRule(row, rule))
+  const alvos = (rows ?? []).filter((row) => rules.some((rule) => matchesHistoricoDeleteRule(row, rule)))
+  if (alvos.length === 0) return
 
-    if (!shouldDelete) continue
-
-    const { error } = await supabase.from("historico_politico").delete().eq("id", row.id)
-    if (error) {
-      throw new Error(`Erro ao remover historico incorreto: ${error.message}`)
-    }
-  }
+  await escreverAuditado(
+    escritaDoFix(
+      "historico_politico",
+      "remove mandato incorreto que o fix curado desmente",
+      fix,
+      `${alvos.length} linha(s): ${alvos.map((r) => `${r.cargo} ${r.periodo_inicio ?? "?"}`).join(", ")}`,
+    ),
+    async () => {
+      const removidas: Array<{ id: string }> = []
+      for (const row of alvos) {
+        const { data, error } = await supabase
+          .from("historico_politico")
+          .delete()
+          .eq("id", row.id)
+          .select("id")
+        if (error) {
+          return { data: removidas, error: { message: `ao remover historico incorreto: ${error.message}` } }
+        }
+        removidas.push(...((data ?? []) as Array<{ id: string }>))
+      }
+      return { data: removidas, error: null }
+    },
+  )
 }
 
 async function deleteTseRows(
   candidatoId: string,
   table: "patrimonio" | "financiamento",
-  years: number[] | undefined
+  years: number[] | undefined,
+  fix: CandidateFix,
 ) {
   if (!years || years.length === 0) return
 
-  const { error } = await supabase.from(table).delete().eq("candidato_id", candidatoId).in("ano_eleicao", years)
-  if (error) {
-    throw new Error(`Erro ao remover ${table}: ${error.message}`)
-  }
+  await escreverAuditado(
+    escritaDoFix(
+      table,
+      `remove declaracao de ${table} de pleito que o fix curado nao reconhece`,
+      fix,
+      `anos ${years.join(", ")}`,
+    ),
+    () =>
+      supabase
+        .from(table)
+        .delete()
+        .eq("candidato_id", candidatoId)
+        .in("ano_eleicao", years)
+        .select("id"),
+  )
 }
 
 async function resolvePartidoAnteriorForFix(candidatoId: string): Promise<string> {
@@ -8849,21 +8964,29 @@ async function ensureCurrentPartyTimeline(candidatoId: string, fix: CandidateFix
     return
   }
 
-  const { error: insertError } = await supabase.from("mudancas_partido").insert({
-    candidato_id: candidatoId,
-    partido_anterior: latest ? partidoAnterior : "Histórico anterior não determinado",
-    partido_novo: expectedParty,
-    data_mudanca: TODAY,
-    ano: THIS_YEAR,
-    contexto: sanitizeTemplateText(`partido atual verificado manualmente (${fix.source})`),
-  })
-
-  if (insertError) {
-    throw new Error(`Erro ao inserir timeline atual: ${insertError.message}`)
-  }
+  await escreverAuditado(
+    escritaDoFix(
+      "mudancas_partido",
+      "fecha a timeline no partido atual verificado manualmente",
+      fix,
+      `${partidoAnterior} -> ${expectedParty} em ${TODAY}`,
+    ),
+    () =>
+      supabase.from("mudancas_partido").insert({
+        candidato_id: candidatoId,
+        partido_anterior: latest ? partidoAnterior : "Histórico anterior não determinado",
+        partido_novo: expectedParty,
+        data_mudanca: TODAY,
+        ano: THIS_YEAR,
+        contexto: sanitizeTemplateText(`partido atual verificado manualmente (${fix.source})`),
+      }).select("id"),
+  )
 }
 
-async function ensureVotacaoChaveForManualVote(vote: NonNullable<CandidateFix["manualVotes"]>[number]) {
+async function ensureVotacaoChaveForManualVote(
+  vote: NonNullable<CandidateFix["manualVotes"]>[number],
+  fix: CandidateFix,
+) {
   const { data: existing, error: existingError } = await supabase
     .from("votacoes_chave")
     .select("id, proposicao_id, descricao, tema, impacto_popular")
@@ -8886,55 +9009,79 @@ async function ensureVotacaoChaveForManualVote(vote: NonNullable<CandidateFix["m
     }
 
     if (Object.keys(updatePayload).length > 0) {
-      const { error: updateError } = await supabase
-        .from("votacoes_chave")
-        .update(updatePayload)
-        .eq("id", existing.id)
-      if (updateError) {
-        throw new Error(`Erro ao atualizar votação-chave manual: ${updateError.message}`)
-      }
+      await escreverAuditado(
+        escritaDoFix(
+          "votacoes_chave",
+          "completa campos vazios de votacao-chave ja existente, a partir do voto manual curado",
+          fix,
+          `votacao ${existing.id}: ${Object.keys(updatePayload).join(", ")}`,
+        ),
+        () =>
+          supabase
+            .from("votacoes_chave")
+            .update(updatePayload)
+            .eq("id", existing.id)
+            .select("id"),
+      )
     }
 
     return existing.id
   }
 
-  const { data: inserted, error: insertError } = await supabase
-    .from("votacoes_chave")
-    .insert({
-      titulo: vote.titulo,
-      descricao: vote.descricao,
-      data_votacao: vote.data_votacao,
-      casa: vote.casa,
-      proposicao_id: vote.proposicao_id ?? null,
-      tema: vote.tema,
-      impacto_popular: vote.impacto_popular,
-    })
-    .select("id")
-    .single()
+  // Sem `.single()`: o helper conta o volume por `data.length`, e `.single()`
+  // devolveria um objeto, nao uma lista. A conferencia de "veio id?" continua
+  // logo abaixo, so que explicita.
+  const inseridas = await escreverAuditado(
+    escritaDoFix(
+      "votacoes_chave",
+      "cria votacao-chave que so existe pelo voto manual curado",
+      fix,
+      `${vote.casa} ${vote.data_votacao}: ${vote.titulo}`,
+    ),
+    () =>
+      supabase
+        .from("votacoes_chave")
+        .insert({
+          titulo: vote.titulo,
+          descricao: vote.descricao,
+          data_votacao: vote.data_votacao,
+          casa: vote.casa,
+          proposicao_id: vote.proposicao_id ?? null,
+          tema: vote.tema,
+          impacto_popular: vote.impacto_popular,
+        })
+        .select("id"),
+  )
 
-  if (insertError || !inserted?.id) {
-    throw new Error(`Erro ao inserir votação-chave manual: ${insertError?.message ?? "sem id"}`)
+  const novoId = (inseridas as Array<{ id?: string }>)[0]?.id
+  if (!novoId) {
+    throw new Error("Erro ao inserir votação-chave manual: sem id")
   }
 
-  return inserted.id
+  return novoId
 }
 
 async function ensureManualVotes(candidatoId: string, slug: string, fix: CandidateFix) {
   let count = 0
   for (const vote of fix.manualVotes ?? []) {
-    const votacaoId = await ensureVotacaoChaveForManualVote(vote)
-    const { error } = await supabase.from("votos_candidato").upsert(
-      {
-        candidato_id: candidatoId,
-        votacao_id: votacaoId,
-        voto: vote.voto,
-      },
-      { onConflict: "candidato_id,votacao_id" }
+    const votacaoId = await ensureVotacaoChaveForManualVote(vote, fix)
+    await escreverAuditado(
+      escritaDoFix(
+        "votos_candidato",
+        "registra voto declarado em votacao-chave, curado a mao",
+        fix,
+        `votacao ${votacaoId}, voto ${vote.voto}`,
+      ),
+      () =>
+        supabase.from("votos_candidato").upsert(
+          {
+            candidato_id: candidatoId,
+            votacao_id: votacaoId,
+            voto: vote.voto,
+          },
+          { onConflict: "candidato_id,votacao_id" }
+        ).select("candidato_id"),
     )
-
-    if (error) {
-      throw new Error(`Erro ao inserir voto manual: ${error.message}`)
-    }
     count++
   }
 
@@ -8963,20 +9110,26 @@ async function applyFix(fix: CandidateFix) {
     ultima_atualizacao: new Date().toISOString(),
   }
 
-  const { error: updateError } = await supabase
-    .from("candidatos")
-    .update(updatePayload)
-    .eq("id", candidato.id)
+  await escreverAuditado(
+    escritaDoFix(
+      "candidatos",
+      "aplica o fix factual curado sobre a ficha do candidato",
+      fix,
+      `campos: ${Object.keys(updatePayload).join(", ")}`,
+    ),
+    () =>
+      supabase
+        .from("candidatos")
+        .update(updatePayload)
+        .eq("id", candidato.id)
+        .select("id"),
+  )
 
-  if (updateError) {
-    throw new Error(`Erro ao atualizar candidato: ${updateError.message}`)
-  }
-
-  await deleteTseRows(candidato.id, "patrimonio", fix.deletePatrimonioYears)
-  await deleteTseRows(candidato.id, "financiamento", fix.deleteFinanciamentoYears)
-  await deleteTimelineRows(candidato.id, fix.deleteTimelineRows)
-  await ensureTimelineRows(candidato.id, fix.ensureTimelineRows)
-  await deleteHistoricoRows(candidato.id, fix.deleteHistoricoRows)
+  await deleteTseRows(candidato.id, "patrimonio", fix.deletePatrimonioYears, fix)
+  await deleteTseRows(candidato.id, "financiamento", fix.deleteFinanciamentoYears, fix)
+  await deleteTimelineRows(candidato.id, fix.deleteTimelineRows, fix)
+  await ensureTimelineRows(candidato.id, fix.ensureTimelineRows, fix)
+  await deleteHistoricoRows(candidato.id, fix.deleteHistoricoRows, fix)
   await ensureCurrentPartyTimeline(candidato.id, fix)
   const { skipRechain, repairedTimeline } = await runAfterCuratedPartyTimelineWrites(candidato.id, fix)
   if (skipRechain) {
