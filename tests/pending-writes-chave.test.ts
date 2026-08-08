@@ -127,4 +127,84 @@ describe("pending-writes: escrita endereçada por chave", () => {
     assert.equal(writes[0].chave, undefined)
     assert.match(writes[0].statement, /END \$\$;$/)
   })
+
+  it("(f) literal escrito dentro de comentário não vale como prova de menção", () => {
+    // Prosa do autor não endereça linha nenhuma. Se comentário contasse, bastava
+    // citar a chave num `--` para que o gate carimbasse um statement que escreve
+    // em outra linha, que é o inverso do que ele existe para fazer.
+    const chaveSoNoComentario = [
+      "-- @write tabela=posicoes_declaradas chave=ecb064e3-176e-404b-8182-430a62964df9 slug=flavio-bolsonaro campos=id",
+      "DELETE FROM public.posicoes_declaradas",
+      "-- na curadoria isto veio de 'ecb064e3-176e-404b-8182-430a62964df9'",
+      "WHERE id = '11111111-2222-3333-4444-555555555555';",
+    ].join("\n")
+    assert.throws(
+      () => parsePendingWrites(chaveSoNoComentario, "teste.sql"),
+      /não menciona essa chave literal/
+    )
+
+    // Mesma regra para o slug, que é a forma antiga e mais usada da anotação.
+    const slugSoNoComentario = [
+      "-- @write tabela=coleta_log slug=renato-gomes campos=detalhe",
+      "UPDATE public.coleta_log",
+      "/* origem: curadoria de 'renato-gomes' em 05/08 */",
+      "SET detalhe = 'corrigido' WHERE alvo = 'jarbas-soares';",
+    ].join("\n")
+    assert.throws(() => parsePendingWrites(slugSoNoComentario, "teste.sql"), /não menciona esse slug/)
+
+    // E para a tabela: `-- mexe em patrimonio` não é mexer em patrimonio.
+    const tabelaSoNoComentario = [
+      "-- @write tabela=patrimonio slug=renato-gomes campos=valor_total",
+      "UPDATE public.historico_politico -- espelha o que foi feito em patrimonio",
+      "SET observacoes = 'x' WHERE alvo = 'renato-gomes';",
+    ].join("\n")
+    assert.throws(
+      () => parsePendingWrites(tabelaSoNoComentario, "teste.sql"),
+      /não menciona essa tabela/
+    )
+  })
+
+  it("(g) `;` e `$$` dentro de comentário não terminam nem abrem statement", () => {
+    // O scanner lia comentário como código executável. Um `;` em prosa truncava
+    // o statement antes da linha que importa, e o gate reprovava SQL correto com
+    // diagnóstico errado, que foi o modo de falha que matou o comando inteiro.
+    const pontoEVirgulaEmComentario = [
+      "-- @write tabela=historico_politico slug=renato-gomes campos=observacoes",
+      "UPDATE public.historico_politico",
+      "-- cuidado: rodar isto antes do backfill quebra a ordem; ver QA de 07/08",
+      "SET observacoes = 'revisado'",
+      "WHERE alvo = 'renato-gomes';",
+    ].join("\n")
+
+    const writes = parsePendingWrites(pontoEVirgulaEmComentario, "teste.sql")
+
+    assert.equal(writes.length, 1)
+    assert.match(writes[0].statement, /WHERE alvo = 'renato-gomes';$/)
+
+    // `$$` citado em prosa não pode abrir um corpo dollar-quoted e engolir o
+    // resto do arquivo.
+    const dollarEmComentario = [
+      "-- @write tabela=historico_politico slug=renato-gomes campos=observacoes",
+      "UPDATE public.historico_politico",
+      "-- a versão anterior fazia isto num DO $$ ... $$, ver 20260805137000",
+      "SET observacoes = 'revisado'",
+      "WHERE alvo = 'renato-gomes';",
+    ].join("\n")
+
+    const writesDollar = parsePendingWrites(dollarEmComentario, "teste.sql")
+
+    assert.equal(writesDollar.length, 1)
+    assert.match(writesDollar[0].statement, /WHERE alvo = 'renato-gomes';$/)
+  })
+
+  it("(h) identificador entre aspas duplas não é string literal", () => {
+    // `"alvo"` é nome de coluna. Se o scanner o lesse como literal, um nome de
+    // coluna igual ao slug viraria prova de menção sem nenhum dado envolvido.
+    const sql = [
+      "-- @write tabela=coleta_log slug=renato-gomes campos=detalhe",
+      'UPDATE public.coleta_log SET "detalhe" = \'x\' WHERE "renato-gomes" IS NULL;',
+    ].join("\n")
+
+    assert.throws(() => parsePendingWrites(sql, "teste.sql"), /não menciona esse slug/)
+  })
 })

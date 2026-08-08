@@ -99,49 +99,122 @@ function parseAtributos(texto: string): Record<string, string> {
 }
 
 /**
- * Se `pos` abre um corpo dollar-quoted (`$$`, `$tag$`), devolve o índice logo
- * após o fechamento; senão, -1.
+ * Se `pos` abre um corpo dollar-quoted (`$$`, `$tag$`), devolve o corpo (sem os
+ * marcadores) e o índice logo após o fechamento; senão, `null`.
  *
- * Sem isso, `statementApos` fechava o statement no primeiro `;` de dentro de um
- * bloco `DO $$ DECLARE n integer; …`, extraía só o cabeçalho do bloco e depois
- * acusava que o statement não mencionava a tabela anotada. Era diagnóstico
- * errado: o SQL estava certo e o parser é que lia pela metade. Foi o caso de
- * 20260805137000.
+ * Sem isso, o scanner fechava o statement no primeiro `;` de dentro de um bloco
+ * `DO $$ DECLARE n integer; …`, extraía só o cabeçalho do bloco e depois acusava
+ * que o statement não mencionava a tabela anotada. Era diagnóstico errado: o SQL
+ * estava certo e o parser é que lia pela metade. Foi o caso de 20260805137000.
  */
-function fimDoDollarQuote(texto: string, pos: number): number {
+function dollarQuote(texto: string, pos: number): { corpo: string; fim: number } | null {
   const abre = /^\$(?:[A-Za-z_]\w*)?\$/.exec(texto.slice(pos))
-  if (!abre) return -1
+  if (!abre) return null
   const tag = abre[0]
-  const fim = texto.indexOf(tag, pos + tag.length)
-  return fim === -1 ? texto.length : fim + tag.length
+  const fecha = texto.indexOf(tag, pos + tag.length)
+  if (fecha === -1) return { corpo: texto.slice(pos + tag.length), fim: texto.length }
+  return { corpo: texto.slice(pos + tag.length, fecha), fim: fecha + tag.length }
+}
+
+interface VarreduraSql {
+  /** Conteúdo dos string literals de aspas simples, em ordem, fora de comentário. */
+  literais: string[]
+  /** Índice do primeiro `;` executável, ou -1 se o texto não fecha statement. */
+  fimDoStatement: number
 }
 
 /**
- * String literals do statement, em ordem. Só aspas simples, com `''` tratado
- * como escape. Não desmonta corpo dollar-quoted: as aspas de dentro de um bloco
- * `DO $$ … $$` são lidas como as de fora, o que é o comportamento desejado para
- * conferir menção, e o preço é que apóstrofo solto dentro de um corpo
- * dollar-quoted dessincroniza a leitura (nenhuma migration do repo faz isso).
+ * Varredura única do SQL, e a razão de ela ser única é que as duas perguntas do
+ * módulo ("quais são os literais?" e "onde termina o statement?") só respondem
+ * certo se concordarem sobre o que é código e o que não é.
+ *
+ * Quatro regiões não são código, e nenhuma delas conta:
+ *   - comentário de linha (`-- …`) e de bloco (`/* … *\/`, que o Postgres
+ *     aninha). Sem isso, `-- corrige 'renato-gomes'` dava a um UPDATE a prova de
+ *     menção que o SQL dele não tinha, e um `;` escrito dentro de um comentário
+ *     truncava o statement no meio;
+ *   - identificador entre aspas duplas, que não é string literal;
+ *   - o corpo dollar-quoted, para efeito de terminador.
+ *
+ * Para efeito de LITERAL, o corpo dollar-quoted conta e é varrido por recursão:
+ * é lá que mora o literal de um `DO $$ … $$`, e ignorá-lo reprovaria anotação
+ * correta.
  */
-function literaisDe(statement: string): string[] {
-  const out: string[] = []
+function varrerSql(texto: string): VarreduraSql {
+  const literais: string[] = []
+  let fimDoStatement = -1
   let k = 0
-  while (k < statement.length) {
-    if (statement[k] !== "'") { k += 1; continue }
-    k += 1
-    let buffer = ""
-    while (k < statement.length) {
-      if (statement[k] === "'") {
-        if (statement[k + 1] === "'") { buffer += "'"; k += 2; continue }
-        k += 1
-        break
-      }
-      buffer += statement[k]
-      k += 1
+
+  while (k < texto.length) {
+    const ch = texto[k]
+
+    if (ch === "-" && texto[k + 1] === "-") {
+      const quebra = texto.indexOf("\n", k)
+      k = quebra === -1 ? texto.length : quebra + 1
+      continue
     }
-    out.push(buffer)
+
+    if (ch === "/" && texto[k + 1] === "*") {
+      let profundidade = 1
+      k += 2
+      while (k < texto.length && profundidade > 0) {
+        if (texto[k] === "/" && texto[k + 1] === "*") { profundidade += 1; k += 2; continue }
+        if (texto[k] === "*" && texto[k + 1] === "/") { profundidade -= 1; k += 2; continue }
+        k += 1
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      k += 1
+      while (k < texto.length) {
+        if (texto[k] === '"') {
+          // `""` é aspa escapada dentro do identificador, não fecha.
+          if (texto[k + 1] === '"') { k += 2; continue }
+          k += 1
+          break
+        }
+        k += 1
+      }
+      continue
+    }
+
+    if (ch === "'") {
+      k += 1
+      let buffer = ""
+      while (k < texto.length) {
+        if (texto[k] === "'") {
+          // `''` é aspa escapada dentro da string, não fecha.
+          if (texto[k + 1] === "'") { buffer += "'"; k += 2; continue }
+          k += 1
+          break
+        }
+        buffer += texto[k]
+        k += 1
+      }
+      literais.push(buffer)
+      continue
+    }
+
+    if (ch === "$") {
+      const bloco = dollarQuote(texto, k)
+      if (bloco) {
+        literais.push(...varrerSql(bloco.corpo).literais)
+        k = bloco.fim
+        continue
+      }
+    }
+
+    if (ch === ";" && fimDoStatement === -1) fimDoStatement = k
+    k += 1
   }
-  return out
+
+  return { literais, fimDoStatement }
+}
+
+/** String literals do statement, em ordem, ignorando comentário. */
+function literaisDe(statement: string): string[] {
+  return varrerSql(statement).literais
 }
 
 /**
@@ -151,7 +224,16 @@ function literaisDe(statement: string): string[] {
  * `'ecb064e3-…'` casa por igualdade; `'Candidatura a %'` casa por prefixo;
  * `'^Candidatura a '` casa por sufixo. Substring solta no meio do literal NÃO
  * conta, para que uma chave curta e genérica não passe a casar com qualquer
- * texto grande que a migration por acaso escreva.
+ * texto grande que a migration por acaso escreva. Literal escrito dentro de
+ * comentário também não conta: prosa não endereça linha.
+ *
+ * O que continua fora do alcance desta função, de propósito: ela não distingue
+ * o literal que está no `WHERE` do que está no `SET`. Distinguir exigiria um
+ * parser de SQL de verdade, e a precisão que ele daria seria falsa de qualquer
+ * jeito, porque nem o `WHERE` prova que a linha endereçada pertence ao slug
+ * declarado. É por isso que a escrita com `chave=` sai em seção separada do
+ * relatório, rotulada como não verificável estaticamente, em vez de aceita em
+ * silêncio: o destino dela é revisão humana, não um carimbo automático.
  */
 function chaveAncorada(statement: string, chave: string): boolean {
   return literaisDe(statement).some(
@@ -161,10 +243,10 @@ function chaveAncorada(statement: string, chave: string): boolean {
 
 /**
  * Extrai o statement que começa na primeira linha não vazia e não comentada,
- * até o primeiro `;` FORA de string literal e FORA de corpo dollar-quoted.
- * Ponto e vírgula dentro de aspas simples é conteúdo (aparece em texto de
- * `descricao`, por exemplo) e ponto e vírgula dentro de `DO $$ … $$` é corpo do
- * bloco: nenhum dos dois termina o statement.
+ * até o primeiro `;` executável. Ponto e vírgula dentro de aspas simples é
+ * conteúdo (aparece em texto de `descricao`, por exemplo), dentro de `DO $$ … $$`
+ * é corpo do bloco e dentro de comentário é prosa: nenhum dos três termina o
+ * statement.
  */
 function statementApos(linhas: string[], inicio: number): string {
   let i = inicio
@@ -172,15 +254,44 @@ function statementApos(linhas: string[], inicio: number): string {
   if (i >= linhas.length) return ""
 
   const texto = linhas.slice(i).join("\n")
+  const { fimDoStatement } = varrerSql(texto)
+  return fimDoStatement === -1 ? texto.trim() : texto.slice(0, fimDoStatement + 1).trim()
+}
+
+/**
+ * O texto sem as regiões de comentário, para as checagens que perguntam se um
+ * identificador NÃO citável (nome de tabela) aparece no statement. `-- mexe em
+ * patrimonio` não é mexer em `patrimonio`.
+ */
+function semComentarios(texto: string): string {
+  let out = ""
   let k = 0
   while (k < texto.length) {
     const ch = texto[k]
-    if (ch === "'") {
+    if (ch === "-" && texto[k + 1] === "-") {
+      const quebra = texto.indexOf("\n", k)
+      k = quebra === -1 ? texto.length : quebra
+      continue
+    }
+    if (ch === "/" && texto[k + 1] === "*") {
+      let profundidade = 1
+      k += 2
+      while (k < texto.length && profundidade > 0) {
+        if (texto[k] === "/" && texto[k + 1] === "*") { profundidade += 1; k += 2; continue }
+        if (texto[k] === "*" && texto[k + 1] === "/") { profundidade -= 1; k += 2; continue }
+        k += 1
+      }
+      out += " "
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      const aspa = ch
+      out += ch
       k += 1
       while (k < texto.length) {
-        if (texto[k] === "'") {
-          // `''` é aspa escapada dentro da string, não fecha.
-          if (texto[k + 1] === "'") { k += 2; continue }
+        out += texto[k]
+        if (texto[k] === aspa) {
+          if (texto[k + 1] === aspa) { out += texto[k + 1]; k += 2; continue }
           k += 1
           break
         }
@@ -188,14 +299,10 @@ function statementApos(linhas: string[], inicio: number): string {
       }
       continue
     }
-    if (ch === "$") {
-      const fim = fimDoDollarQuote(texto, k)
-      if (fim !== -1) { k = fim; continue }
-    }
-    if (ch === ";") return texto.slice(0, k + 1).trim()
+    out += ch
     k += 1
   }
-  return texto.trim()
+  return out
 }
 
 /**
@@ -254,7 +361,7 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
     if (!statement) {
       throw new Error(`${arquivo}:${i + 1}: anotação @write sem statement logo abaixo`)
     }
-    if (!statement.includes(tabela)) {
+    if (!semComentarios(statement).includes(tabela)) {
       throw new Error(
         `${arquivo}:${i + 1}: anotação diz tabela=${tabela} mas o statement não menciona essa tabela`
       )
@@ -300,10 +407,16 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
     // saída empurra quem lê para afrouxar a anotação, que é o oposto do que este
     // gate existe para fazer. O identificador continua tendo que aparecer literal
     // no SQL: nenhuma das duas formas acredita na anotação sozinha.
+    //
+    // A conferência é contra a lista de literais, não contra o texto cru, para
+    // que `-- corrige 'renato-gomes'` não valha como menção. Comentário é prosa
+    // do autor da migration, e prosa não é o SQL que vai rodar.
     const identificador = slug || (ref as string)
     const rotulo = slug ? "slug" : "ref"
-    const mencionado =
-      statement.includes(`'${identificador}'`) || statement.includes(`'${identificador}:`)
+    const literais = literaisDe(statement)
+    const mencionado = literais.some(
+      (lit) => lit === identificador || lit.startsWith(`${identificador}:`)
+    )
     if (!mencionado) {
       throw new Error(
         `${arquivo}:${i + 1}: anotação diz ${rotulo}=${identificador} mas o statement não menciona esse ${rotulo}`
