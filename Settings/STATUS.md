@@ -49,6 +49,17 @@ nessa data. Reexecute os gates antes de usá-lo como prova futura.
      `npm run audit:marcadores-tse:gate`, que reprova se `#NULO#` ou `#NE#`
      aparecer no recorte publicado.
 
+- **Backup do banco: duas camadas, verificado em 08/08.** O Supabase já fazia
+  backup físico diário (Pro), com Point in Time e Restore to new project no
+  painel; a afirmação anterior de que o projeto não tinha backup nenhum era
+  falsa. O workflow `backup-db.yml` passou a funcionar no mesmo dia e entrega a
+  segunda camada: dump lógico cifrado, guardado fora da conta Supabase, artifact
+  de 17 MB com retenção de 14 dias e verificação `pg_restore --list` dentro do
+  próprio run. O projeto não usa Supabase Storage, então o aviso de que backups
+  não incluem objetos de Storage não se aplica.
+- **O que continua sem cobertura:** reconstruir o banco a partir do repositório.
+  Nenhum dos dois backups resolve isso, e é o escopo da issue #131.
+
 ### Correções de registro (auditoria de 08/08)
 
 Afirmações destes documentos que não se sustentaram quando reconferidas:

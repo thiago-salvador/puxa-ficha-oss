@@ -1,7 +1,24 @@
 name: Backup do banco
 
-# O Supabase Free não tem backup automático acessível; este workflow roda o
-# scripts/backup-supabase.sh todo dia e guarda o dump como artifact CIFRADO.
+# Segunda cópia, não a única. Verificado em 08/08/2026: a organização está no
+# Pro e o Supabase já faz backup físico diário do projeto, com Point in Time e
+# Restore to new project disponíveis no painel. O cabeçalho anterior dizia que o
+# projeto rodava no Free e que por isso não havia backup automático, o que era
+# falso e sustentou um alarme exagerado durante a sessão de 08/08.
+#
+# Por que este workflow continua valendo: o backup do Supabase é físico e vive
+# dentro daquela conta. Este produz um dump LÓGICO, cifrado, guardado fora do
+# Supabase, que você pode inspecionar, versionar e restaurar em qualquer
+# Postgres. Cobrem falhas diferentes: perda de acesso à conta, erro de escrita
+# que você quer diffar antes de restaurar, ou auditoria do conteúdo.
+#
+# O que NENHUM dos dois cobre: reconstruir o banco a partir do repositório. As
+# migrations não reproduzem o estado atual (replay bloqueado, ledger reparado à
+# mão, escritas por script fora do histórico). Esse é outro problema, e vive na
+# issue #131.
+#
+# Este workflow roda o scripts/backup-supabase.sh todo dia e guarda o dump como
+# artifact CIFRADO.
 # O repositório é público e o dump carrega PII (alert_subscribers): o artifact
 # nunca sobe em claro, e o workflow falha antes de dumpar se a chave de
 # criptografia não estiver configurada.
