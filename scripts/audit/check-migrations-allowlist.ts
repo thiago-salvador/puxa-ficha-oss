@@ -245,13 +245,31 @@ function main(): void {
   const writes = lerPendingWrites(MIGRATIONS, desde, ate)
   erros.push(...violacoesDeAllowlist(writes, allow))
 
+  // Duas listas, nunca uma só. Escrita endereçada por chave (`chave=`) tem o
+  // identificador provado contra o SQL, mas o slug declarado NÃO: resolver
+  // `chave='<uuid>'` para um candidato exige o banco, e este checker não toca
+  // banco. Misturar as duas na mesma lista de `OK` faria o relatório afirmar
+  // uma prova que não existe. Seção separada é o preço de aceitar a forma:
+  // a escrita fica visível e nomeada para revisão humana, em vez de aceita
+  // em silêncio no meio de duzentas linhas iguais.
+  const verificadas = writes.filter((w) => w.chave === undefined)
+  const porChave = writes.filter((w) => w.chave !== undefined)
+
+  const descreve = (w: PendingWrite): string =>
+    `${w.tabela}/${w.slug || `ref=${w.ref}`}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
+
   console.error(
-    `[allowlist] ${arquivos.length} migration(s) na janela, ${comAnotacao} anotada(s), ${writes.length} write(s) declarado(s)`
+    `[allowlist] ${arquivos.length} migration(s) na janela, ${comAnotacao} anotada(s), ${writes.length} write(s) declarado(s)` +
+      `, ${verificadas.length} com identificador conferido no SQL, ${porChave.length} endereçado(s) por chave`
   )
-  for (const w of writes) {
+  for (const w of verificadas) console.error(`  OK ${descreve(w)}`)
+
+  if (porChave.length) {
     console.error(
-      `  OK ${w.tabela}/${w.slug || `ref=${w.ref}`}${w.ano ? ` ano=${w.ano}` : ""}${w.tema ? ` tema=${w.tema}` : ""}${w.proposicao ? ` prop=${w.proposicao}` : ""} (${w.arquivo}:${w.linha})`
+      `\n[nao verificavel estaticamente] ${porChave.length} escrita(s) endereçada(s) por chave.` +
+        ` A chave declarada aparece literal no SQL; o slug/ref declarado NÃO, e só a allowlist responde por ele.`
     )
+    for (const w of porChave) console.error(`  CHAVE chave=${w.chave} ${descreve(w)}`)
   }
 
   if (erros.length) {

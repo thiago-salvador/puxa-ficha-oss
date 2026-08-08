@@ -16,6 +16,39 @@
  * A anotação nunca é acreditada sozinha: o parser exige que o statement logo
  * abaixo mencione a mesma tabela e o mesmo slug. Anotação que não bate com o SQL
  * vira erro, não silêncio.
+ *
+ * ## Escrita endereçada por chave (`chave=`)
+ *
+ * Existe uma classe de escrita legítima em que o slug NÃO aparece no SQL: a
+ * linha é endereçada pela chave (o UUID da PK, o literal de uma coluna, o
+ * literal do predicado de um lote), e o slug do candidato é conhecido só pela
+ * curadoria. `DELETE FROM posicoes_declaradas WHERE id = '<uuid>'` é o caso
+ * fundador: o statement é preciso, o slug é verdadeiro, e mesmo assim a regra
+ * de menção o reprovava. Reprovar para sempre uma anotação correta é o começo
+ * de um gate que ninguém lê.
+ *
+ * A forma nova é `chave=<literal>`, e ela NÃO afrouxa nada:
+ *   - o literal declarado tem que aparecer no SQL, dentro de string literal,
+ *     exatamente como a regra antiga exige do slug. Anotação continua sem
+ *     poder se auto-declarar verdadeira;
+ *   - `tabela=` e `slug=`/`ref=` continuam obrigatórios, e a allowlist continua
+ *     conferindo os dois. `chave=` acrescenta uma prova, não substitui nenhuma;
+ *   - anotação SEM `chave=` cujo slug/ref não aparece literal no statement continua
+ *     reprovando, igual a antes.
+ *
+ * O que `chave=` NÃO garante, e é por isso que essas escritas saem em seção
+ * separada de `check-migrations-allowlist.ts`, rotulada como não verificável
+ * estaticamente:
+ *   - não prova que a linha daquela chave pertence ao slug declarado. Ninguém
+ *     resolve `id = 'ecb064e3-…'` para `flavio-bolsonaro` sem consultar o banco,
+ *     e este módulo não toca banco;
+ *   - não prova cardinalidade. Um literal de predicado (`chave="Candidatura a "`)
+ *     endereça um lote de tamanho desconhecido em tempo de leitura;
+ *   - não prova que a chave é a ÚNICA condição do `WHERE`.
+ * O que ela garante é o mínimo que o gate existe para garantir: a escrita está
+ * declarada, o alvo declarado existe no SQL, e o par (tabela, slug/ref, campos)
+ * passou pela allowlist. O resto vira revisão humana com nome e endereço, em
+ * vez de aceitação silenciosa.
  */
 
 import { readFileSync, readdirSync } from "node:fs"
@@ -38,6 +71,13 @@ export interface PendingWrite {
    * de escapar do gate por não ter slug para declarar.
    */
   ref?: string
+  /**
+   * Chave literal declarada com `chave=`: o valor que endereça a escrita no SQL
+   * (UUID de PK, literal de coluna, literal de predicado de lote). Quando está
+   * presente, `slug`/`ref` são metadado descritivo, NÃO verificado contra o
+   * statement, e a escrita sai em seção separada do relatório do gate.
+   */
+  chave?: string
   campos: string[]
   /** Statement SQL bruto associado à anotação. */
   statement: string
@@ -45,45 +85,117 @@ export interface PendingWrite {
 
 const ANOTACAO = /^--\s*@write\s+(.+)$/
 
+/**
+ * `chave=valor`, com o valor entre aspas duplas quando contém espaço. As aspas
+ * existem para literal de predicado (`chave="Candidatura a "`), que sem elas seria
+ * declarado pela metade e viraria uma prova mais fraca do que a disponível.
+ */
+const ATRIBUTO = /([a-zA-Z_][\w]*)=(?:"([^"]*)"|(\S*))/g
+
 function parseAtributos(texto: string): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const par of texto.trim().split(/\s+/)) {
-    const idx = par.indexOf("=")
-    if (idx <= 0) continue
-    out[par.slice(0, idx)] = par.slice(idx + 1)
+  for (const m of texto.trim().matchAll(ATRIBUTO)) out[m[1]] = m[2] ?? m[3]
+  return out
+}
+
+/**
+ * Se `pos` abre um corpo dollar-quoted (`$$`, `$tag$`), devolve o índice logo
+ * após o fechamento; senão, -1.
+ *
+ * Sem isso, `statementApos` fechava o statement no primeiro `;` de dentro de um
+ * bloco `DO $$ DECLARE n integer; …`, extraía só o cabeçalho do bloco e depois
+ * acusava que o statement não mencionava a tabela anotada. Era diagnóstico
+ * errado: o SQL estava certo e o parser é que lia pela metade. Foi o caso de
+ * 20260805137000.
+ */
+function fimDoDollarQuote(texto: string, pos: number): number {
+  const abre = /^\$(?:[A-Za-z_]\w*)?\$/.exec(texto.slice(pos))
+  if (!abre) return -1
+  const tag = abre[0]
+  const fim = texto.indexOf(tag, pos + tag.length)
+  return fim === -1 ? texto.length : fim + tag.length
+}
+
+/**
+ * String literals do statement, em ordem. Só aspas simples, com `''` tratado
+ * como escape. Não desmonta corpo dollar-quoted: as aspas de dentro de um bloco
+ * `DO $$ … $$` são lidas como as de fora, o que é o comportamento desejado para
+ * conferir menção, e o preço é que apóstrofo solto dentro de um corpo
+ * dollar-quoted dessincroniza a leitura (nenhuma migration do repo faz isso).
+ */
+function literaisDe(statement: string): string[] {
+  const out: string[] = []
+  let k = 0
+  while (k < statement.length) {
+    if (statement[k] !== "'") { k += 1; continue }
+    k += 1
+    let buffer = ""
+    while (k < statement.length) {
+      if (statement[k] === "'") {
+        if (statement[k + 1] === "'") { buffer += "'"; k += 2; continue }
+        k += 1
+        break
+      }
+      buffer += statement[k]
+      k += 1
+    }
+    out.push(buffer)
   }
   return out
 }
 
 /**
+ * A chave declarada aparece ancorada em algum literal do statement?
+ *
+ * Ancorada quer dizer: o literal É a chave, começa por ela ou termina nela.
+ * `'ecb064e3-…'` casa por igualdade; `'Candidatura a %'` casa por prefixo;
+ * `'^Candidatura a '` casa por sufixo. Substring solta no meio do literal NÃO
+ * conta, para que uma chave curta e genérica não passe a casar com qualquer
+ * texto grande que a migration por acaso escreva.
+ */
+function chaveAncorada(statement: string, chave: string): boolean {
+  return literaisDe(statement).some(
+    (lit) => lit === chave || lit.startsWith(chave) || lit.endsWith(chave)
+  )
+}
+
+/**
  * Extrai o statement que começa na primeira linha não vazia e não comentada,
- * até o primeiro `;` FORA de string literal. Ponto e vírgula dentro de aspas
- * simples é conteúdo (aparece em texto de `descricao`, por exemplo) e não
- * termina o statement.
+ * até o primeiro `;` FORA de string literal e FORA de corpo dollar-quoted.
+ * Ponto e vírgula dentro de aspas simples é conteúdo (aparece em texto de
+ * `descricao`, por exemplo) e ponto e vírgula dentro de `DO $$ … $$` é corpo do
+ * bloco: nenhum dos dois termina o statement.
  */
 function statementApos(linhas: string[], inicio: number): string {
-  const buffer: string[] = []
-  let dentroDeAspas = false
+  let i = inicio
+  while (i < linhas.length && (linhas[i].trim() === "" || linhas[i].trim().startsWith("--"))) i += 1
+  if (i >= linhas.length) return ""
 
-  for (let i = inicio; i < linhas.length; i += 1) {
-    const linha = linhas[i]
-    if (buffer.length === 0 && (linha.trim() === "" || linha.trim().startsWith("--"))) continue
-    buffer.push(linha)
-
-    let fim = false
-    for (let k = 0; k < linha.length; k += 1) {
-      const ch = linha[k]
-      if (ch === "'") {
-        // `''` é aspa escapada dentro da string, não fecha.
-        if (dentroDeAspas && linha[k + 1] === "'") { k += 1; continue }
-        dentroDeAspas = !dentroDeAspas
-        continue
+  const texto = linhas.slice(i).join("\n")
+  let k = 0
+  while (k < texto.length) {
+    const ch = texto[k]
+    if (ch === "'") {
+      k += 1
+      while (k < texto.length) {
+        if (texto[k] === "'") {
+          // `''` é aspa escapada dentro da string, não fecha.
+          if (texto[k + 1] === "'") { k += 2; continue }
+          k += 1
+          break
+        }
+        k += 1
       }
-      if (ch === ";" && !dentroDeAspas) { fim = true; break }
+      continue
     }
-    if (fim) break
+    if (ch === "$") {
+      const fim = fimDoDollarQuote(texto, k)
+      if (fim !== -1) { k = fim; continue }
+    }
+    if (ch === ";") return texto.slice(0, k + 1).trim()
+    k += 1
   }
-  return buffer.join("\n").trim()
+  return texto.trim()
 }
 
 /**
@@ -147,6 +259,36 @@ export function parsePendingWrites(sql: string, arquivo: string): PendingWrite[]
         `${arquivo}:${i + 1}: anotação diz tabela=${tabela} mas o statement não menciona essa tabela`
       )
     }
+    // Escrita endereçada por chave: a prova de menção é feita contra o literal
+    // declarado em `chave=`, e não contra o slug/ref, que aqui é descritivo e não
+    // aparece no SQL. A troca é de UMA prova por OUTRA, nunca por nenhuma: sem
+    // o literal no statement, reprova igual.
+    const chave = attrs.chave
+    if (chave !== undefined) {
+      if (!chave) {
+        throw new Error(`${arquivo}:${i + 1}: anotação @write com chave= vazio`)
+      }
+      if (!chaveAncorada(statement, chave)) {
+        throw new Error(
+          `${arquivo}:${i + 1}: anotação diz chave=${chave} mas o statement não menciona essa chave literal`
+        )
+      }
+      writes.push({
+        arquivo,
+        linha: i + 1,
+        tabela,
+        slug,
+        ano: attrs.ano ? Number(attrs.ano) : undefined,
+        tema: attrs.tema,
+        proposicao: attrs.proposicao,
+        ref,
+        chave,
+        campos: attrs.campos ? attrs.campos.split(",").filter(Boolean) : [],
+        statement,
+      })
+      continue
+    }
+
     // A anotação nunca é acreditada sozinha: o statement tem que mencionar o
     // mesmo identificador que ela declara, seja slug de candidato ou ref.
     //

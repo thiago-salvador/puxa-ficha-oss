@@ -9,6 +9,13 @@
 -- O item original de Haddad sobre caixa 2 é rejeitado. A versão substituta,
 -- também definida por Thiago, entra como nova linha e mantém a absolvição no
 -- próprio título. Nenhuma acusação é publicada sem atribuição e URL.
+--
+-- ANOTAÇÃO: toda escrita deste arquivo é endereçada pela PK da fila editorial,
+-- e não pelo slug do candidato. Por isso cada `-- @write` declara `chave=<uuid>`,
+-- que aparece literal no statement logo abaixo e é o que o gate confere; o
+-- `slug`/`ref` continua declarado, vale para a allowlist, mas é metadado de
+-- curadoria que o SQL não menciona. Ver o cabeçalho de
+-- `scripts/audit/lib/pending-writes.ts` para o que essa forma não garante.
 
 BEGIN;
 
@@ -109,12 +116,14 @@ BEGIN
 END $$;
 
 -- O único registro de posição rejeitado contém um voto nominal invertido.
--- @write tabela=posicoes_declaradas slug=flavio-bolsonaro tema=teto_gastos campos=id
+-- Endereçada pela PK: o slug abaixo é metadado de curadoria, não aparece no SQL.
+-- @write tabela=posicoes_declaradas chave=ecb064e3-176e-404b-8182-430a62964df9 slug=flavio-bolsonaro tema=teto_gastos campos=id
 DELETE FROM public.posicoes_declaradas
 WHERE id = 'ecb064e3-176e-404b-8182-430a62964df9';
 
 -- Rejeições de pontos ficam preservadas e saem da fila e da ficha.
--- @write tabela=pontos_atencao ref=rejeicoes-editoriais-20260805 campos=visivel,verificado,gerado_por,despublicacao_motivo,despublicado_em
+-- Lote endereçado pela decisao literal na fila declarada acima; o `ref` e rotulo de curadoria.
+-- @write tabela=pontos_atencao chave=rejeitar ref=rejeicoes-editoriais-20260805 campos=visivel,verificado,gerado_por,despublicacao_motivo,despublicado_em
 UPDATE public.pontos_atencao p
 SET visivel = false,
     verificado = true,
@@ -125,7 +134,7 @@ FROM editorial_decisions_20260805 d
 WHERE d.id = p.id AND d.classe = 'ponto' AND d.decisao = 'rejeitar';
 
 -- Posições de quiz aprovadas. Posição declarada não é apresentada como voto.
--- @write tabela=posicoes_declaradas slug=flavio-bolsonaro tema=reforma_trabalhista campos=descricao,fonte,url_fonte,verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=db8e94dc-f5a5-404d-bfc7-af259c34c4b0 slug=flavio-bolsonaro tema=reforma_trabalhista campos=descricao,fonte,url_fonte,verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET descricao = 'Defende uma legislação trabalhista mais flexível, com pagamento por hora e maior liberdade de negociação, mantendo apenas direitos proporcionais; não participou da votação da reforma de 2017 por não ocupar mandato na Câmara à época.',
     fonte = 'Agência Brasil — proposta de pagamento por hora e flexibilização da legislação trabalhista',
@@ -134,29 +143,29 @@ SET descricao = 'Defende uma legislação trabalhista mais flexível, com pagame
     gerado_por = 'curadoria'
 WHERE id = 'db8e94dc-f5a5-404d-bfc7-af259c34c4b0';
 
--- @write tabela=posicoes_declaradas slug=jhc tema=reforma_trabalhista campos=verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=33e36ea1-1822-432f-bb14-445592fb085b slug=jhc tema=reforma_trabalhista campos=verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET verificado = true, gerado_por = 'curadoria'
 WHERE id = '33e36ea1-1822-432f-bb14-445592fb085b';
 
--- @write tabela=posicoes_declaradas slug=renan-filho tema=reforma_trabalhista campos=verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=ac6bc30e-4562-4830-9d80-ee7b0ff26a10 slug=renan-filho tema=reforma_trabalhista campos=verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET verificado = true, gerado_por = 'curadoria'
 WHERE id = 'ac6bc30e-4562-4830-9d80-ee7b0ff26a10';
 
--- @write tabela=posicoes_declaradas slug=renan-filho tema=teto_gastos campos=verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=9185eb2c-8d14-47f9-b20a-79e5225effbe slug=renan-filho tema=teto_gastos campos=verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET verificado = true, gerado_por = 'curadoria'
 WHERE id = '9185eb2c-8d14-47f9-b20a-79e5225effbe';
 
--- @write tabela=posicoes_declaradas slug=renan-filho tema=transferencia_renda campos=descricao,verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=4839f21d-8820-4974-96e0-9a94641dfffa slug=renan-filho tema=transferencia_renda campos=descricao,verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET descricao = 'Programa estadual de transferência de renda voltado à primeira infância em Alagoas, com benefício mensal para gestantes e crianças pequenas, lançado no governo Renan Filho.',
     verificado = true,
     gerado_por = 'curadoria'
 WHERE id = '4839f21d-8820-4974-96e0-9a94641dfffa';
 
--- @write tabela=posicoes_declaradas slug=tarcisio-gov-sp tema=reforma_trabalhista campos=descricao,fonte,url_fonte,verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=15847cc8-6cee-432a-b60a-40aab971b94d slug=tarcisio-gov-sp tema=reforma_trabalhista campos=descricao,fonte,url_fonte,verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET descricao = 'Não teve mandato no Congresso durante a votação da reforma trabalhista de 2017, mas em entrevistas defende essa reforma como parte de uma “era pró-business” e critica propostas que revertam flexibilizações, mantendo linha econômica liberal e favorável a reformas pró-empresariado.',
     fonte = 'Poder360 — entrevista sobre a reforma trabalhista e a “era pró-business”',
@@ -165,7 +174,7 @@ SET descricao = 'Não teve mandato no Congresso durante a votação da reforma t
     gerado_por = 'curadoria'
 WHERE id = '15847cc8-6cee-432a-b60a-40aab971b94d';
 
--- @write tabela=posicoes_declaradas slug=tarcisio-gov-sp tema=teto_gastos campos=descricao,fonte,url_fonte,verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=880184e6-b37e-4e11-ab83-b6e04bb017c3 slug=tarcisio-gov-sp tema=teto_gastos campos=descricao,fonte,url_fonte,verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET descricao = 'Defende ajuste fiscal rígido e regras de contenção de gasto público, alinhadas à centro-direita. Sobre o arcabouço fiscal, afirma apoiar sua aprovação, embora critique o foco em aumento de receita e peça mecanismos mais severos de controle da despesa.',
     fonte = 'UOL/Estadão — entrevista sobre o arcabouço fiscal',
@@ -174,7 +183,7 @@ SET descricao = 'Defende ajuste fiscal rígido e regras de contenção de gasto 
     gerado_por = 'curadoria'
 WHERE id = '880184e6-b37e-4e11-ab83-b6e04bb017c3';
 
--- @write tabela=posicoes_declaradas slug=tarcisio-gov-sp tema=transferencia_renda campos=descricao,fonte,url_fonte,verificado,gerado_por
+-- @write tabela=posicoes_declaradas chave=2110f078-0cb8-4bd2-846a-39d0a44c2338 slug=tarcisio-gov-sp tema=transferencia_renda campos=descricao,fonte,url_fonte,verificado,gerado_por
 UPDATE public.posicoes_declaradas
 SET descricao = 'Defende programas de transferência de renda focalizados em famílias pobres, com ênfase em condicionalidades e eficiência do gasto social, seguindo a linha liberal de concentrar benefícios em quem está abaixo da linha de pobreza e integrar proteção social à inserção produtiva. Esta é uma síntese editorial, não uma citação literal.',
     fonte = 'Governo de São Paulo — SuperAção SP, proteção social e inclusão produtiva',
@@ -184,7 +193,7 @@ SET descricao = 'Defende programas de transferência de renda focalizados em fam
 WHERE id = '2110f078-0cb8-4bd2-846a-39d0a44c2338';
 
 -- Pontos de carreira: o título deixa de chamar cargos distintos de mandatos.
--- @write tabela=pontos_atencao slug=hertz-dias campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=faea612f-c093-402c-ab13-53a78f38f098 slug=hertz-dias campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Trajetória eleitoral sem mandato eletivo',
     descricao = 'Militante do PSTU e professor de História, já concorreu a vice-presidente em 2018, a prefeito de São Luís em 2020 e a governador do Maranhão em 2022, sem ter exercido mandato eletivo.',
@@ -194,7 +203,7 @@ SET titulo = 'Trajetória eleitoral sem mandato eletivo',
     )
 WHERE id = 'faea612f-c093-402c-ab13-53a78f38f098';
 
--- @write tabela=pontos_atencao slug=samara-martins campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=9dc0144f-fd71-41d5-9fcf-286577fbf370 slug=samara-martins campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Trajetória eleitoral sem mandato eletivo',
     descricao = 'Dentista do SUS, militante da Unidade Popular e de movimentos negros, foi candidata a vice-presidente em 2022 e, em 2026, oficializada como candidata à Presidência, sem ter exercido mandato eletivo.',
@@ -204,7 +213,7 @@ SET titulo = 'Trajetória eleitoral sem mandato eletivo',
     )
 WHERE id = '9dc0144f-fd71-41d5-9fcf-286577fbf370';
 
--- @write tabela=pontos_atencao slug=tiao-bocalom campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=409c1b11-9efa-49bb-8b6b-4434d1c77cf9 slug=tiao-bocalom campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Matemático com carreira política longa, foi vereador em Nova Olímpia (PR), prefeito de Acrelândia em dois mandatos, secretário estadual de Agricultura e prefeito de Rio Branco, onde foi reeleito em 2024.',
@@ -214,14 +223,14 @@ SET titulo = 'Carreira política',
     )
 WHERE id = '409c1b11-9efa-49bb-8b6b-4434d1c77cf9';
 
--- @write tabela=pontos_atencao slug=jhc campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=9fa4db8b-2b96-4595-b982-37042586e0dc slug=jhc campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi deputado estadual por Alagoas, deputado federal e prefeito de Maceió.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Câmara dos Deputados — biografia de JHC', 'url', 'https://www.camara.leg.br/deputados/178842/biografia'))
 WHERE id = '9fa4db8b-2b96-4595-b982-37042586e0dc';
 
--- @write tabela=pontos_atencao slug=renan-filho campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=61a06eae-4815-41fc-acd9-d28d279c41f7 slug=renan-filho campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi prefeito de Murici, deputado federal por Alagoas, governador do estado por dois mandatos e senador da República.',
@@ -231,87 +240,87 @@ SET titulo = 'Carreira política',
     )
 WHERE id = '61a06eae-4815-41fc-acd9-d28d279c41f7';
 
--- @write tabela=pontos_atencao slug=david-almeida campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=2bed957b-49b9-4ce5-afbd-5f66c2fedbec slug=david-almeida campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi governador em exercício do Amazonas em 2017, além de três mandatos como deputado estadual e dois como prefeito de Manaus.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'TSE — perfil de David Almeida e reeleição para a Prefeitura de Manaus', 'url', 'https://www.tse.jus.br/comunicacao/noticias/2024/Outubro/david-almeida-e-eleito-prefeito-de-manaus-am'))
 WHERE id = '2bed957b-49b9-4ce5-afbd-5f66c2fedbec';
 
--- @write tabela=pontos_atencao slug=maria-do-carmo campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=bfb1c41e-2691-4e0b-82be-a6bebe4d3a71 slug=maria-do-carmo campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Sem mandato eletivo federal ou estadual registrado',
     descricao = 'Maria do Carmo Seffair não possui mandato eletivo federal ou estadual registrado nas bases consultadas do TSE, da Câmara ou do Senado.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'TSE — conjunto de dados de candidaturas de 2022', 'url', 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2022.zip'))
 WHERE id = 'bfb1c41e-2691-4e0b-82be-a6bebe4d3a71';
 
--- @write tabela=pontos_atencao slug=omar-aziz campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=15d6bab6-d2f9-4b54-971e-e185f81fb67b slug=omar-aziz campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador de Manaus, deputado estadual, vice-prefeito, vice-governador por dois mandatos, governador do Amazonas e exerce atualmente o segundo mandato de senador.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Senado Federal — perfil histórico de Omar Aziz', 'url', 'https://adsf.senado.leg.br/index.php/omar-aziz'))
 WHERE id = '15d6bab6-d2f9-4b54-971e-e185f81fb67b';
 
--- @write tabela=pontos_atencao slug=clecio-luis campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=94dc3127-214c-4702-88fa-30b9bc1d75ad slug=clecio-luis campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi secretário estadual, vereador de Macapá, prefeito da capital por dois mandatos e governador do Amapá. O cargo de secretário não é mandato eletivo.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'TSE DivulgaCandContas — candidatura ao governo em 2022', 'url', 'https://divulgacandcontas.tse.jus.br/divulga/rest/v1/candidatura/buscar/2022/AP/2040602022/candidato/30001619676'))
 WHERE id = '94dc3127-214c-4702-88fa-30b9bc1d75ad';
 
--- @write tabela=pontos_atencao slug=jeronimo campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=ec378763-10a3-4d4d-b5d2-5c188d2164a9 slug=jeronimo campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi secretário estadual de Desenvolvimento Rural e de Educação antes de exercer seu primeiro mandato eletivo como governador da Bahia.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Governo da Bahia — biografia oficial', 'url', 'https://www.ba.gov.br/comunicacao/2023/01/noticias/biografia-do-governador-jeronimo-rodrigues'))
 WHERE id = 'ec378763-10a3-4d4d-b5d2-5c188d2164a9';
 
--- @write tabela=pontos_atencao slug=ronaldo-mansur campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=0be8b601-b952-4fca-be41-b92eb39b96a1 slug=ronaldo-mansur campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Sem mandato eletivo federal ou estadual registrado',
     descricao = 'Ronaldo Mansur não exerceu mandato eletivo federal ou estadual, apesar de já ter sido candidato a vice-governador em eleições anteriores.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'TSE DivulgaCandContas — candidatura de 2022', 'url', 'https://divulgacandcontas.tse.jus.br/divulga/rest/v1/candidatura/buscar/2022/MG/2040602022/candidato/50001600528'))
 WHERE id = '0be8b601-b952-4fca-be41-b92eb39b96a1';
 
--- @write tabela=pontos_atencao slug=ciro-gomes-gov-ce campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=6f18b013-7d3a-4d90-803f-3485c27ee9da slug=ciro-gomes-gov-ce campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Filiações partidárias ao longo da carreira',
     descricao = 'Ao longo da carreira, foi filiado a diversas siglas, entre elas PDS, PMDB, PSDB, PPS, PROS, PDT e PSB, e deixou o PDT em 2022 após conflito com a direção.'
 WHERE id = '6f18b013-7d3a-4d90-803f-3485c27ee9da';
 
--- @write tabela=pontos_atencao slug=ciro-gomes-gov-ce campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=88373c8d-43c9-400d-a896-5f11e3fd3ed7 slug=ciro-gomes-gov-ce campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Acusado de agressão a jornalista durante campanha',
     descricao = 'Durante a campanha de 2022, um jornalista acusou Ciro Gomes de empurrá-lo e tentar retirar seu microfone. A fonte registra a acusação e a apresentação de queixa formal; o texto não trata a agressão como fato incontroverso.'
 WHERE id = '88373c8d-43c9-400d-a896-5f11e3fd3ed7';
 
--- @write tabela=pontos_atencao slug=ciro-gomes-gov-ce campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=8e0bd54c-f160-4c9c-bb91-d8757c4c4fde slug=ciro-gomes-gov-ce campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Governou o Ceará entre 1991 e 1994',
     descricao = 'Ciro Gomes foi governador do Ceará entre 1991 e 1994. O estado se tornou referência nacional em alfabetização e aprendizagem por uma política educacional de longo prazo, consolidada também por governos posteriores; o resultado não é atribuído exclusivamente à gestão Ciro.'
 WHERE id = '8e0bd54c-f160-4c9c-bb91-d8757c4c4fde';
 
--- @write tabela=pontos_atencao slug=ciro-gomes-gov-ce campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=72419fa9-891b-471b-8ce3-3ffc5ee8ad82 slug=ciro-gomes-gov-ce campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Posição nos segundos turnos presidenciais de 2018 e 2022',
     descricao = 'Em 2018, viajou para Paris e não declarou apoio público a Fernando Haddad. Em 2022, evitou endossar Lula diretamente, sendo criticado por setores da esquerda.'
 WHERE id = '72419fa9-891b-471b-8ce3-3ffc5ee8ad82';
 
--- @write tabela=pontos_atencao slug=daniel-vilela campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=c1d107df-59e5-4a57-9249-578c18213cac slug=daniel-vilela campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador de Goiânia, deputado estadual, deputado federal e vice-governador de Goiás.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Governo de Goiás — perfil biográfico do vice-governador', 'url', 'https://goias.gov.br/vicegovernadoria/perfil-biografico-do-vice-governador/'))
 WHERE id = 'c1d107df-59e5-4a57-9249-578c18213cac';
 
--- @write tabela=pontos_atencao slug=marconi-perillo campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=3715ece3-3124-4940-acf5-6e2d30666d9b slug=marconi-perillo campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi deputado estadual, deputado federal, governador de Goiás por quatro mandatos e senador. A trajetória não é reduzida a quatro mandatos totais.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Senado Federal — perfil biográfico de Marconi Perillo', 'url', 'https://www25.senado.leg.br/web/senadores/senador/-/perfil/4535'))
 WHERE id = '3715ece3-3124-4940-acf5-6e2d30666d9b';
 
--- @write tabela=pontos_atencao slug=orleans-brandao campos=titulo,descricao,fontes,dados_relacionados
+-- @write tabela=pontos_atencao chave=df1ea0bc-afc2-407f-8db0-c031841d438e slug=orleans-brandao campos=titulo,descricao,fontes,dados_relacionados
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Exerceu dois mandatos como deputado federal, dois como vice-governador e é governador do Maranhão desde 2022.',
@@ -319,84 +328,84 @@ SET titulo = 'Carreira política',
     dados_relacionados = COALESCE(dados_relacionados, '{}'::jsonb) - 'despublicacao_2026_07_25'
 WHERE id = 'df1ea0bc-afc2-407f-8db0-c031841d438e';
 
--- @write tabela=pontos_atencao slug=cleitinho campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=07fc71d4-ad3a-4acd-ac99-222f5d94a2f8 slug=cleitinho campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador em Divinópolis, deputado estadual em Minas Gerais e é senador da República no mandato 2023–2031.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Assembleia Legislativa de Minas Gerais — perfil de Cleitinho', 'url', 'https://www.almg.gov.br/deputados/cleitinho-azevedo/26101'))
 WHERE id = '07fc71d4-ad3a-4acd-ac99-222f5d94a2f8';
 
--- @write tabela=pontos_atencao slug=wellington-fagundes campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=eca3c1a8-9afc-479c-958d-34f1cb6b5c64 slug=wellington-fagundes campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Médico veterinário, exerceu seis mandatos consecutivos como deputado federal e está no segundo mandato de senador por Mato Grosso.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Senado Federal — perfil e mandatos de Wellington Fagundes', 'url', 'https://www25.senado.leg.br/pt_BR/web/senadores/senador/-/perfil/1173'))
 WHERE id = 'eca3c1a8-9afc-479c-958d-34f1cb6b5c64';
 
--- @write tabela=pontos_atencao slug=cicero-lucena campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=12ab6be5-12c2-4366-b59a-e40d89a56ab2 slug=cicero-lucena campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vice-governador e governador da Paraíba, secretário e ministro, prefeito de João Pessoa por múltiplos mandatos e senador da República.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Senado Federal — perfil biográfico de Cícero Lucena', 'url', 'https://www25.senado.leg.br/pt_BR/web/senadores/senador/-/perfil/4529'))
 WHERE id = '12ab6be5-12c2-4366-b59a-e40d89a56ab2';
 
--- @write tabela=pontos_atencao slug=raquel-lyra campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=8e8db2cc-7163-45ed-af6a-0909812f22ac slug=raquel-lyra campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi secretária estadual, deputada estadual por dois mandatos, prefeita de Caruaru por dois mandatos e é governadora de Pernambuco.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Governo de Pernambuco — perfil da governadora', 'url', 'https://farmacia.saude.pe.gov.br/?page_id=171'))
 WHERE id = '8e8db2cc-7163-45ed-af6a-0909812f22ac';
 
--- @write tabela=pontos_atencao slug=rafael-fonteles campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=93997216-4abb-4afc-8821-ea82fce774c0 slug=rafael-fonteles campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi secretário da Fazenda do Piauí de 2015 a 2022 e foi eleito governador do estado em 2022. Secretaria estadual é cargo de governo, não mandato eletivo.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Governo do Piauí — currículo de Rafael Fonteles', 'url', 'https://www.segov.pi.gov.br/governador-rafael-fonteles-sera-homenageado-com-a-medalha-do-merito-legislativo'))
 WHERE id = '93997216-4abb-4afc-8821-ea82fce774c0';
 
--- @write tabela=pontos_atencao slug=rafael-greca campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=e5d8f985-936d-43b6-81f2-c76b91c07ad5 slug=rafael-greca campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador, deputado estadual, deputado federal, ministro do Esporte e Turismo, secretário estadual e prefeito de Curitiba por três mandatos.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Prefeitura de Curitiba — perfil de Rafael Greca', 'url', 'https://www.curitiba.pr.gov.br/noticias/prefeito-rafael-greca-toma-posse-no-dia-1-de-janeiro/57536'))
 WHERE id = 'e5d8f985-936d-43b6-81f2-c76b91c07ad5';
 
--- @write tabela=pontos_atencao slug=douglas-ruas campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=67287ca2-ed67-402a-b653-b36c8a7b9d9f slug=douglas-ruas campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi eleito deputado estadual do Rio de Janeiro em 2022. Também exerceu cargos de secretário municipal e estadual e assumiu a presidência da Alerj em 2026.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Alerj — perfil oficial de Douglas Ruas', 'url', 'https://www.alerj.rj.gov.br/Deputados/PerfilDeputado/478?Legislatura=20'))
 WHERE id = '67287ca2-ed67-402a-b653-b36c8a7b9d9f';
 
--- @write tabela=pontos_atencao slug=eduardo-paes campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=d302ab8f-010d-4070-b777-4fa901afbeda slug=eduardo-paes campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador e deputado federal, secretário estadual de Turismo, Esporte e Lazer e prefeito do Rio de Janeiro por quatro mandatos.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Prefeitura do Rio — biografia de Eduardo Paes', 'url', 'https://www.rio.rj.gov.br/web/arquivogeral/ccnlep/eduardo-paes'))
 WHERE id = 'd302ab8f-010d-4070-b777-4fa901afbeda';
 
--- @write tabela=pontos_atencao slug=garotinho campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=36ef65c8-d5ce-4ef1-afc4-dd4c654dd6a0 slug=garotinho campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi deputado estadual, prefeito de Campos dos Goytacazes por dois mandatos, governador do Rio de Janeiro e secretário estadual.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Alerj — histórico de mandatos no Executivo e no Legislativo', 'url', 'https://www2.alerj.rj.gov.br/jornalalerj/Jornal271_site.pdf'))
 WHERE id = '36ef65c8-d5ce-4ef1-afc4-dd4c654dd6a0';
 
--- @write tabela=pontos_atencao slug=cadu-xavier campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=dc8a49f5-f87c-404a-a4cf-132e703e9370 slug=cadu-xavier campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Trajetória em cargos de governo, sem mandato eletivo',
     descricao = 'Não possui mandato eletivo federal ou estadual registrado; sua trajetória pública vem da burocracia fiscal e do secretariado do governo do Rio Grande do Norte.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'TSE — conjunto de dados de candidaturas de 2022', 'url', 'https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/consulta_cand_2022.zip'))
 WHERE id = 'dc8a49f5-f87c-404a-a4cf-132e703e9370';
 
--- @write tabela=pontos_atencao slug=marcos-rogerio campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=094ea4c9-aa96-4f3a-9fa6-51e21ef24761 slug=marcos-rogerio campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereador em Ji-Paraná, exerceu dois mandatos como deputado federal e é senador por Rondônia.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Senado Federal — trajetória de Marcos Rogério', 'url', 'https://www12.senado.leg.br/noticias/materias/2018/10/18/marcos-rogerio-defendera-a-familia-e-o-direito-a-propriedade'))
 WHERE id = '094ea4c9-aa96-4f3a-9fa6-51e21ef24761';
 
--- @write tabela=pontos_atencao slug=juliana-brizola campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=8885902e-c940-44ef-ba04-515e24aaa9fe slug=juliana-brizola campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi vereadora de Porto Alegre, exerceu três mandatos como deputada estadual no Rio Grande do Sul e foi secretária municipal da Juventude.',
@@ -406,14 +415,14 @@ SET titulo = 'Carreira política',
     )
 WHERE id = '8885902e-c940-44ef-ba04-515e24aaa9fe';
 
--- @write tabela=pontos_atencao slug=fabio-mitidieri campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=8e5cf809-6dfe-449f-abce-a95337c69db2 slug=fabio-mitidieri campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Formado em Administração, iniciou a carreira como vereador de Aracaju, foi secretário municipal de Esportes e secretário estadual do Trabalho. Exerceu dois mandatos como deputado federal por Sergipe e, em 2022, foi eleito governador do estado pelo PSD.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Câmara dos Deputados — biografia de Fábio Mitidieri', 'url', 'https://www.camara.leg.br/deputados/178969/biografia'))
 WHERE id = '8e5cf809-6dfe-449f-abce-a95337c69db2';
 
--- @write tabela=pontos_atencao slug=haddad-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=842e9895-3f67-4c7f-9c84-2718dfaba876 slug=haddad-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Valor histórico de imóvel declarado ao TSE',
     descricao = 'Haddad declarou ao TSE o apartamento pelo valor histórico de compra, R$ 90 mil, abaixo dos R$ 120 mil pagos em 1998 e do valor venal posterior, próximo de R$ 1 milhão. A manutenção do valor histórico na declaração patrimonial era permitida.',
@@ -423,7 +432,7 @@ SET titulo = 'Valor histórico de imóvel declarado ao TSE',
     )
 WHERE id = '842e9895-3f67-4c7f-9c84-2718dfaba876';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=27d73464-eea3-41b1-b43d-6df28c3fd28d slug=tarcisio-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Avaliação do governo varia conforme pesquisa e indicador',
     descricao = 'Levantamentos estaduais registraram aprovação em torno de 60%, enquanto o Datafolha de abril de 2025 mediu 41% de ótimo ou bom. Os indicadores não são equivalentes e oscilaram ao longo do mandato.',
@@ -433,21 +442,21 @@ SET titulo = 'Avaliação do governo varia conforme pesquisa e indicador',
     )
 WHERE id = '27d73464-eea3-41b1-b43d-6df28c3fd28d';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=720fc213-f18e-4960-bd22-36bed6a6d2bb slug=tarcisio-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Resposta a críticas sobre a letalidade policial',
     descricao = 'Ao responder a críticas e denúncias sobre ações policiais na Baixada Santista, declarou: “ONU, Liga da Justiça, raio que o parta, que eu não estou nem aí”. A frase é apresentada com atribuição e contexto.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'CNN Brasil — declaração de Tarcísio sobre denúncias contra ações no litoral', 'url', 'https://www.cnnbrasil.com.br/nacional/pode-ir-na-onu-pode-ir-na-liga-da-justica-no-raio-que-o-parta-que-eu-nao-to-nem-ai-diz-tarcisio-sobre-denuncias-contra-acoes-no-litoral/'))
 WHERE id = '720fc213-f18e-4960-bd22-36bed6a6d2bb';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=7bb39817-5971-407a-b4ca-188acea308f5 slug=tarcisio-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Agenda de privatizações e desestatização da Sabesp',
     descricao = 'Defende privatizações e conduziu a desestatização da Sabesp, concluída em 2024 como uma das maiores operações estaduais desse tipo. O texto não afirma ranking absoluto sem fonte formal.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Governo de São Paulo — prospecto definitivo da desestatização da Sabesp', 'url', 'https://semil.sp.gov.br/desestatizacaosabesp/wp-content/uploads/sites/24/2024/07/Prospecto-Definitivo.pdf'))
 WHERE id = '7bb39817-5971-407a-b4ca-188acea308f5';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=cdf01a59-4bc8-4247-b107-f13377d9099a slug=tarcisio-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Operação Ícaro apura corrupção na Sefaz-SP',
     descricao = 'O Ministério Público apura, na Operação Ícaro, um suposto esquema bilionário de propinas ligado à liberação de créditos tributários dentro da Sefaz-SP durante o governo Tarcísio. O ponto não imputa participação pessoal ao governador.',
@@ -457,25 +466,25 @@ SET titulo = 'Operação Ícaro apura corrupção na Sefaz-SP',
     )
 WHERE id = 'cdf01a59-4bc8-4247-b107-f13377d9099a';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=d61cf801-53ae-4e1c-9cb5-c1df2154e84a slug=tarcisio-gov-sp campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Transferência do domicílio eleitoral para São Paulo',
     descricao = 'Nascido no Rio de Janeiro e sem mandato anterior em São Paulo, transferiu o domicílio eleitoral para o estado antes da disputa de 2022, o que gerou críticas de “paraquedismo” político. O texto não afirma ausência de qualquer vínculo prévio com São Paulo.'
 WHERE id = 'd61cf801-53ae-4e1c-9cb5-c1df2154e84a';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=35ddad11-b726-4962-85ec-abbeee6225a5 slug=tarcisio-gov-sp campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Programa de concessões no Ministério da Infraestrutura',
     descricao = 'Sua gestão no Ministério da Infraestrutura foi marcada por um programa amplo de concessões e desestatizações, com dezenas de ativos leiloados. O ponto não mantém a contagem exata de 73 sem fonte oficial específica.'
 WHERE id = '35ddad11-b726-4962-85ec-abbeee6225a5';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=6681d58a-c958-4164-af45-60b20b10b6cc slug=tarcisio-gov-sp campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Tiroteio durante visita de campanha em Paraisópolis',
     descricao = 'Houve tiroteio durante uma visita de campanha em Paraisópolis, em 2022, e um homem morreu. As circunstâncias foram contestadas por veículos de imprensa e organizações; o ponto não conclui que houve atentado nem operação policial encenada.'
 WHERE id = '6681d58a-c958-4164-af45-60b20b10b6cc';
 
--- @write tabela=pontos_atencao slug=tarcisio-gov-sp campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=a5a31164-ef40-42e5-a2f2-4f68fce227bd slug=tarcisio-gov-sp campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Operações Escudo e Verão deixaram 84 mortos',
     descricao = 'As operações Escudo e Verão, realizadas entre julho de 2023 e abril de 2024, deixaram 84 mortos: 28 na primeira fase e 56 na segunda. Organizações levaram denúncias de abusos à ONU e à Comissão Interamericana de Direitos Humanos.',
@@ -485,13 +494,13 @@ SET titulo = 'Operações Escudo e Verão deixaram 84 mortos',
     )
 WHERE id = 'a5a31164-ef40-42e5-a2f2-4f68fce227bd';
 
--- @write tabela=pontos_atencao slug=laurez-moreira campos=titulo,descricao
+-- @write tabela=pontos_atencao chave=a9530d43-5506-49cd-b316-ae174335aefe slug=laurez-moreira campos=titulo,descricao
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política',
     descricao = 'Foi deputado estadual, deputado federal, prefeito de Gurupi e secretário estadual. Renunciou ao mandato federal para assumir a prefeitura e atualmente é vice-governador do Tocantins, tendo exercido interinamente o governo.'
 WHERE id = 'a9530d43-5506-49cd-b316-ae174335aefe';
 
--- @write tabela=pontos_atencao slug=roberto-claudio campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=7bb91fc3-a07b-4ac4-a106-2b571754fc96 slug=roberto-claudio campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Carreira política: deputado estadual e prefeito de Fortaleza',
     descricao = 'Roberto Cláudio exerceu dois mandatos de deputado estadual do Ceará, eleito em 2006 e reeleito em 2010, e dois mandatos de prefeito de Fortaleza, eleito em 2012 e reeleito em 2016.',
@@ -501,14 +510,14 @@ SET titulo = 'Carreira política: deputado estadual e prefeito de Fortaleza',
     )
 WHERE id = '7bb91fc3-a07b-4ac4-a106-2b571754fc96';
 
--- @write tabela=pontos_atencao slug=felicio-ramuth campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=01ad9f78-5867-432f-a7b0-8eaad1ba0ae8 slug=felicio-ramuth campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Investigação apurou movimentação em Andorra',
     descricao = 'Reportagem sobre a investigação registra movimentação superior a US$ 1,6 milhão em Andorra no período em que Felício Ramuth era secretário municipal e bloqueio judicial aproximado de US$ 1,4 milhão. Trata-se de suspeita investigada, sem afirmação de condenação.',
     fontes = jsonb_build_array(jsonb_build_object('titulo', 'Metrópoles — investigação sobre movimentação financeira de Felício Ramuth', 'url', 'https://www.metropoles.com/sao-paulo/ramuth-dinheiro-justica-eleitoral/'))
 WHERE id = '01ad9f78-5867-432f-a7b0-8eaad1ba0ae8';
 
--- @write tabela=pontos_atencao slug=felicio-ramuth campos=titulo,descricao,fontes
+-- @write tabela=pontos_atencao chave=c95f5dcc-ea90-40e6-b581-c9a31f3faac1 slug=felicio-ramuth campos=titulo,descricao,fontes
 UPDATE public.pontos_atencao
 SET titulo = 'Investigação sobre offshore e conta em Andorra',
     descricao = 'A investigação citada pela reportagem relacionou Felício Ramuth à offshore Visio Corporation e a uma conta em Andorra, com bloqueio aproximado de US$ 1,4 milhão. Ramuth afirmou que os valores tinham origem lícita e que a conta foi declarada às autoridades competentes; o ponto não afirma condenação.',
@@ -549,7 +558,8 @@ ON CONFLICT (id) DO UPDATE SET
   despublicado_em = null;
 
 -- Agora que textos e fontes estão conformes, publica as 44 aprovações de ponto.
--- @write tabela=pontos_atencao ref=aprovacoes-editoriais-20260805 campos=visivel,verificado,gerado_por,despublicacao_motivo,despublicado_em
+-- Lote endereçado pela decisao literal na fila declarada acima; o `ref` e rotulo de curadoria.
+-- @write tabela=pontos_atencao chave=aprovar ref=aprovacoes-editoriais-20260805 campos=visivel,verificado,gerado_por,despublicacao_motivo,despublicado_em
 UPDATE public.pontos_atencao p
 SET visivel = true,
     verificado = true,
