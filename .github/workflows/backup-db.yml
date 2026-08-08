@@ -70,7 +70,22 @@ jobs:
             sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq postgresql-client-17
-          pg_dump --version
+
+          # O /usr/bin/pg_dump do Ubuntu e um wrapper do postgresql-client-common
+          # que escolhe a versao DEFAULT do sistema, e o runner ja vem com a 16.
+          # Instalar a 17 nao muda o default: em 08/08/2026 o log mostrou
+          # "Setting up postgresql-client-17 (17.10)" e logo abaixo
+          # "pg_dump (PostgreSQL) 16.14", e o dump abortou por version mismatch
+          # contra o servidor 17.6. Por isso o diretorio versionado entra na
+          # frente do PATH, em vez de confiar no wrapper.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+          VERSAO="$(/usr/lib/postgresql/17/bin/pg_dump --version)"
+          echo "pg_dump que sera usado: ${VERSAO}"
+          case "${VERSAO}" in
+            *"PostgreSQL) 17."*) ;;
+            *) echo "::error::esperado pg_dump 17.x, veio ${VERSAO}"; exit 1 ;;
+          esac
 
       - name: Gerar dump
         env:
