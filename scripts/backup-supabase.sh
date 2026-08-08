@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # Dump do banco Supabase do Puxa Ficha.
 #
-# Por que existe. O projeto roda no plano Free, que nao tem backup automatico
-# acessivel (docs Supabase: backups diarios so em Pro+; a recomendacao para o
-# Free e exportar regularmente e guardar copia fora). O acervo editorial dos
-# candidatos e reconstrutivel pelas migrations versionadas, mas duas tabelas
-# so existem no banco: noticias_candidato (ingerida por /api/news/refresh e
-# scripts/lib/ingest-google-news.ts) e alert_subscribers (emails de
-# assinantes, PII). Sem dump, um erro de escrita em massa perde as duas sem
-# caminho de volta.
+# Por que existe. Duas tabelas so existem no banco e nao sao reconstrutiveis
+# pelas migrations versionadas: noticias_candidato (ingerida por
+# /api/news/refresh e scripts/lib/ingest-google-news.ts) e alert_subscribers
+# (emails de assinantes, PII). Sem dump, um erro de escrita em massa perde as
+# duas sem caminho de volta.
+#
+# Este dump NAO substitui o backup gerenciado do Supabase, e o inverso tambem
+# nao vale. O gerenciado restaura um estado dentro da conta Supabase; este aqui
+# produz um artifact cifrado que voce controla, independente daquela conta, e
+# que pode ser restaurado em outro projeto. Cobrem falhas diferentes.
+#
+# Nota de 08/08/2026: o cabecalho anterior afirmava que o projeto rodava no
+# plano Free e que por isso nao havia backup automatico. A organizacao esta no
+# Pro, entao aquela justificativa estava errada. O que o Pro cobre de retencao e
+# se ha PITR ativo ainda nao foi conferido; enquanto nao for, nao trate nenhum
+# dos dois como suficiente sozinho.
 #
 # Uso:
 #   SUPABASE_DB_URL="postgresql://..." scripts/backup-supabase.sh [dir-saida]
@@ -31,8 +39,44 @@
 set -euo pipefail
 
 if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
-  echo "ERRO: defina SUPABASE_DB_URL com a connection string direta do Postgres." >&2
-  echo "Painel Supabase: Project Settings -> Database -> Connection string." >&2
+  echo "ERRO: defina SUPABASE_DB_URL com a connection string do Postgres." >&2
+  echo "Painel Supabase: botao Connect no topo -> Direct/Connection string ->" >&2
+  echo "Session pooler -> Type URI." >&2
+  exit 1
+fi
+
+# Validacao de forma antes de chamar o pg_dump. Sem ela, um valor que nao seja
+# URI faz o pg_dump trata-lo como NOME DE BANCO e tentar o socket local, e o erro
+# que aparece e:
+#
+#   connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed
+#
+# que nao menciona a variavel, nao menciona a URI e manda quem le procurar um
+# Postgres local que nunca existiu. Aconteceu no primeiro apply de 08/08/2026.
+if [[ ! "${SUPABASE_DB_URL}" =~ ^postgres(ql)?:// ]]; then
+  echo "ERRO: SUPABASE_DB_URL nao parece uma URI de conexao." >&2
+  echo "Esperado comecar com postgresql:// (ou postgres://)." >&2
+  echo "Recebido comecando com: '${SUPABASE_DB_URL:0:12}...'" >&2
+  echo >&2
+  echo "Causa comum: copiar o bloco 'Connection parameters' (host, port, user)" >&2
+  echo "em vez do campo 'Connection string', ou copiar so o trecho visivel de um" >&2
+  echo "campo truncado na tela." >&2
+  exit 1
+fi
+
+if [[ "${SUPABASE_DB_URL}" == *"[YOUR-PASSWORD]"* || "${SUPABASE_DB_URL}" == *"[YOUR-PASS"* ]]; then
+  echo "ERRO: SUPABASE_DB_URL ainda contem o placeholder [YOUR-PASSWORD]." >&2
+  echo "Troque o placeholder, colchetes inclusive, pela senha do banco." >&2
+  echo "Se a senha tiver caractere especial, faca percent-encode: @ vira %40," >&2
+  echo "# vira %23, / vira %2F, : vira %3A, ? vira %3F." >&2
+  exit 1
+fi
+
+# O host precisa estar la: URI sem host tambem cai no socket local.
+if [[ ! "${SUPABASE_DB_URL}" =~ @[^/]+ ]]; then
+  echo "ERRO: SUPABASE_DB_URL nao tem host depois do '@'." >&2
+  echo "A URI do Session pooler termina em algo como" >&2
+  echo "@aws-1-sa-east-1.pooler.supabase.com:5432/postgres" >&2
   exit 1
 fi
 
