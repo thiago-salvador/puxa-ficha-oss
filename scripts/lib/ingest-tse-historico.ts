@@ -252,7 +252,7 @@ async function processAno(
 
   log(
     "tse-historico",
-    `  Stats ${ano}: sq=${resolver.stats.sqPreloaded}, cpf=${resolver.stats.cpf}, nome-unico=${resolver.stats.nameUnique}, nome-uf=${resolver.stats.nameUf}, ambiguo=${resolver.stats.ambiguous}, candidaturas=${records.length}`
+    `  Stats ${ano}: sq=${resolver.stats.sqPreloaded}, cpf=${resolver.stats.cpf}, nome-unico=${resolver.stats.nameUnique}, nome-uf=${resolver.stats.nameUf}, ambiguo=${resolver.stats.ambiguous}, bloqueado=${resolver.stats.bloqueado}, candidaturas=${records.length}`
   )
   if (resolver.ambiguousSlugs.length > 0) {
     warn("tse-historico", `  Ambiguos ${ano}: ${resolver.ambiguousSlugs.join(", ")}`)

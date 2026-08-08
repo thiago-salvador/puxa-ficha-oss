@@ -13,6 +13,7 @@ import {
   type ResolveMethod,
   type TSEResolver,
 } from "./tse-resolver"
+import { carregarBloqueios } from "./identidade-bloqueada"
 import { extractOptionalDonorIdsFromTseRow } from "../../src/lib/financiamento-doador-identifiers"
 import {
   normalizeDoadorTipoWithIdentifiers,
@@ -198,9 +199,16 @@ async function buildSQMap(
   >()
   const callerAmbiguousPriority = new Map<string, number>()
 
+  const bloqueios = carregarBloqueios()
+
   for (const candidato of candidatos) {
     const sq = candidato.ids.tse_sq_candidato?.[String(ano)]?.trim()
     if (!sq) continue
+    // Este laco le o seed DIRETO, sem passar por `resolver.resolveRow`, entao o
+    // filtro de identidade bloqueada do resolver nao o alcanca. Sem esta linha,
+    // patrimonio e financiamento continuariam sendo colhidos pelo SQ que a
+    // curadoria ja rejeitou, ainda que o historico parasse (issue #130).
+    if (bloqueios.bloqueio({ slug: candidato.slug, sq, ano })) continue
     selectedBySlug.set(candidato.slug, {
       candidato,
       sq,
