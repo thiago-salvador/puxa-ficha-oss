@@ -1,3 +1,10 @@
+-- RENOMEADA em 08/08/2026, de 20260808010000 para 20260808032540. Foi aplicada
+-- pelo apply_migration do MCP da Management API, que carimba timestamp próprio
+-- no ledger em vez de usar o nome do arquivo. O ledger registrou 20260808032540
+-- com estes mesmos statements, e o arquivo passou a levar a versão que de fato
+-- aconteceu. O caso está documentado em
+-- docs/arquivo/ledger-divergencia-20260808.md.
+--
 -- Remove os marcadores técnicos do TSE (#NULO#, #NE#) que sobraram na descrição
 -- de bens declarados de dois candidatos publicados.
 --
