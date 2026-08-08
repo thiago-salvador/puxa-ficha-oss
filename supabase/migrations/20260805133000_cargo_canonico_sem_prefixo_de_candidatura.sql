@@ -89,7 +89,8 @@ WHERE c.id = h.candidato_id
 -- ---------------------------------------------------------------------------
 -- Normalização. `regexp_replace` só toca o prefixo; o resto do texto fica.
 --
--- @write tabela=historico_politico ref=prefixo-candidatura-cargo-canonico campos=cargo_canonico
+-- Lote endereçado pelo literal do predicado; o `ref` é rótulo de curadoria.
+-- @write tabela=historico_politico chave="Candidatura a " ref=prefixo-candidatura-cargo-canonico campos=cargo_canonico
 UPDATE public.historico_politico
 SET cargo_canonico = regexp_replace(cargo_canonico, '^Candidatura a ', '')
 WHERE cargo_canonico LIKE 'Candidatura a %'
@@ -99,7 +100,8 @@ WHERE cargo_canonico LIKE 'Candidatura a %'
 -- Variante de caixa que também não casa com CARGOS_ELETIVOS ("Vice-Prefeito").
 -- São 3 linhas: 1 que acabou de perder o prefixo e 2 que já estavam assim.
 --
--- @write tabela=historico_politico ref=prefixo-candidatura-cargo-canonico campos=cargo_canonico
+-- Lote endereçado pelo literal do predicado; o `ref` é rótulo de curadoria.
+-- @write tabela=historico_politico chave=Vice-prefeito ref=prefixo-candidatura-cargo-canonico campos=cargo_canonico
 UPDATE public.historico_politico
 SET cargo_canonico = 'Vice-Prefeito'
 WHERE cargo_canonico = 'Vice-prefeito'
