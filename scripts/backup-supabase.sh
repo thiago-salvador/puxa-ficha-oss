@@ -83,6 +83,24 @@ if [[ "${SUPABASE_DB_URL}" == *"[YOUR-PASSWORD]"* || "${SUPABASE_DB_URL}" == *"[
   exit 1
 fi
 
+# Senha vazia passa por todas as validacoes de forma e morre la na frente como
+# "password authentication failed", que manda quem le procurar a senha errada em
+# vez da senha ausente. Aconteceu em 08/08/2026: um paste que nao foi capturado
+# por um prompt silencioso (`read -rs` nao ecoa nem asterisco) produziu
+# `postgresql://user:@host/...`, e o diagnostico custou tres rodadas de CI.
+SENHA_NA_URI="${SUPABASE_DB_URL#*://}"
+SENHA_NA_URI="${SENHA_NA_URI%@*}"
+SENHA_NA_URI="${SENHA_NA_URI#*:}"
+if [[ -z "${SENHA_NA_URI}" ]]; then
+  echo "ERRO: a URI nao tem senha entre ':' e '@'." >&2
+  echo "Forma recebida: postgresql://USUARIO:@HOST/..." >&2
+  echo >&2
+  echo "Causa comum: um prompt silencioso que nao capturou o paste. Prompt que" >&2
+  echo "nao mostra nem asterisco nao prova captura; confira o tamanho antes de" >&2
+  echo "enviar." >&2
+  exit 1
+fi
+
 # O host precisa estar la: URI sem host tambem cai no socket local.
 if [[ ! "${SUPABASE_DB_URL}" =~ @[^/]+ ]]; then
   echo "ERRO: SUPABASE_DB_URL nao tem host depois do '@'." >&2
