@@ -331,7 +331,15 @@ describe("preflight reprovado impede qualquer escrita de domínio", () => {
       ),
       (err: unknown) => {
         const msg = (err as Error).message
-        assert.match(msg, new RegExp(MIGRATION_DA_TRILHA.replace(/\./g, "\\.")))
+        // Comparação literal, não regex. Montar um padrão a partir do nome do
+        // arquivo escapando só `.` deixa `\` e os outros metacaracteres passarem,
+        // e a asserção que deveria provar a mensagem passaria a depender de como
+        // a constante é escrita. Aqui o que interessa é que o nome da migration
+        // apareça, e `includes` responde isso sem intermediário.
+        assert.ok(
+          msg.includes(MIGRATION_DA_TRILHA),
+          `a mensagem precisa nomear ${MIGRATION_DA_TRILHA}, veio: ${msg}`,
+        )
         assert.match(msg, /--apply/)
         assert.match(msg, /column coleta_log\.natureza does not exist/)
         return true
