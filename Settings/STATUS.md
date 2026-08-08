@@ -37,15 +37,25 @@ de usá-lo como prova futura.
   trajetória; nenhum SQ <= 2000 no seed dos publicados.
 - Correção de dado falso: removidos os patrimônios 2008/2020 de jarbas-soares
   (homônimo, migração `20260807184000`); as candidaturas correspondentes já
-  estavam despublicadas desde 05/08.
+  estavam despublicadas desde 05/08. Trilho 1 de prospecção de chaves (07/08):
+  nenhuma chave nova para os bloqueados (as varreduras tse-cpf/tse-historico
+  já tinham confirmado ausência em 2010-2026), mas encontrou reincidência do
+  homônimo de renato-gomes (candidaturas 2008/2020 reinseridas por ingestão
+  após a remoção de 05/08) — removida de novo pela migração `20260807185000`.
+  Causa raiz pendente: a ingestão não respeita bloqueio de identidade
+  registrado. cadu-xavier 2020 segue corretamente despublicado.
 - Produção: commit `0cf39b41` segue no ar; dados novos revalidam sozinhos na
   janela de cache de 3600s; merge/deploy da branch
   `codex/profiles-complete-2026` permanece no gate de completude.
-- Bloqueios remanescentes: 25 slugs sem rota de casamento exata (pré-candidatos
-  2026 sem registro no snapshot ou sem chave); renan-santos com linha 2022 de
-  homônimo em quarentena (decisão editorial); jarbas-soares em quarentena de
-  identidade; rui-costa-pimenta 2002/2006 com UF=BR (candidaturas presidenciais,
-  exceção estrutural da regra de UF, já cobertas na trajetória).
+- Bloqueios remanescentes: 25 slugs sem rota de casamento exata — prospectados
+  em fonte_dados/redes/site/coleta_log/migrations sem chave alguma; são
+  pré-candidatos 2026 sem registro oficial no snapshot ou com ausência
+  confirmada em 2010-2026. Destrave por re-scan pós-janela de registro do TSE
+  (set/2026) ou por curadoria fornecendo uma chave oficial por pessoa.
+  renan-santos com linha 2022 de homônimo em quarentena (decisão editorial);
+  jarbas-soares em quarentena de identidade; rui-costa-pimenta 2002/2006 com
+  UF=BR (candidaturas presidenciais, exceção estrutural da regra de UF, já
+  cobertas na trajetória).
 
 ## Snapshot 06/08/2026 (anterior)
 
