@@ -15,6 +15,15 @@ import {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
+/**
+ * Fonte sem comentario, para as asserções que proíbem uma CHAMADA. Sem isto, a
+ * própria explicação de por que uma API foi descartada faria o teste que a
+ * proíbe falhar, e o incentivo passaria a ser apagar a explicação.
+ */
+function semComentarios(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, "")
+}
+
 function makeHeaders(map: Record<string, string>): Pick<Headers, "get"> {
   const lower: Record<string, string> = {}
   for (const [k, v] of Object.entries(map)) lower[k.toLowerCase()] = v
@@ -321,14 +330,35 @@ describe("revalidate route contract", () => {
     assert.match(src, /status:\s*405/, "GET deve retornar 405")
   })
 
-  it("rota injeta revalidateTag de next/cache na chamada POST com profile max (Next 16)", () => {
+  it("rota expira de imediato, nao marca como stale", () => {
+    // A diferenca decide se a correcao de um erro factual aparece agora ou so na
+    // requisicao seguinte. Com o profile "max", a proxima requisicao apos o
+    // revalidate ainda serve a versao ANTIGA, o que tornava este endpoint inutil
+    // como ferramenta de verificacao. Verificado em next@16.2.12: o ramo que
+    // marca `pathWasRevalidated` e `if (!profile || cacheLife?.expire === 0)`.
     const src = readFileSync(routePath, "utf8")
     assert.match(src, /import\s*\{\s*revalidateTag\s*\}\s*from\s*"next\/cache"/)
     assert.match(
       src,
-      /revalidateFn:\s*\(tag\)\s*=>\s*revalidateTag\(tag,\s*"max"\)/,
-      "POST deve passar revalidateTag(tag, \"max\") pra helper executeRevalidateRequest",
+      /revalidateFn:\s*\(tag\)\s*=>\s*revalidateTag\(tag,\s*\{\s*expire:\s*0\s*\}\)/,
+      'POST deve passar revalidateTag(tag, { expire: 0 }) pra executeRevalidateRequest',
     )
+    // As proibicoes abaixo sao sobre a CHAMADA, nao sobre a prosa: o comentario
+    // da rota explica por que "max" e updateTag ficaram de fora, e citar os dois
+    // e o que torna a decisao legivel para quem vier depois.
+    assert.doesNotMatch(
+      semComentarios(src),
+      /revalidateTag\(tag,\s*"max"\)/,
+      'o profile "max" nao pode voltar: ele serve a versao errada mais uma vez',
+    )
+  })
+
+  it("nao usa updateTag, que lanca E872 fora de Server Action", () => {
+    // `updateTag` seria a API nova para expiracao imediata, mas o proprio Next
+    // checa `workStore.page.endsWith("/route")` e lanca. Esta rota e um Route
+    // Handler, entao trocar por ela derrubaria o endpoint em runtime, num
+    // caminho que nenhum teste de unidade pega.
+    assert.doesNotMatch(semComentarios(readFileSync(routePath, "utf8")), /\bupdateTag\b/)
   })
 
   it("response 200 contem revalidated: [...] e nao contem secret nem allowedTags", () => {
