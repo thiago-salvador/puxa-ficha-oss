@@ -57,6 +57,53 @@ nessa data. Reexecute os gates antes de usá-lo como prova futura.
   comparação pura e coberta por 12 testes. Detalhe e verificação em
   `QA/2026-08-08-issue-131-ledger.md`.
 
+- **Trilha de escrita de operador: código pronto, banco ainda não.** O ledger de
+  migrations passou a significar apenas "migration aplicada", e escrita em
+  produção fora de migration passou a exigir trilha própria. A política está em
+  `Settings/WORKFLOWS.md`, seção "Escrita em produção fora de migration", e a
+  decisão com as alternativas descartadas em
+  `docs/arquivo/decisao-trilha-de-escrita-20260808.md`. Estado medido em 08/08,
+  peça por peça:
+  1. `scripts/lib/escrita-auditada.ts` existe, com 34 testes passando
+     (`node --import tsx --test tests/escrita-auditada.test.ts`, 34 pass, 0
+     fail). O preflight está no helper e ligado: `verificarTrilhaGravavel()`
+     sonda por `select` as nove colunas de `COLUNAS_DA_TRILHA` com `limit(1)`,
+     `memoizarPreflight()` resolve uma vez por processo, e `escreverAuditado()`
+     injeta esse preflight de modo que o `await preflight()` roda ANTES do
+     `aplicar()`. É fail-closed: reprovando, a função `aplicar` não chega a ser
+     chamada.
+  2. `scripts/audit/lib/escrita-auditada-gate.ts` existe, com 16 testes passando
+     (`node --import tsx --test tests/escrita-auditada-gate.test.ts`, 16 pass, 0
+     fail). A política está ligada ao código: o gate exporta `RECORTES_AUDITADOS`
+     (hoje `scripts/` e `src/`), `TABELAS_DE_TRILHA`,
+     `TABELAS_DE_ESTADO_DE_FERRAMENTA`, `PADRAO_PIPELINE_DE_COLETA`,
+     `EXCECOES_DE_RUNTIME` e `EXCECOES_DE_COLETA_EM_RUNTIME`, e o teste roda a
+     varredura contra o repositório com essas constantes aplicadas. Medição de
+     `auditarRepositorio()` em 08/08, sobre 270 arquivos lidos: **zero
+     inadimplentes**, 30 exceções confirmadas e zero obsoletas. Exceção obsoleta
+     também reprova, para a lista não ficar mentindo depois que alguém consertar.
+  3. `supabase/migrations/20260808120000_coleta_log_natureza_escrita.sql` existe
+     como arquivo e **não está aplicada**. Consulta somente leitura contra
+     produção em 08/08: 368 versões no ledger, zero linhas com a versão
+     `20260808120000`, e `coleta_log.natureza` não existe em
+     `information_schema.columns`. O `ledger-guard` não reprova por causa dela:
+     entra como pendente futura, sem conflito.
+  4. Enquanto a migration não for aplicada, nenhum script migrado escreve em
+     produção, e agora isso é mecânico em vez de disciplina: com a coluna
+     ausente, o preflight reprova a rodada inteira e nada de domínio é tentado.
+     A ordem obrigatória de rollout está em `Settings/WORKFLOWS.md`, seção
+     "Escrita em produção fora de migration".
+  5. Oito scripts de operador foram migrados para o helper nesta rodada, entre
+     eles `normalizar-marcadores-publicos.ts`, que é o caso 1 da própria issue
+     #131, e `apply-current-factual-fixes.ts`, que tem 9079 linhas e escreve por
+     default. Os outros seis: `apply-resgate-pares-duplicados.ts`,
+     `backfill-cpf-tse.ts`, `backfill-historico-periodo-fim.ts`,
+     `fix-party-timeline-consistency.ts`, `link-check-pontos-atencao.ts` e
+     `recalc-financiamento-maiores-doadores.ts`.
+  Nada disso tocou produção. O gate cobre `scripts/` e `src/`: a superfície de
+  runtime entrou no recorte, e o que é escrita do próprio visitante está lá como
+  exceção nomeada com motivo, não como ausência de varredura.
+
 - **Cinco correções de durabilidade (revisão das soluções do QA, 08/08).** A
   releitura das cinco tasks olhou a forma da solução, não os números, e achou
   cinco coisas que iam doer depois:
@@ -139,13 +186,13 @@ Afirmações destes documentos que não se sustentaram quando reconferidas:
   nenhuma chave nova para os bloqueados (as varreduras tse-cpf/tse-historico
   já tinham confirmado ausência em 2010-2026), mas encontrou reincidência do
   homônimo de renato-gomes (candidaturas 2008/2020 reinseridas por ingestão
-  após a remoção de 05/08) — removida de novo pela migração `20260807185000`.
+  após a remoção de 05/08), removida de novo pela migração `20260807185000`.
   Causa raiz pendente: a ingestão não respeita bloqueio de identidade
   registrado. cadu-xavier 2020 segue corretamente despublicado.
 - Produção: commit `0cf39b41` segue no ar; dados novos revalidam sozinhos na
   janela de cache de 3600s; merge/deploy da branch
   `codex/profiles-complete-2026` permanece no gate de completude.
-- Bloqueios remanescentes: 25 slugs sem rota de casamento exata — prospectados
+- Bloqueios remanescentes: 25 slugs sem rota de casamento exata, prospectados
   em fonte_dados/redes/site/coleta_log/migrations sem chave alguma; são
   pré-candidatos 2026 sem registro oficial no snapshot ou com ausência
   confirmada em 2010-2026. Destrave por re-scan pós-janela de registro do TSE

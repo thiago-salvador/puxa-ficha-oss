@@ -1,4 +1,5 @@
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { log, warn } from "./lib/logger"
 import {
   analyzePartyTimelineRows,
@@ -8,6 +9,9 @@ import {
   partyTimelineValuesEquivalent,
   rankPartyTimelineConsistencyRow,
 } from "./lib/party-timeline-consistency"
+
+/** Identidade deste programa na trilha de `coleta_log`. */
+const SCRIPT = "fix-party-timeline-consistency"
 
 type CandidateRef = { slug: string } | { slug: string }[]
 
@@ -294,17 +298,38 @@ export async function fixCandidatePartyTimelineConsistency(
     requestedKind
   )
 
-  if (apply) {
-    for (const update of updates) {
-      const { error: updateError } = await supabase
-        .from("mudancas_partido")
-        .update(update.after)
-        .eq("id", update.id)
+  if (apply && updates.length > 0) {
+    // O laço roda dentro da escrita auditada: o reencadeamento de um candidato
+    // é UM ato editorial, ainda que toque várias linhas. Uma linha de trilha
+    // por candidato responde "o que mudou na timeline dele e por quê"; uma por
+    // linha de tabela responderia a mesma coisa N vezes.
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "mudancas_partido",
+        motivo: `reencadeia a timeline partidária do candidato (escopo ${requestedKind})`,
+        recorte: `candidato ${candidateId}, ${updates.length} linha(s) propostas`,
+      },
+      async () => {
+        const tocadas: Array<{ id: string }> = []
+        for (const update of updates) {
+          const { data, error: updateError } = await supabase
+            .from("mudancas_partido")
+            .update(update.after)
+            .eq("id", update.id)
+            .select("id")
 
-      if (updateError) {
-        throw new Error(`Erro ao atualizar mudancas_partido ${update.id}: ${updateError.message}`)
+          if (updateError) {
+            return {
+              data: tocadas,
+              error: { message: `ao atualizar mudancas_partido ${update.id}: ${updateError.message}` },
+            }
+          }
+          tocadas.push(...((data ?? []) as Array<{ id: string }>))
+        }
+        return { data: tocadas, error: null }
       }
-    }
+    )
   }
 
   return updates
@@ -347,19 +372,47 @@ async function fixPartyTimelineConsistency(
     )
 
     partyTimelineUpdates.push(...updates)
+  }
 
-    if (!apply) continue
+  // A seleção do que se aplica sai do laço: é a mesma lista de antes (a união
+  // das seleções por candidato), e tirá-la daqui é o que permite a varredura
+  // inteira caber numa escrita auditada só, em vez de uma por candidato.
+  const appliedPartyTimelineUpdates = selectApplicablePartyTimelineUpdates(
+    partyTimelineUpdates,
+    requestedKind
+  )
 
-    for (const update of selectApplicablePartyTimelineUpdates(updates, requestedKind)) {
-      const { error } = await supabase
-        .from("mudancas_partido")
-        .update(update.after)
-        .eq("id", update.id)
+  if (apply && appliedPartyTimelineUpdates.length > 0) {
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "mudancas_partido",
+        motivo: `corrige inconsistência de timeline partidária em varredura completa (escopo ${requestedKind})`,
+        recorte:
+          slugFilter.size > 0
+            ? `${appliedPartyTimelineUpdates.length} linha(s) nos slugs ${[...slugFilter].join(", ")}`
+            : `${appliedPartyTimelineUpdates.length} linha(s) em ${mudancasByCandidate.size} candidato(s)`,
+      },
+      async () => {
+        const tocadas: Array<{ id: string }> = []
+        for (const update of appliedPartyTimelineUpdates) {
+          const { data, error } = await supabase
+            .from("mudancas_partido")
+            .update(update.after)
+            .eq("id", update.id)
+            .select("id")
 
-      if (error) {
-        throw new Error(`Erro ao atualizar mudancas_partido ${update.id}: ${error.message}`)
+          if (error) {
+            return {
+              data: tocadas,
+              error: { message: `ao atualizar mudancas_partido ${update.id}: ${error.message}` },
+            }
+          }
+          tocadas.push(...((data ?? []) as Array<{ id: string }>))
+        }
+        return { data: tocadas, error: null }
       }
-    }
+    )
   }
 
   const { data: historico, error: historicoError } = await supabase
@@ -377,27 +430,40 @@ async function fixPartyTimelineConsistency(
   })
   const historicoUpdates = collectHistoricoUpdates(historicoRows)
 
-  if (apply) {
-    for (const update of selectApplicableHistoricoUpdates(historicoUpdates, requestedKind)) {
-      const { error } = await supabase
-        .from("historico_politico")
-        .update({ partido: update.after })
-        .eq("id", update.id)
-
-      if (error) {
-        throw new Error(`Erro ao atualizar historico_politico ${update.id}: ${error.message}`)
-      }
-    }
-  }
-
-  const appliedPartyTimelineUpdates = selectApplicablePartyTimelineUpdates(
-    partyTimelineUpdates,
-    requestedKind
-  )
   const appliedHistoricoUpdates = selectApplicableHistoricoUpdates(
     historicoUpdates,
     requestedKind
   )
+
+  if (apply && appliedHistoricoUpdates.length > 0) {
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "historico_politico",
+        motivo: `canoniza sigla de partido no histórico político (escopo ${requestedKind})`,
+        recorte: `${appliedHistoricoUpdates.length} linha(s) com sigla fora da forma canônica`,
+      },
+      async () => {
+        const tocadas: Array<{ id: string }> = []
+        for (const update of appliedHistoricoUpdates) {
+          const { data, error } = await supabase
+            .from("historico_politico")
+            .update({ partido: update.after })
+            .eq("id", update.id)
+            .select("id")
+
+          if (error) {
+            return {
+              data: tocadas,
+              error: { message: `ao atualizar historico_politico ${update.id}: ${error.message}` },
+            }
+          }
+          tocadas.push(...((data ?? []) as Array<{ id: string }>))
+        }
+        return { data: tocadas, error: null }
+      }
+    )
+  }
 
   const summary = {
     requested_kind: requestedKind,

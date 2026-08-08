@@ -65,6 +65,13 @@ jobs:
       - name: Dead code (knip)
         run: npm run check:dead-code
 
+      # Escrita em produção fora de `escreverAuditado()` é escrita sem trilha, que
+      # é a causa raiz da #131. A varredura é estática (lê `scripts/` e `src/`, não
+      # toca no banco), então roda em PR de fork sem segredo nenhum. Gate que
+      # ninguém executa é o padrão que esta issue existe para quebrar.
+      - name: Escrita auditada (trilha obrigatória)
+        run: npm run audit:escrita-auditada:gate
+
       - name: Test
         run: npm test
 

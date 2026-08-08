@@ -147,6 +147,7 @@
 
 import { pathToFileURL } from "node:url"
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { log as baseLog, warn as baseWarn, error as baseError } from "./lib/logger"
 import { fonteUrlApontaParaDocumento } from "../src/lib/public-attention-point"
 import {
@@ -860,34 +861,52 @@ async function despublicarNoBanco(row: PontoAtencaoLinkRow, motivo: string): Pro
     link_check_despublicacao: { motivo, em: new Date().toISOString() },
   }
 
-  const comColunas = await supabase
-    .from("pontos_atencao")
-    .update({
-      visivel: false,
-      dados_relacionados: dadosComMotivo,
-      despublicacao_motivo: motivo,
-      despublicado_em: new Date().toISOString(),
-    })
-    .eq("id", row.id)
-
-  if (!comColunas.error) return
-
-  const mensagem = comColunas.error.message
-  if (!/despublicacao_motivo|despublicado_em|column .* does not exist/i.test(mensagem)) {
-    throw new Error(mensagem)
+  // Despublicar uma claim e um ato editorial por linha, com motivo proprio, e
+  // por isso a trilha e por linha tambem: o `motivo` que vai para coleta_log e
+  // o mesmo texto que fica gravado na propria linha despublicada.
+  const contexto = {
+    script: SOURCE,
+    tabela: "pontos_atencao",
+    motivo: `despublica claim com todas as fontes mortas e confirmadas: ${motivo}`,
+    recorte: `ponto ${row.id}`,
   }
 
-  baseWarn(
-    SOURCE,
-    "colunas despublicacao_motivo/despublicado_em ausentes (migration 20260725153000 nao aplicada). Gravando motivo em dados_relacionados.",
-  )
+  const tocadas = await escreverAuditado(contexto, async () => {
+    const comColunas = await supabase
+      .from("pontos_atencao")
+      .update({
+        visivel: false,
+        dados_relacionados: dadosComMotivo,
+        despublicacao_motivo: motivo,
+        despublicado_em: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .select("id")
 
-  const semColunas = await supabase
-    .from("pontos_atencao")
-    .update({ visivel: false, dados_relacionados: dadosComMotivo })
-    .eq("id", row.id)
+    if (!comColunas.error) return comColunas
 
-  if (semColunas.error) throw new Error(semColunas.error.message)
+    const mensagem = comColunas.error.message
+    if (!/despublicacao_motivo|despublicado_em|column .* does not exist/i.test(mensagem)) {
+      return comColunas
+    }
+
+    baseWarn(
+      SOURCE,
+      "colunas despublicacao_motivo/despublicado_em ausentes (migration 20260725153000 nao aplicada). Gravando motivo em dados_relacionados.",
+    )
+
+    // O fallback continua dentro da mesma escrita auditada: as duas tentativas
+    // sao o mesmo ato, e a trilha registra o desfecho, nao cada tentativa.
+    return supabase
+      .from("pontos_atencao")
+      .update({ visivel: false, dados_relacionados: dadosComMotivo })
+      .eq("id", row.id)
+      .select("id")
+  })
+
+  if (tocadas.length === 0) {
+    throw new Error(`despublicacao de ${row.id} nao atingiu nenhuma linha`)
+  }
 }
 
 const TABELA_ESTADO = "link_check_url_observacao"
@@ -974,7 +993,14 @@ async function estadoNoBanco(): Promise<EstadoDeFontes> {
 
       const lote = 200
       for (let i = 0; i < linhas.length; i += lote) {
-        const { error: err } = await supabase.from(TABELA_ESTADO).upsert(linhas.slice(i, i + lote), { onConflict: "url" })
+        // Alvo literal, e nao a constante, nas duas escritas abaixo. O gate da
+        // issue #131 le texto: com `.from(TABELA_ESTADO)` ele nao consegue
+        // resolver a tabela, nao reconhece que esta e memoria da propria
+        // ferramenta e acusa o arquivo. A constante segue valendo para as
+        // mensagens e para a leitura.
+        const { error: err } = await supabase
+          .from("link_check_url_observacao")
+          .upsert(linhas.slice(i, i + lote), { onConflict: "url" })
         if (err) throw new Error(`${TABELA_ESTADO} (escrita): ${err.message}`)
       }
     },
@@ -982,7 +1008,10 @@ async function estadoNoBanco(): Promise<EstadoDeFontes> {
     async esquecer(urls) {
       const lote = 200
       for (let i = 0; i < urls.length; i += lote) {
-        const { error: err } = await supabase.from(TABELA_ESTADO).delete().in("url", urls.slice(i, i + lote))
+        const { error: err } = await supabase
+          .from("link_check_url_observacao")
+          .delete()
+          .in("url", urls.slice(i, i + lote))
         if (err) throw new Error(`${TABELA_ESTADO} (limpeza): ${err.message}`)
       }
     },

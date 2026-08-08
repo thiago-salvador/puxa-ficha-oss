@@ -118,6 +118,22 @@ describe("backfill-historico-periodo-fim integration (PostgREST mock)", () => {
     const p5 = mock.patches.find((p) => p.filterValue === "int-5")!
     assert.deepEqual(p5.body, { periodo_fim: 2018 })
 
+    // --- Trilha da issue #131: escrita de operador não passa sem rastro ---
+    // O script roda o UPDATE por dentro de escreverAuditado(), então o mesmo
+    // banco efêmero que recebeu os 3 PATCHes tem que ter recebido as 3 linhas
+    // de trilha. Se alguém trocar escreverAuditado() por um update cru, os
+    // PATCHes continuam passando e ESTE bloco é o que denuncia.
+    const trilha = mock.posts.filter((p) => p.table === "coleta_log").flatMap((p) => p.rows)
+    assert.equal(trilha.length, 3, "uma linha de trilha por registro fechado")
+    for (const linha of trilha) {
+      assert.equal(linha.natureza, "escrita", "trilha de escrita não pode se passar por coleta")
+      assert.equal(linha.fonte, "escrita:backfill-periodo-fim")
+      assert.equal(linha.alvo, "historico_politico")
+      assert.equal(linha.resultado, "encontrado")
+      assert.equal(linha.volume, 1, "volume vem da resposta do banco, não do payload enviado")
+      assert.match(String(linha.detalhe), /periodo_fim/)
+    }
+
     // --- KEY: verify final state of banco efemero rows ---
     const byId = new Map(fixtureRows.map((r) => [r.id, r]))
     assert.equal(byId.get("int-1")!.periodo_fim, 2018, "banco efemero: int-1 capado pelo teto do cargo")

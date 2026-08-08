@@ -29,6 +29,8 @@ next-env.d.ts
 data/tse/
 data/tse-cpf/
 data/operations/
+# fila de revisão manual, reescrita a cada execução de backfill-historico-periodo-fim
+data/manual-review-periodo-fim.csv
 tmp/
 
 # misc

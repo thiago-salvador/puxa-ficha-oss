@@ -70,6 +70,7 @@
     "settings:check": "node --import tsx --test tests/settings-contract.test.ts",
     "audit:cobertura:allowlist": "tsx scripts/audit/check-migrations-allowlist.ts",
     "audit:ledger:gate": "tsx scripts/audit/check-ledger-vs-repo.ts",
+    "audit:escrita-auditada:gate": "tsx scripts/audit/check-escrita-auditada.ts",
     "audit:link-check-snapshot": "tsx scripts/audit/link-check-from-snapshot.ts",
     "audit:processos:revisao": "tsx scripts/gerar-revisao-processos-curadoria.ts",
     "audit:processos:revisao-final:montar": "tsx scripts/montar-revisao-final-processos.ts",

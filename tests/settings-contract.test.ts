@@ -65,6 +65,52 @@ test("toda task precisa demonstrar avanço de completude ou confiabilidade", () 
   assert.match(agents, /Toda task deve demonstrar/)
 })
 
+test("o ledger só significa migration aplicada, e escrita fora dela exige trilha", () => {
+  const workflow = read("Settings/WORKFLOWS.md")
+  const decisao = read("docs/arquivo/decisao-trilha-de-escrita-20260808.md")
+
+  // O ledger tem um significado só, e a política diz qual.
+  assert.match(workflow, /supabase_migrations\.schema_migrations/)
+  assert.match(workflow, /significa uma coisa só:\s*\n?migration aplicada/)
+
+  // O helper é nomeado pelo caminho real, não descrito de longe.
+  assert.match(workflow, /escreverAuditado\(\)/)
+  assert.match(workflow, /scripts\/lib\/escrita-auditada\.ts/)
+  assert.match(workflow, /scripts\/audit\/lib\/escrita-auditada-gate\.ts/)
+
+  // A decisão e as alternativas descartadas moram em docs/, e Settings aponta.
+  assert.match(workflow, /docs\/arquivo\/decisao-trilha-de-escrita-20260808\.md/)
+  for (const opcao of [/db push/, /ledger/, /Trilha separada/, /Só o guard/]) {
+    assert.match(decisao, opcao)
+  }
+  assert.match(decisao, /Por que as outras três foram descartadas/)
+})
+
+test("a ordem de rollout da trilha está escrita e é verificável", () => {
+  const workflow = read("Settings/WORKFLOWS.md")
+  const status = read("Settings/STATUS.md")
+
+  // Os três passos, na ordem, com a migration antes de qualquer --apply.
+  const ordem = workflow.match(/```text\n([\s\S]*?)```/g) ?? []
+  const bloco = ordem.find((b) => b.includes("20260808120000"))
+  assert.ok(bloco, "WORKFLOWS.md precisa do bloco com a ordem de rollout")
+  const passoMigration = bloco.indexOf("20260808120000")
+  const passoApply = bloco.indexOf("--apply")
+  assert.ok(passoMigration >= 0 && passoApply >= 0, "os dois passos precisam existir")
+  assert.ok(
+    passoMigration < passoApply,
+    "aplicar a migration tem que vir ANTES de rodar script com --apply",
+  )
+
+  // A consequência de inverter e o preflight que a torna falha segura.
+  assert.match(workflow, /Se a ordem for invertida/)
+  assert.match(workflow, /preflight/)
+
+  // STATUS não pode afirmar que a migration está aplicada.
+  assert.match(status, /20260808120000/)
+  assert.match(status, /\*\*não está aplicada\*\*/)
+})
+
 test("workflow de completude protege universo, paralelismo e release", () => {
   const workflow = read("Settings/CANDIDATE_DATA_COMPLETENESS_WORKFLOW.md")
   const evalDoc = read("Settings/CANDIDATE_DATA_COMPLETENESS_EVAL.md")

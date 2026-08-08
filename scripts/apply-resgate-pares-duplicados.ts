@@ -23,6 +23,10 @@
  *   npx tsx scripts/apply-resgate-pares-duplicados.ts --apply    # escreve no banco
  */
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
+
+/** Identidade deste programa na trilha de `coleta_log`. */
+const SCRIPT = "apply-resgate-pares-duplicados"
 
 const APLICAR = process.argv.includes("--apply")
 
@@ -178,9 +182,14 @@ async function main(): Promise<void> {
     totalPontos += payloads.length
 
     if (APLICAR) {
-      const inseridos = await pegar(
-        supabase.from("pontos_atencao").insert(payloads).select("id, titulo"),
-        `insert pontos ${lote.origem}`
+      const inseridos = await escreverAuditado(
+        {
+          script: SCRIPT,
+          tabela: "pontos_atencao",
+          motivo: "migra ponto de atencao auditado do registro duplicado morto para o registro ativo (decisao de 2026-08-04)",
+          recorte: `${payloads.length} ponto(s) de ${lote.origem} para o candidato ${lote.destino}, todos com verificado=false e visivel=false`,
+        },
+        () => supabase.from("pontos_atencao").insert(payloads).select("id, titulo")
       )
       console.log(`  inseridos: ${(inseridos as Linha[]).length}`)
     }
@@ -214,9 +223,19 @@ async function main(): Promise<void> {
   }
   console.log(`[consolidação] Escudo: ativo ${IDS.pontoEscudoAtivo} recebe texto+fonte do morto ${IDS.pontoEscudoMorto}`)
   if (APLICAR) {
-    await pegar(
-      supabase.from("pontos_atencao").update(payloadConsolidacao).eq("id", IDS.pontoEscudoAtivo).select("id"),
-      "consolidação Escudo"
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "pontos_atencao",
+        motivo: "consolida no ponto ativo o texto e as fontes do ponto duplicado (mesmo evento Operacao Escudo)",
+        recorte: `ponto ${IDS.pontoEscudoAtivo}, texto e fontes vindos de ${IDS.pontoEscudoMorto}`,
+      },
+      () =>
+        supabase
+          .from("pontos_atencao")
+          .update(payloadConsolidacao)
+          .eq("id", IDS.pontoEscudoAtivo)
+          .select("id")
     )
     console.log("  consolidado")
   }
@@ -239,9 +258,14 @@ async function main(): Promise<void> {
   }))
   for (const payload of payloadsPosicoes) console.log(`[posição] tema=${String(payload.tema)} posicao=${String(payload.posicao)}`)
   if (APLICAR) {
-    const inseridos = await pegar(
-      supabase.from("posicoes_declaradas").insert(payloadsPosicoes).select("id"),
-      "insert posições"
+    const inseridos = await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "posicoes_declaradas",
+        motivo: "migra posicao declarada do registro duplicado morto para o registro ativo (decisao de 2026-08-04)",
+        recorte: `${payloadsPosicoes.length} posicao(oes) de ${POSICOES_PARA_MIGRAR.origem}, todas com verificado=false (fila do quiz)`,
+      },
+      () => supabase.from("posicoes_declaradas").insert(payloadsPosicoes).select("id")
     )
     console.log(`  inseridas: ${(inseridos as Linha[]).length}`)
   }
@@ -323,9 +347,14 @@ async function main(): Promise<void> {
   }))
   for (const lei of payloadsLegCiro) console.log(`[legislação] ciro: ${String(lei.tipo_norma)} ${String(lei.numero)}/${String(lei.ano)} -> ciro-gomes-gov-ce`)
   if (APLICAR) {
-    const inseridos = await pegar(
-      supabase.from("legislacao_mandato_executivo").insert(payloadsLegCiro).select("id"),
-      "insert legislação ciro"
+    const inseridos = await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "legislacao_mandato_executivo",
+        motivo: "migra ato do mandato executivo que so existia no registro duplicado morto do Ciro Gomes",
+        recorte: `${payloadsLegCiro.length} ato(s) para ${IDS.ciroGomesGovCe}`,
+      },
+      () => supabase.from("legislacao_mandato_executivo").insert(payloadsLegCiro).select("id")
     )
     console.log(`  inseridos: ${(inseridos as Linha[]).length}`)
   }
@@ -352,18 +381,31 @@ async function main(): Promise<void> {
   console.log(`[patrimônio] ciro 2018 (R$ ${String(patrimonio2018.valor_total)}) -> ciro-gomes-gov-ce`)
   console.log(`[financiamento] ciro 2018 (R$ ${String(financiamento2018.total_arrecadado)}) -> ciro-gomes-gov-ce`)
   if (APLICAR) {
-    await pegar(
-      supabase.from("patrimonio").insert({
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "patrimonio",
+        motivo: "migra o patrimonio de 2018 do registro morto, ano ausente no registro ativo do Ciro Gomes",
+        recorte: `1 linha de 2018 para ${IDS.ciroGomesGovCe}`,
+      },
+      () =>
+        supabase.from("patrimonio").insert({
         candidato_id: IDS.ciroGomesGovCe,
         ano_eleicao: patrimonio2018.ano_eleicao,
         valor_total: patrimonio2018.valor_total,
         bens: patrimonio2018.bens,
         fonte: patrimonio2018.fonte,
-      }).select("id"),
-      "insert patrimônio 2018"
+      }).select("id")
     )
-    await pegar(
-      supabase.from("financiamento").insert({
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "financiamento",
+        motivo: "migra o financiamento de 2018 do registro morto, ano ausente no registro ativo do Ciro Gomes",
+        recorte: `1 linha de 2018 para ${IDS.ciroGomesGovCe}`,
+      },
+      () =>
+        supabase.from("financiamento").insert({
         candidato_id: IDS.ciroGomesGovCe,
         ano_eleicao: financiamento2018.ano_eleicao,
         total_arrecadado: financiamento2018.total_arrecadado,
@@ -373,8 +415,7 @@ async function main(): Promise<void> {
         total_recursos_proprios: financiamento2018.total_recursos_proprios,
         maiores_doadores: financiamento2018.maiores_doadores,
         fonte: financiamento2018.fonte,
-      }).select("id"),
-      "insert financiamento 2018"
+      }).select("id")
     )
     console.log("  inseridos")
   }
@@ -394,9 +435,19 @@ async function main(): Promise<void> {
   afirmar(ciro !== undefined && ciro.status === "pre-candidato", "ciro-gomes deve estar como pre-candidato antes do ajuste")
   console.log("[T2] ciro-gomes: status pre-candidato -> removido (tarcisio e fernando-haddad já são removido)")
   if (APLICAR) {
-    await pegar(
-      supabase.from("candidatos").update({ status: "removido" }).eq("id", IDS.ciroGomes).select("slug, status"),
-      "arquivamento ciro-gomes"
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "candidatos",
+        motivo: "arquiva o registro duplicado morto do Ciro Gomes: status pre-candidato passa a removido",
+        recorte: `candidato ${IDS.ciroGomes}`,
+      },
+      () =>
+        supabase
+          .from("candidatos")
+          .update({ status: "removido" })
+          .eq("id", IDS.ciroGomes)
+          .select("slug, status")
     )
   }
 
@@ -413,9 +464,19 @@ async function main(): Promise<void> {
   afirmar(accorsi.publicavel === false, "accorsi segue fora do ar")
   console.log("[T3] adriana-accorsi: cargo_disputado Governador -> Deputado Federal (convenção 01/08, docs/varredura-governadores-2026-08-03.md)")
   if (APLICAR) {
-    await pegar(
-      supabase.from("candidatos").update({ cargo_disputado: "Deputado Federal" }).eq("id", IDS.adrianaAccorsi).select("slug, cargo_disputado"),
-      "correção accorsi"
+    await escreverAuditado(
+      {
+        script: SCRIPT,
+        tabela: "candidatos",
+        motivo: "corrige o cargo disputado por adriana-accorsi de Governador para Deputado Federal (convencao de 01/08)",
+        recorte: `candidato ${IDS.adrianaAccorsi}`,
+      },
+      () =>
+        supabase
+          .from("candidatos")
+          .update({ cargo_disputado: "Deputado Federal" })
+          .eq("id", IDS.adrianaAccorsi)
+          .select("slug, cargo_disputado")
     )
   }
 

@@ -11,6 +11,7 @@
 
 import { pathToFileURL } from "node:url"
 import { supabase } from "./lib/supabase"
+import { escreverAuditado } from "./lib/escrita-auditada"
 import { normalizeMaioresDoadoresForStorage } from "../src/lib/financiamento-public"
 
 const apply = process.argv.includes("--apply")
@@ -130,29 +131,80 @@ export async function runRecalcFinanciamentoMaioresDoadores({
   }
 }
 
+async function fetchPage(from: number, to: number): Promise<RecalcFinanciamentoRow[]> {
+  const { data, error } = await supabase
+    .from("financiamento")
+    .select("id, candidato_id, ano_eleicao, maiores_doadores")
+    .range(from, to)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []) as RecalcFinanciamentoRow[]
+}
+
+/**
+ * Em dry-run ninguem chama updateRow. Se chamar, e bug: o guarda transforma
+ * isso em erro alto em vez de escrita silenciosa fora do caminho auditado.
+ */
+async function recusarEscritaEmDryRun(): Promise<never> {
+  throw new Error("recalc-financiamento: dry-run tentou escrever. Use --apply.")
+}
+
 async function main() {
-  await runRecalcFinanciamentoMaioresDoadores({
-    apply,
-    async fetchPage(from, to) {
-      const { data, error } = await supabase
-        .from("financiamento")
-        .select("id, candidato_id, ano_eleicao, maiores_doadores")
-        .range(from, to)
+  const observabilidade = {
+    log: (message: string) => console.log(message),
+    error: (message: string) => console.error(message),
+  }
 
-      if (error) throw new Error(error.message)
-      return (data ?? []) as RecalcFinanciamentoRow[]
-    },
-    async updateRow(id, maiores_doadores) {
-      const { error } = await supabase
-        .from("financiamento")
-        .update({ maiores_doadores })
-        .eq("id", id)
+  if (!apply) {
+    await runRecalcFinanciamentoMaioresDoadores({
+      apply,
+      fetchPage,
+      updateRow: recusarEscritaEmDryRun,
+      ...observabilidade,
+    })
+    return
+  }
 
-      if (error) throw new Error(error.message)
+  // A execucao inteira e uma escrita auditada so, e nao uma por linha: o
+  // recalculo varre a tabela toda e milhares de linhas de trilha identicas
+  // afogariam justamente a pergunta que a trilha existe para responder. O laco
+  // por linha continua tolerando falha individual, como antes; o que muda e
+  // que a rodada termina com resultado 'erro' quando alguma linha falhou, em
+  // vez de sair 0 com o problema so no log.
+  await escreverAuditado(
+    {
+      script: "recalc-financiamento-maiores-doadores",
+      tabela: "financiamento",
+      motivo: "recalcula maiores_doadores com a normalizacao publica atual (tipo, agregacao e ID unico)",
+      recorte: "linhas de financiamento cujo maiores_doadores muda sob a normalizacao vigente",
     },
-    log: (message) => console.log(message),
-    error: (message) => console.error(message),
-  })
+    async () => {
+      const tocadas: Array<{ id: string }> = []
+      const resultado = await runRecalcFinanciamentoMaioresDoadores({
+        apply,
+        fetchPage,
+        async updateRow(id, maiores_doadores) {
+          const { data, error } = await supabase
+            .from("financiamento")
+            .update({ maiores_doadores })
+            .eq("id", id)
+            .select("id")
+
+          if (error) throw new Error(error.message)
+          tocadas.push(...((data ?? []) as Array<{ id: string }>))
+        },
+        ...observabilidade,
+      })
+
+      return {
+        data: tocadas,
+        error:
+          resultado.errors > 0
+            ? { message: `${resultado.errors} de ${resultado.changed} linha(s) falharam ao escrever` }
+            : null,
+      }
+    }
+  )
 }
 
 const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false
