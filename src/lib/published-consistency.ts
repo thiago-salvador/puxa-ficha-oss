@@ -30,9 +30,15 @@ export interface ConsistencyReport {
 }
 
 /** Status canonico de uma linha publicada. */
-const STATUS_PUBLICADO_OK = new Set(["pre-candidato"])
+const STATUS_PUBLICADO_OK = new Set(["pre-candidato", "candidato"])
 /** Situacao aceitavel numa linha publicada (incerto e estado editorial valido). */
-const SITUACAO_PUBLICADO_OK = new Set(["pre-candidato", "incerto"])
+const SITUACAO_PUBLICADO_OK = new Set([
+  "pre-candidato",
+  "incerto",
+  "aguardando julgamento",
+  "deferido",
+  "deferido com recurso",
+])
 /** Situacao com ano/marcador stale (ex.: residuo "APTO [2022]" do TSE). */
 const STALE_SITUACAO = /\b(19|20)\d{2}\b|APTO/i
 

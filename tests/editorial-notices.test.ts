@@ -28,8 +28,8 @@ test("DataFreshnessNotice mapeia status para tone e preserva data attrs", () => 
     expectedTone: string
     expectedLabel: string
   }> = [
-    { status: "current", expectedTone: "neutral", expectedLabel: "Dado atual" },
-    { status: "stale", expectedTone: "caution", expectedLabel: "Pode estar defasado" },
+    { status: "current", expectedTone: "neutral", expectedLabel: "Verificação recente" },
+    { status: "stale", expectedTone: "caution", expectedLabel: "Verificação desatualizada" },
     { status: "historical", expectedTone: "neutral", expectedLabel: "Último dado disponível" },
     { status: "missing", expectedTone: "neutral", expectedLabel: "Sem dado estruturado" },
   ]

@@ -13,6 +13,7 @@ type CandidatoProfileProps = {
 type ProfileComponent = ComponentType<CandidatoProfileProps>
 type DeferredProfileOverview = {
   processos: number
+  processosVerificacao?: FichaCandidato["processos_verificacao"]
   patrimonio: number | null
   mudancas: number
 }
@@ -54,7 +55,11 @@ function CandidatoProfileSkeleton({ overview }: { overview: DeferredProfileOverv
   // O skeleton é a primeira pintura da ficha. Sem a legenda, o "—" de zero não
   // verificado aparece sozinho durante o carregamento e reintroduz justamente a
   // afirmação de ficha limpa que este display existe para desfazer.
-  const processosDisplay = processosOverviewDisplay(overview.processos)
+  const processosDisplay = processosOverviewDisplay(
+    overview.processos,
+    null,
+    overview.processosVerificacao,
+  )
   return (
     <section className="mx-auto max-w-7xl px-5 py-8 md:px-12 lg:py-12">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5 [&>*:last-child:nth-child(odd)]:col-span-2 lg:[&>*:last-child:nth-child(odd)]:col-span-1">

@@ -322,7 +322,7 @@ describe("party-switches", () => {
       }),
     ]
 
-    assert.equal(formatPartyTransitionLabel(mudancas[0]), "Sem partido → PDS")
+    assert.equal(formatPartyTransitionLabel(mudancas[0]), "Partido confirmado: PDS")
     assert.equal(formatPartyTransitionLabel(mudancas[1]), "PDS → PMDB")
     assert.equal(formatPartyTransitionLabel(mudancas[2]), "PSDB → PPS")
     assert.equal(formatPartyTransitionLabel(mudancas[3]), "Filiação: PRB")

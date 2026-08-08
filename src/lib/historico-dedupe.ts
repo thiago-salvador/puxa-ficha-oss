@@ -473,6 +473,22 @@ function collapseAdjacentTseMandatePairs(rows: HistoricoPolitico[]): HistoricoPo
 
       if (!collapsesIntoNewer) {
         kept.push(row)
+        continue
+      }
+
+      // O par eleição+posse continua colapsando para não duplicar o mandato,
+      // mas a eleição que o originou não pode sumir da trajetória: o
+      // placeholder TSE do ano do pleito vira candidatura visível naquele ano.
+      if (
+        row.periodo_inicio != null &&
+        isLikelyTseElectionPlaceholder(row) &&
+        !kept.some((newer) => newer.periodo_inicio === row.periodo_inicio)
+      ) {
+        kept.push({
+          ...row,
+          tipo_evento: "candidatura",
+          periodo_fim: row.periodo_inicio,
+        })
       }
     }
 

@@ -78,6 +78,7 @@ describe("comparador metrics", () => {
       formacao: null,
       total_processos: 0,
       mudancas_partido: 0,
+      total_pontos_atencao: 0,
       alertas_graves: 0,
       patrimonio_declarado: 1_500_000,
       total_gasto_parlamentar: 2_000_000,

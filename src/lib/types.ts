@@ -45,6 +45,8 @@ export interface Candidato {
   // Meta
   fonte_dados: string[];
   ultima_atualizacao: string;
+  /** Datas de verificação por campo/fonte; não substitui a data do próprio dado. */
+  verificacao_campos?: Record<string, string | null> | null;
 }
 
 // --- Histórico Político ---
@@ -95,6 +97,17 @@ export interface BemDeclarado {
   valor: number;
 }
 
+/**
+ * Eleição em que o pacote oficial bem_candidato do TSE foi lido de ponta a
+ * ponta e não trouxe bens para o SQ_CANDIDATO. Não é um zero declarado: é a
+ * confirmação de que a fonte oficial não tem registro para aquele pleito.
+ */
+export interface PatrimonioAusenciaOficial {
+  ano_eleicao: number;
+  fonte_url: string | null;
+  verificado_em: string | null;
+}
+
 // --- Financiamento ---
 export interface Financiamento {
   id: string;
@@ -105,13 +118,15 @@ export interface Financiamento {
   total_fundo_eleitoral: number;
   total_pessoa_fisica: number;
   total_recursos_proprios: number;
+  /** Categorias de origem mutuamente exclusivas, na taxonomia reconciliada do TSE. */
+  categorias_origem?: Record<string, number> | null;
   maiores_doadores: Doador[];
 }
 
 export interface Doador {
   nome: string;
   valor: number;
-  tipo: 'PF' | 'PJ' | 'fundo_partidario' | 'fundo_eleitoral' | 'recursos_proprios';
+  tipo: 'PF' | 'PJ' | 'fundo_partidario' | 'fundo_eleitoral' | 'recursos_proprios' | 'desconhecido';
   /** CNPJ 14 dígitos quando a fonte TSE/ingest trouxer documento PJ. */
   cnpj?: string;
   /** Referência unidirecional a PF; não é o CPF em claro. Só preenchido com ingest + salt dedicado. */
@@ -151,7 +166,7 @@ export interface Processo {
   tribunal: string;
   numero_processo: string | null;
   descricao: string;
-  status: 'em_andamento' | 'condenado' | 'absolvido' | 'prescrito';
+  status: 'em_andamento' | 'condenado' | 'absolvido' | 'prescrito' | 'anulado' | (string & {});
   data_inicio: string | null;
   data_decisao: string | null;
   gravidade: 'alta' | 'media' | 'baixa';
@@ -308,6 +323,9 @@ export interface SancoesVerificacao {
   executado_em: string;
 }
 
+/** Último desfecho da busca editorial de processos para a ficha. */
+export type ProcessosVerificacao = SancoesVerificacao;
+
 // --- Indicadores Estaduais ---
 export interface IndicadorEstadual {
   id: string;
@@ -393,6 +411,7 @@ export interface FichaCandidato extends Candidato {
   historico: HistoricoPolitico[];
   mudancas_partido: MudancaPartido[];
   patrimonio: Patrimonio[];
+  patrimonio_ausencias_oficiais?: PatrimonioAusenciaOficial[];
   financiamento: Financiamento[];
   votos: VotoCandidato[];
   processos: Processo[];
@@ -416,6 +435,11 @@ export interface FichaCandidato extends Candidato {
    * degrada para o mesmo estado neutro em vez de inventar limpeza).
    */
   sancoes_verificacao?: SancoesVerificacao | null;
+  /**
+   * Proveniência do vazio judicial. Distingue vazio confirmado, busca
+   * inconclusiva, erro, ocorrência em revisão e ausência de tentativa.
+   */
+  processos_verificacao?: ProcessosVerificacao | null;
   noticias: NoticiaCandidato[];
   indicadores_estaduais?: IndicadorEstadual[];
 
@@ -447,6 +471,7 @@ export interface CandidatoComparavel {
   formacao: string | null;
   total_processos: number;
   mudancas_partido: number;
+  total_pontos_atencao: number;
   alertas_graves: number;
   patrimonio_declarado: number | null;
   /** Soma de `total_gasto` em `gastos_parlamentares` — alinhada ao ranking gastos-parlamentares. */

@@ -11,6 +11,7 @@ import type {
   VotoCandidato,
 } from "@/lib/types"
 import { buildDoadorReverseHref } from "@/lib/doador-reverse-shared"
+import type { PatrimonioEleicaoPublico } from "@/lib/public-profile-dto"
 import {
   formatHistoricoCargoTituloPublico,
   formatHistoricoObservacaoPublica,
@@ -28,12 +29,18 @@ import {
   FINANCING_BREAKDOWN_KEYS,
   fixedCopy,
   formatFinancingLabel,
+  formatPatrimonioEleicaoEstadoLabel,
   formatProcessStatusLabel,
   formatProcessTypeLabel,
   formatPublicLabel,
   formatVoteBadgeLabel,
 } from "@/lib/ui-labels"
 import { financiamentoPleitoSubtitulo } from "@/lib/financiamento-pleito-display"
+import { buildFinancingComposition } from "@/lib/financiamento-display"
+import {
+  isTerminalProcessStatus,
+  processoBorderColor,
+} from "@/lib/processos-display"
 
 /* ─── Pure helpers ──────────────────────────────────── */
 
@@ -51,6 +58,7 @@ const FINANCING_COLOR_BY_KEY: Record<(typeof FINANCING_BREAKDOWN_KEYS)[number], 
   fundo_partidario: "#525252",
   pessoa_fisica: "#a3a3a3",
   recursos_proprios: "#d4d4d4",
+  outros_recursos: "#e5e5e5",
 }
 
 function getPatrimonioSummary(patrimonio: Patrimonio[]): PatrimonioSummary {
@@ -62,6 +70,27 @@ function getPatrimonioSummary(patrimonio: Patrimonio[]): PatrimonioSummary {
       ? ((latest.valor_total - earliest.valor_total) / earliest.valor_total) * 100
       : null
   return { sorted, latest, earliest, growthPct }
+}
+
+/**
+ * Série pública de patrimônio por eleição (>= 2006). A ficha do client vem de
+ * /api/candidato-profile/[slug], cujo payload é o DTO público (que carrega
+ * `patrimonio_eleicoes`); em montagens sobre a view interna o campo pode não
+ * existir, e esta leitura degrada para lista vazia em vez de inventar estados.
+ */
+function getPatrimonioEleicoesDaFicha(ficha: FichaCandidato): PatrimonioEleicaoPublico[] {
+  const eleicoes = (ficha as FichaCandidato & { patrimonio_eleicoes?: unknown })
+    .patrimonio_eleicoes
+  if (!Array.isArray(eleicoes)) return []
+  return eleicoes.filter(
+    (item): item is PatrimonioEleicaoPublico =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as PatrimonioEleicaoPublico).ano === "number" &&
+      ((item as PatrimonioEleicaoPublico).estado === "publicado" ||
+        (item as PatrimonioEleicaoPublico).estado === "vazio_confirmado" ||
+        (item as PatrimonioEleicaoPublico).estado === "nao_coletado"),
+  )
 }
 
 function getLatestFinancing(financiamento: Financiamento[]): Financiamento | null {
@@ -76,22 +105,19 @@ function getLatestSpending(gastos: GastoParlamentar[]): GastoParlamentar | null 
 
 function getFinancingSegments(latestFin: Financiamento | null): FinancingSegment[] {
   if (!latestFin) return []
-  const valueByKey: Record<(typeof FINANCING_BREAKDOWN_KEYS)[number], number> = {
-    fundo_eleitoral: latestFin.total_fundo_eleitoral,
-    fundo_partidario: latestFin.total_fundo_partidario,
-    pessoa_fisica: latestFin.total_pessoa_fisica,
-    recursos_proprios: latestFin.total_recursos_proprios,
-  }
-  return FINANCING_BREAKDOWN_KEYS.map((key) => ({
+  const composition = buildFinancingComposition(latestFin)
+  if (!composition.chartIsSafe) return []
+  return composition.segments.map(({ key, value }) => ({
     label: formatFinancingLabel(key),
-    value: valueByKey[key],
+    value,
     color: FINANCING_COLOR_BY_KEY[key],
-  })).filter((s) => s.value > 0)
+  })).filter((segment) => segment.value > 0)
 }
 
 function hasOverviewData(ficha: FichaCandidato): boolean {
   return (
     (ficha.patrimonio?.length ?? 0) > 0 ||
+    getPatrimonioEleicoesDaFicha(ficha).length > 0 ||
     (ficha.financiamento?.length ?? 0) > 0 ||
     (ficha.processos?.length ?? 0) > 0 ||
     (ficha.votos?.length ?? 0) > 0 ||
@@ -120,12 +146,6 @@ function getPatrimonioGrowthIndicator(
   if (growthPct > 0) return { arrow: "↑", color: "text-green-700" }
   if (growthPct < 0) return { arrow: "↓", color: "text-red-600" }
   return { arrow: "", color: "text-muted-foreground" }
-}
-
-function getProcessoBorderColor(processo: Processo): string {
-  if (processo.tipo === "criminal") return "#dc2626"
-  if (processo.gravidade === "alta") return "#f59e0b"
-  return "#d4d4d4"
 }
 
 function getVotoBadgeClassName(voto: VotoCandidato["voto"]): string {
@@ -179,14 +199,47 @@ function EmptyOverviewState() {
 function PatrimonioTeaser({
   patrimonio,
   summary,
+  eleicoes,
   onNavigate,
 }: {
   patrimonio: Patrimonio[]
   summary: PatrimonioSummary
+  eleicoes: PatrimonioEleicaoPublico[]
   onNavigate: () => void
 }) {
   const { latest, earliest, growthPct } = summary
-  if (!latest) return null
+  if (!latest) {
+    // Sem patrimônio publicado: a eleição ainda assim existe e não pode sumir
+    // da visão geral (ausência não é ficha limpa nem ano oculto).
+    const semDado = eleicoes
+      .filter((eleicao) => eleicao.estado !== "publicado")
+      .sort((a, b) => b.ano - a.ano)
+    if (semDado.length === 0) return null
+    return (
+      <TeaserCard title="Patrimônio declarado" linkLabel="DETALHES" onNavigate={onNavigate}>
+        <div className="space-y-2" data-pf-patrimonio-eleicoes-sem-dado={semDado.length}>
+          {semDado.slice(0, 4).map((eleicao) => (
+            <div
+              key={eleicao.ano}
+              data-pf-patrimonio-eleicao={eleicao.ano}
+              data-pf-patrimonio-eleicao-estado={eleicao.estado}
+              className="flex items-baseline justify-between gap-3"
+            >
+              <span className="shrink-0 text-[12px] font-bold tabular-nums text-foreground">
+                {eleicao.ano}
+              </span>
+              <span className="min-w-0 flex-1 text-right text-[12px] font-medium leading-snug text-muted-foreground">
+                {formatPatrimonioEleicaoEstadoLabel(eleicao.estado)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] font-medium leading-snug text-muted-foreground">
+          Eleições disputadas sem dado de patrimônio publicado.
+        </p>
+      </TeaserCard>
+    )
+  }
 
   if (patrimonio.length === 1) {
     return (
@@ -257,20 +310,22 @@ function FinancingTeaserSegments({
 }) {
   if (segments.length === 0) return null
   return (
-    <div className="mt-3 flex items-center gap-5">
-      <DonutChart
-        segments={segments}
-        centerValue={formatCompact(total)}
-        centerLabel="Total"
-        size={100}
-        strokeWidth={16}
-      />
-      <div className="min-w-0 flex-1 space-y-1.5">
+    <div className="mt-3 grid grid-cols-1 items-center gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:gap-5">
+      <div className="flex justify-center sm:justify-start">
+        <DonutChart
+          segments={segments}
+          centerLabel="Total"
+          size={112}
+          strokeWidth={16}
+          showLegend={false}
+        />
+      </div>
+      <div className="min-w-0 space-y-2">
         {segments.map((s) => (
-          <div key={s.label} className="flex items-center gap-2">
-            <div className="size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground">
-              {s.label}
+          <div key={s.label} className="flex items-start gap-2">
+            <div className="mt-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+            <span className="min-w-0 flex-1 text-[11px] font-medium leading-snug text-muted-foreground">
+              {s.label} ({Math.round((s.value / total) * 100)}%)
             </span>
             <span className="shrink-0 text-[11px] font-bold tabular-nums text-foreground">
               {formatCompact(s.value)}
@@ -324,17 +379,17 @@ function ProcessesTeaser({
           <div
             key={p.id}
             className="rounded-lg border border-border/50 border-l-[3px] px-3 py-2"
-            style={{ borderLeftColor: getProcessoBorderColor(p) }}
+            style={{ borderLeftColor: processoBorderColor(p) }}
           >
             <div className="flex items-center gap-2">
-              <MetaBadge tone={p.tipo === "criminal" ? "critical" : "muted"}>
-                {formatProcessTypeLabel(p.tipo)}
+              <MetaBadge tone={!isTerminalProcessStatus(p.status) && p.tipo === "criminal" ? "critical" : "muted"}>
+                {isTerminalProcessStatus(p.status) ? "Histórico judicial" : formatProcessTypeLabel(p.tipo)}
               </MetaBadge>
               <span className="text-[10px] font-semibold text-muted-foreground">
                 {formatProcessStatusLabel(p.status)}
               </span>
             </div>
-            <p className="mt-1 line-clamp-1 text-[12px] font-medium leading-snug text-foreground">
+            <p className="mt-1 text-[12px] font-medium leading-snug text-foreground">
               {p.descricao ?? p.tipo}
             </p>
           </div>
@@ -495,6 +550,7 @@ export function ProfileOverview({
   const contradicoes = votos.filter((v) => v.contradicao)
 
   const patrimonioSummary = getPatrimonioSummary(patrimonio)
+  const patrimonioEleicoes = getPatrimonioEleicoesDaFicha(ficha)
   const latestFin = getLatestFinancing(financiamento)
   const latestFinPleitoLabel =
     latestFin != null ? formatFinanciamentoPleitoPublicLabelForRow(latestFin, historico) : null
@@ -506,6 +562,7 @@ export function ProfileOverview({
       <PatrimonioTeaser
         patrimonio={patrimonio}
         summary={patrimonioSummary}
+        eleicoes={patrimonioEleicoes}
         onNavigate={() => onNavigateTab("dinheiro")}
       />
       <FinancingTeaser

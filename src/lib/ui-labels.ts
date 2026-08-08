@@ -8,6 +8,7 @@ export const FINANCING_BREAKDOWN_KEYS = [
   "fundo_partidario",
   "pessoa_fisica",
   "recursos_proprios",
+  "outros_recursos",
 ] as const
 
 export type FinancingBreakdownKey = (typeof FINANCING_BREAKDOWN_KEYS)[number]
@@ -156,7 +157,7 @@ const FIXED_COPY_LOOKUP: Record<string, string> = {
   "nao eleito": "Não Eleito",
   "pessoa fisica": "Pessoa Física",
   "pontos de atencao": "Pontos de Atenção",
-  "pontos de atencao e feitos": "Pontos de Atenção e Feitos",
+  destaques: "Destaques",
   "recursos proprios": "Recursos Próprios",
   "situacao na justica": "Situação na Justiça",
   "timeline politica": "Timeline política",
@@ -175,7 +176,7 @@ export const fixedCopy = {
   justiceSituation: FIXED_COPY_LOOKUP["situacao na justica"],
   generalOverview: FIXED_COPY_LOOKUP["visao geral"],
   attentionPoints: FIXED_COPY_LOOKUP["pontos de atencao"],
-  attentionPointsAndHighlights: FIXED_COPY_LOOKUP["pontos de atencao e feitos"],
+  highlights: FIXED_COPY_LOOKUP.destaques,
   timelinePolitics: FIXED_COPY_LOOKUP["timeline politica"],
   notElected: FIXED_COPY_LOOKUP["nao eleito"],
   currentLowercase: FIXED_COPY_LOOKUP.atual,
@@ -204,6 +205,7 @@ const tokenLabels = {
     fundo_partidario: fixedCopy.partyFund,
     pessoa_fisica: fixedCopy.naturalPerson,
     recursos_proprios: fixedCopy.ownResources,
+    outros_recursos: "Outras origens registradas no TSE",
   },
   gravity: {
     alta: "Alta",
@@ -222,6 +224,14 @@ const tokenLabels = {
     criminal: "Criminal",
     eleitoral: "Eleitoral",
     improbidade: "Improbidade",
+  },
+  // Estado público do patrimônio por eleição (>= 2006). Ausência não pode
+  // parecer ficha limpa nem ano oculto: vazio_confirmado é a fonte oficial
+  // conferida sem bens; nao_coletado é coleta pendente, nunca ausência presumida.
+  patrimonioEleicaoEstado: {
+    publicado: "Patrimônio publicado",
+    vazio_confirmado: "Sem bens declarados ao TSE",
+    nao_coletado: "Ainda não coletado",
   },
   projectStatus: {
     aprovado: "Aprovado",
@@ -333,6 +343,11 @@ export function formatProcessStatusLabel(raw: string | null | undefined): string
 
 export function formatProcessTypeLabel(raw: string | null | undefined): string {
   return resolveTokenLabel(tokenLabels.processType, raw, "title")
+}
+
+/** Rótulo público do estado de patrimônio de uma eleição (publicado, vazio confirmado ou não coletado). */
+export function formatPatrimonioEleicaoEstadoLabel(raw: string | null | undefined): string {
+  return resolveTokenLabel(tokenLabels.patrimonioEleicaoEstado, raw, "sentence")
 }
 
 export function formatAttentionCategoryLabel(raw: string | null | undefined): string {

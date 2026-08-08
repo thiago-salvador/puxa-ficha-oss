@@ -35,6 +35,7 @@ import type {
   LegislacaoMandatoExecutivo,
   MudancaPartido,
   Patrimonio,
+  PatrimonioAusenciaOficial,
   ProjetoLei,
   SancoesVerificacao,
   SectionFreshnessInfo,
@@ -64,6 +65,7 @@ import {
 } from "@/lib/candidate-integrity"
 import { isHistoricoCandidaturaRow } from "@/lib/historico-tipo-evento"
 import { normalizeHistoricoPoliticoForDisplay } from "@/lib/historico-dedupe"
+import { isTerminalProcessStatus } from "@/lib/processos-display"
 import {
   normalizeFinanciamentoForDisplay,
   normalizePatrimonioForDisplay,
@@ -84,6 +86,7 @@ import {
 import {
   SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS,
   withSupabaseRetry,
+  type SupabaseRunResult,
 } from "@/lib/supabase-retry"
 import { getCanonicalPerson } from "@/lib/canonical-person-map"
 import { formatDate } from "@/lib/utils"
@@ -166,7 +169,20 @@ if (USE_MOCK && process.env.VERCEL) {
 }
 
 // Public columns only: excludes cpf, email_campanha, cpf_hash, tcu flags, wikidata_id
-const CANDIDATO_COLUMNS = "id, nome_completo, nome_urna, slug, data_nascimento, idade, naturalidade, formacao, profissao_declarada, genero, estado_civil, cor_raca, partido_atual, partido_sigla, cargo_atual, cargo_disputado, estado, status, situacao_candidatura, biografia, foto_url, site_campanha, redes_sociais, fonte_dados, ultima_atualizacao"
+const CANDIDATO_COLUMNS = "id, nome_completo, nome_urna, slug, data_nascimento, idade, naturalidade, formacao, profissao_declarada, genero, estado_civil, cor_raca, partido_atual, partido_sigla, cargo_atual, cargo_disputado, estado, status, situacao_candidatura, biografia, foto_url, site_campanha, redes_sociais, fonte_dados, ultima_atualizacao, verificacao_campos"
+const CANDIDATO_COLUMNS_LEGACY = CANDIDATO_COLUMNS.replace(/, verificacao_campos$/, "")
+
+function isMissingVerificationColumnError(error: { message?: string } | null | undefined): boolean {
+  return /verificacao_campos|column .* does not exist/i.test(error?.message ?? "")
+}
+
+function resolveCampaignSite(candidato: Candidato): string | null {
+  if (candidato.site_campanha?.trim()) return candidato.site_campanha.trim()
+  const official = candidato.redes_sociais?.site_oficial
+  return typeof official === "string" && /^https?:\/\//i.test(official.trim())
+    ? official.trim()
+    : null
+}
 
 /** Rejeições do loader não podem virar um 503 persistente no Data Cache. */
 function requireLiveResourceForCache<T>(resource: DataResource<T>): DataResource<T> {
@@ -391,6 +407,18 @@ function buildSectionFreshness(
   }
 ): Partial<Record<SectionFreshnessKey, SectionFreshnessInfo>> {
   const updatedAt = parseDate(candidato.ultima_atualizacao)
+  const fieldVerification = candidato.verificacao_campos ?? {}
+  const profileVerificationCandidates = [
+    ["candidate_registration", "TSE candidaturas 2026"],
+    ["candidate_complement", "TSE situação da candidatura 2026"],
+    ["social_networks", "TSE redes declaradas 2026"],
+    ["existing_profile_aggregate", "Perfil factual curado"],
+  ]
+    .map(([key, source]) => ({ date: parseDate(fieldVerification[key]), source }))
+    .filter((item): item is { date: Date; source: string } => item.date != null)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+  const profileVerification = profileVerificationCandidates[0] ??
+    (updatedAt ? { date: updatedAt, source: "Perfil factual curado" } : null)
   const latestHistoricoYear =
     data.historico.length > 0
       ? Math.max(
@@ -444,18 +472,18 @@ function buildSectionFreshness(
   const latestVoteDate = parseDate(latestVoteDateString)
 
   return {
-    perfil_atual: updatedAt
+    perfil_atual: profileVerification
       ? buildFreshnessInfo(
           "perfil_atual",
           "Perfil atual",
-          !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
-          !IS_LAUNCH_PHASE || ageInDays(updatedAt) <= PROFILE_FRESHNESS_WINDOW_DAYS
-            ? `Perfil atual consolidado em ${formatDate(updatedAt)}.`
-            : `Perfil atual consolidado em ${formatDate(updatedAt)}. Pode não refletir mudanças recentes.`,
-          updatedAt.toISOString(),
-          updatedAt.getFullYear(),
-          updatedAt.toISOString(),
-          "Perfil factual curado"
+          !IS_LAUNCH_PHASE || ageInDays(profileVerification.date) <= PROFILE_FRESHNESS_WINDOW_DAYS ? "current" : "stale",
+          !IS_LAUNCH_PHASE || ageInDays(profileVerification.date) <= PROFILE_FRESHNESS_WINDOW_DAYS
+            ? `Perfil verificado em ${formatDate(profileVerification.date)} (${profileVerification.source}).`
+            : `Perfil verificado em ${formatDate(profileVerification.date)} (${profileVerification.source}). Pode não refletir mudanças recentes.`,
+          profileVerification.date.toISOString(),
+          profileVerification.date.getFullYear(),
+          profileVerification.date.toISOString(),
+          profileVerification.source
         )
       : buildFreshnessInfo(
           "perfil_atual",
@@ -611,22 +639,22 @@ async function getCandidatosResourceUncached(
   }
 
   const supabase = createServerSupabaseClient()
-  const { data, error } = await withSupabaseRetry("getCandidatos", async (signal) => {
+  const load = (columns: string) => withSupabaseRetry<Candidato[]>("getCandidatos", async (signal) => {
     let query = supabase
       .from(CANDIDATO_PUBLIC_RELATION)
-      .select(CANDIDATO_COLUMNS)
+      .select(columns)
       .neq("status", "removido")
 
-    if (cargo) {
-      query = query.eq("cargo_disputado", cargo)
-    }
+    if (cargo) query = query.eq("cargo_disputado", cargo)
+    if (estado) query = query.ilike("estado", estado)
 
-    if (estado) {
-      query = query.ilike("estado", estado)
-    }
-
-    return query.order("nome_urna").abortSignal(signal)
+    return query.order("nome_urna").abortSignal(signal) as unknown as SupabaseRunResult<Candidato[]>
   }, { attemptTimeoutMs: SUPABASE_FIRST_FOLD_ATTEMPT_TIMEOUT_MS })
+  let result = await load(CANDIDATO_COLUMNS)
+  if (isMissingVerificationColumnError(result.error)) {
+    result = await load(CANDIDATO_COLUMNS_LEGACY)
+  }
+  const { data, error } = result
 
   if (error || !data) {
     if (IS_DEV) {
@@ -879,12 +907,12 @@ const getCandidatoPublicRowForRequest = cache(async function loadCandidatoPublic
   }
 
   const supabase = createServerSupabaseClient(cacheMode ? { cacheMode } : undefined)
-  const { data, error } = await withSupabaseRetry<Candidato>(
+  const load = (columns: string) => withSupabaseRetry<Candidato>(
     `getCandidatoPublicRow(${slug})`,
     async (signal) =>
       supabase
         .from(CANDIDATO_PUBLIC_RELATION)
-        .select(CANDIDATO_COLUMNS)
+        .select(columns)
         .eq("slug", slug)
         // `.abortSignal()` vem antes de `.single()`: o `.single()` estreita o tipo
         // para PostgrestBuilder, que nao expoe `abortSignal`. A ordem nao muda o
@@ -892,6 +920,11 @@ const getCandidatoPublicRowForRequest = cache(async function loadCandidatoPublic
         .abortSignal(signal)
         .single()
   )
+  let result = await load(CANDIDATO_COLUMNS)
+  if (isMissingVerificationColumnError(result.error)) {
+    result = await load(CANDIDATO_COLUMNS_LEGACY)
+  }
+  const { data, error } = result
 
   if (isSupabaseNoRowError(error)) {
     // Slug inexistente: precisa virar HTTP 404 na rota, nao uma ficha degradada com 200.
@@ -1018,7 +1051,10 @@ const COLETA_RESULTADOS_VALIDOS = new Set<SancoesVerificacao["resultado"]>([
  * limpeza). O único estado que esta função pode "perder" com isso é um selo de
  * verificação, nunca um dado do candidato.
  */
-async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+async function fetchColetaVerificacao(
+  slug: string,
+  fonte: "transparencia-sanctions" | "processos-curadoria",
+): Promise<SancoesVerificacao | null> {
   try {
     const admin = createServiceRoleSupabaseClient({ cacheMode: "no-store" })
     const { data, error } = await withSupabaseRetry(
@@ -1027,7 +1063,7 @@ async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao
         admin
           .from("coleta_log_ultima")
           .select("resultado, executado_em")
-          .eq("fonte", "transparencia-sanctions")
+          .eq("fonte", fonte)
           .eq("escopo", "candidato")
           .eq("alvo", slug)
           .abortSignal(signal)
@@ -1047,6 +1083,14 @@ async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao
     // seção da ficha.
     return null
   }
+}
+
+async function fetchSancoesVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  return fetchColetaVerificacao(slug, "transparencia-sanctions")
+}
+
+async function fetchProcessosVerificacao(slug: string): Promise<SancoesVerificacao | null> {
+  return fetchColetaVerificacao(slug, "processos-curadoria")
 }
 
 async function getCandidatoBySlugFromRelationResource(
@@ -1083,18 +1127,23 @@ async function getCandidatoBySlugFromRelationResource(
     candidato = rowRes.data
     if (!candidato) return liveResource(null)
   } else {
-    const { data, error: candidatoError } = await withSupabaseRetry<Candidato>(
+    const load = (columns: string) => withSupabaseRetry<Candidato>(
       `getCandidatoBySlug(${slug})`,
       async (signal) =>
         supabase
           .from(relation)
-          .select(CANDIDATO_COLUMNS)
+          .select(columns)
           .eq("slug", slug)
           // Mesma ordem de getCandidatoPublicRow: `.abortSignal()` antes de
           // `.single()`, que estreita o tipo e esconde o metodo.
           .abortSignal(signal)
           .single()
     )
+    let result = await load(CANDIDATO_COLUMNS)
+    if (isMissingVerificationColumnError(result.error)) {
+      result = await load(CANDIDATO_COLUMNS_LEGACY)
+    }
+    const { data, error: candidatoError } = result
 
     if (isSupabaseNoRowError(candidatoError)) {
       // Slug inexistente: precisa virar HTTP 404 na rota, nao uma ficha degradada com 200.
@@ -1144,7 +1193,7 @@ async function getCandidatoBySlugFromRelationResource(
     }
   }
 
-  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao] =
+  const [historico, mudancas, patrimonio, financiamento, votos, processos, pontos, projetos, legislacaoExecutivo, gastos, sancoes, noticias, indicadores, sancoesVerificacao, processosVerificacao] =
     await Promise.all([
       // `despublicado_em` filtra candidatura atribuida por homonimo (migration
       // 20260726160000). O CPF divergente no cadastro desliga o casamento por
@@ -1271,6 +1320,9 @@ async function getCandidatoBySlugFromRelationResource(
       // Proveniência do zero de sanções (coleta_log_ultima, service role).
       // Nunca rejeita: degrada para null, que a UI lê como "não verificado".
       fetchSancoesVerificacao(slug),
+      // Mesma proveniência para o vazio judicial. Encontrado sem linha pública
+      // significa item em revisão, não ficha limpa.
+      fetchProcessosVerificacao(slug),
     ])
 
   const relatedErrors = [
@@ -1288,6 +1340,24 @@ async function getCandidatoBySlugFromRelationResource(
     noticias.error,
     "error" in indicadores ? indicadores.error : null,
   ].filter(Boolean)
+
+  // Ausências oficiais de patrimônio por eleição (tabela criada pela migração
+  // 20260807181000). Enquanto a migração não é aplicada, degradar para lista
+  // vazia: ausência de tabela não é fato sobre o candidato.
+  let patrimonioAusenciasOficiais: PatrimonioAusenciaOficial[] = []
+  try {
+    const { data: patrimonioAusenciasData, error: patrimonioAusenciasError } = await supabase
+      .from("patrimonio_ausencia_oficial")
+      .select("ano_eleicao, fonte_url, verificado_em")
+      .in("candidato_id", personLevelIds)
+      .order("ano_eleicao", { ascending: false })
+    if (!patrimonioAusenciasError) {
+      patrimonioAusenciasOficiais = (patrimonioAusenciasData ??
+        []) as unknown as PatrimonioAusenciaOficial[]
+    }
+  } catch {
+    patrimonioAusenciasOficiais = []
+  }
 
   const historicoConfiavel = normalizeHistoricoPoliticoForDisplay(historico.data ?? [])
   const patrimonioConfiavel = normalizePatrimonioForDisplay(patrimonio.data ?? [])
@@ -1327,9 +1397,11 @@ async function getCandidatoBySlugFromRelationResource(
   // hasIncompletePartyTimeline (linha acima) ja foi calculado com a versao crua.
   const ficha: FichaCandidato = {
     ...sanitizePublicPartyFields(candidato),
+    site_campanha: resolveCampaignSite(candidato),
     historico: historicoConfiavel,
     mudancas_partido: mudancasRaw,
     patrimonio: patrimonioConfiavel,
+    patrimonio_ausencias_oficiais: patrimonioAusenciasOficiais,
     financiamento: shouldUseServiceRole
       ? financiamentoConfiavel
       : sanitizeFinanciamentoForPublic(financiamentoConfiavel),
@@ -1347,6 +1419,7 @@ async function getCandidatoBySlugFromRelationResource(
     gastos_parlamentares: gastos.data ?? [],
     sancoes_administrativas: sancoes.data ?? [],
     sancoes_verificacao: sancoesVerificacao,
+    processos_verificacao: processosVerificacao,
     // Rotulo de relevancia em tempo de leitura (auditoria 2026-07-24, etapa
     // 1C). A ingestao passou a descartar item cujo titulo nao cita o candidato,
     // mas as linhas ja gravadas continuam no banco: 3.984 de 17.498 (22,77%)
@@ -1358,7 +1431,9 @@ async function getCandidatoBySlugFromRelationResource(
     })),
     indicadores_estaduais: indicadores.data ?? [],
     total_processos: (processos.data ?? []).length,
-    processos_criminais: (processos.data ?? []).filter((p) => p.tipo === "criminal").length,
+    processos_criminais: (processos.data ?? []).filter(
+      (p) => p.tipo === "criminal" && !isTerminalProcessStatus(p.status)
+    ).length,
     total_mudancas_partido: countPartySwitches(mudancasRaw),
     total_pontos_atencao: pontosPublicos.length,
     pontos_criticos: pontosPublicos.filter((p) => isNegativeHighestSeverityAttentionPoint(p)).length,
@@ -1760,6 +1835,7 @@ async function getCandidatosComparaveisResourceUncached(
 
     const normalized = {
       ...row,
+      total_pontos_atencao: pontos.length,
       alertas_graves: alertasGraves.length,
       mudancas_partido: switchCountById.has(row.id)
         ? (switchCountById.get(row.id) ?? 0)
@@ -1769,7 +1845,7 @@ async function getCandidatosComparaveisResourceUncached(
         : null,
       total_votos_mapeados: votosCountById.get(row.id) ?? 0,
     }
-    // pontos_atencao só serve para derivar alertas_graves no servidor; o
+    // pontos_atencao só serve para derivar os contadores editoriais no servidor; o
     // ComparadorPanel nunca lê o array no cliente. Remove do payload público
     // (e do cache de comparáveis) em vez de serializar sem uso.
     delete (normalized as { pontos_atencao?: unknown }).pontos_atencao

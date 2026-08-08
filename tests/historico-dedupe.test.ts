@@ -94,7 +94,7 @@ test("normalizeHistoricoPoliticoForDisplay aplica dedupe e split", () => {
   assert.equal(out.length, 3)
 })
 
-test("normalizeHistoricoPoliticoForDisplay colapsa par TSE 2022/2023 do mesmo mandato e mantém posse de 2023", () => {
+test("normalizeHistoricoPoliticoForDisplay colapsa par TSE 2022/2023 do mesmo mandato e exibe a eleição como candidatura", () => {
   const governadorEleicao = row({
     id: "gov-2022",
     cargo: "Governador de Sao Paulo",
@@ -131,11 +131,16 @@ test("normalizeHistoricoPoliticoForDisplay colapsa par TSE 2022/2023 do mesmo ma
 
   const out = normalizeHistoricoPoliticoForDisplay([governadorEleicao, governadorPosse, ministro])
 
-  assert.equal(out.length, 2)
-  assert.equal(out.filter((item) => item.cargo_canonico === "Governador").length, 1)
-  assert.equal(out.some((item) => item.id === "gov-2022"), false)
+  assert.equal(out.length, 3)
+  assert.equal(out.filter((item) => item.cargo_canonico === "Governador").length, 2)
+  const eleicaoVisivel = out.find((item) => item.id === "gov-2022")
+  assert.ok(eleicaoVisivel)
+  assert.equal(eleicaoVisivel.tipo_evento, "candidatura")
+  assert.equal(eleicaoVisivel.periodo_inicio, 2022)
+  assert.equal(eleicaoVisivel.periodo_fim, 2022)
   const governador = out.find((item) => item.id === "gov-2023")
   assert.ok(governador)
+  assert.equal(governador.tipo_evento, "mandato")
   assert.equal(formatHistoricoPeriodoDisplay(governador, out), "2023 - atual")
 })
 
@@ -235,8 +240,13 @@ test("normalizeHistoricoPoliticoForDisplay colapsa par eleição/posse com parti
     tipo_evento: "mandato",
   })
   const out = normalizeHistoricoPoliticoForDisplay([eleicao, posse])
-  assert.equal(out.length, 1)
-  assert.equal(out[0]!.id, "pref-2021-psd")
+  assert.equal(out.length, 2)
+  assert.equal(out.some((item) => item.id === "pref-2021-psd"), true)
+  const candidatura = out.find((item) => item.id === "pref-2020-dem")
+  assert.ok(candidatura)
+  assert.equal(candidatura.tipo_evento, "candidatura")
+  assert.equal(candidatura.periodo_inicio, 2020)
+  assert.equal(candidatura.periodo_fim, 2020)
 })
 
 test("normalizeHistoricoPoliticoForDisplay colapsa par eleição/posse mesmo com estado textual vs sigla divergentes", () => {
@@ -263,8 +273,13 @@ test("normalizeHistoricoPoliticoForDisplay colapsa par eleição/posse mesmo com
     tipo_evento: "mandato",
   })
   const out = normalizeHistoricoPoliticoForDisplay([eleicao, posse])
-  assert.equal(out.length, 1)
-  assert.equal(out[0]!.id, "pref-2021-mandato")
+  assert.equal(out.length, 2)
+  assert.equal(out.some((item) => item.id === "pref-2021-mandato"), true)
+  const candidatura = out.find((item) => item.id === "pref-2020-eleito")
+  assert.ok(candidatura)
+  assert.equal(candidatura.tipo_evento, "candidatura")
+  assert.equal(candidatura.periodo_inicio, 2020)
+  assert.equal(candidatura.periodo_fim, 2020)
 })
 
 test("normalizeHistoricoPoliticoForDisplay não colapsa quando estados textuais conflitam (ex.: Rio de Janeiro vs São Paulo)", () => {
@@ -294,7 +309,7 @@ test("normalizeHistoricoPoliticoForDisplay não colapsa quando estados textuais 
   assert.equal(out.length, 2)
 })
 
-test("normalizeHistoricoPoliticoForDisplay colapsa linha TSE de ano da eleição quando já existe o mandato correto do cargo", () => {
+test("normalizeHistoricoPoliticoForDisplay mantém eleição TSE como candidatura quando já existe o mandato correto do cargo", () => {
   const governadorEleito = row({
     id: "gov-2018-eleito",
     cargo: "Governador do Rio Grande do Sul",
@@ -347,11 +362,51 @@ test("normalizeHistoricoPoliticoForDisplay colapsa linha TSE de ano da eleição
     prefeitoMandato,
   ])
 
-  assert.equal(out.length, 2)
-  assert.equal(out.some((item) => item.id === "gov-2018-eleito"), false)
-  assert.equal(out.some((item) => item.id === "pref-2012-eleito"), false)
+  assert.equal(out.length, 4)
+  const govEleito = out.find((item) => item.id === "gov-2018-eleito")
+  assert.ok(govEleito)
+  assert.equal(govEleito.tipo_evento, "candidatura")
+  assert.equal(govEleito.periodo_fim, 2018)
+  const prefEleito = out.find((item) => item.id === "pref-2012-eleito")
+  assert.ok(prefEleito)
+  assert.equal(prefEleito.tipo_evento, "candidatura")
+  assert.equal(prefEleito.periodo_fim, 2012)
   assert.equal(out.some((item) => item.id === "gov-2019-mandato"), true)
   assert.equal(out.some((item) => item.id === "pref-2013-mandato"), true)
+})
+
+test("normalizeHistoricoPoliticoForDisplay exibe candidatura colapsada com mandato parcial de outra proveniência", () => {
+  const senadorEleito = row({
+    id: "sen-2014-eleito",
+    cargo: "Senador",
+    cargo_canonico: "Senador",
+    periodo_inicio: 2014,
+    periodo_fim: null,
+    partido: "DEM",
+    estado: "GO",
+    observacoes: "ELEITO (TSE 2014)",
+    tipo_evento: "mandato",
+  })
+  const senadorWikidata = row({
+    id: "sen-2015-wiki",
+    cargo: "Senador",
+    cargo_canonico: "Senador",
+    periodo_inicio: 2015,
+    periodo_fim: 2019,
+    partido: "",
+    estado: "",
+    observacoes: "Importado automaticamente de Wikidata P39 em 2026-08-05",
+    tipo_evento: "mandato",
+  })
+
+  const out = normalizeHistoricoPoliticoForDisplay([senadorEleito, senadorWikidata])
+
+  assert.equal(out.some((item) => item.id === "sen-2015-wiki"), true)
+  const candidatura = out.find((item) => item.id === "sen-2014-eleito")
+  assert.ok(candidatura)
+  assert.equal(candidatura.tipo_evento, "candidatura")
+  assert.equal(candidatura.periodo_inicio, 2014)
+  assert.equal(candidatura.periodo_fim, 2014)
 })
 
 test("normalizeHistoricoPoliticoForDisplay trunca mandato anterior quando troca de partido gera sobreposição", () => {

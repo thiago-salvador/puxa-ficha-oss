@@ -33,17 +33,15 @@ import { ExternalLink } from "lucide-react"
 import { DataFreshnessNotice } from "./DataFreshnessNotice"
 import * as historicoDisplay from "@/lib/historico-display"
 import { hasWideManualOverlappingSegmentedMandates } from "@/lib/historico-dedupe"
-import { formatPartyTransitionLabel, hasSameYearPartyReversal } from "@/lib/party-switches"
+import { countPartySwitches, formatPartyTransitionLabel, hasSameYearPartyReversal } from "@/lib/party-switches"
 import { isUncertainParty, normalizePartySigla } from "@/lib/party-utils"
-import {
-  mudancasPartidoLinhasPublicas,
-  prepareHistoricoPoliticoPublicDisplayList,
-} from "@/lib/trajetoria-public-display"
+import { prepareHistoricoPoliticoPublicDisplayList } from "@/lib/trajetoria-public-display"
 import { formatFinanciamentoPleitoPublicLabelForRow } from "@/lib/financiamento-pleito-public-label"
+import type { PatrimonioEleicaoPublico } from "@/lib/public-profile-dto"
 import {
   type FinancingBreakdownKey,
-  FINANCING_BREAKDOWN_KEYS,
   formatFinancingLabel,
+  formatPatrimonioEleicaoEstadoLabel,
   formatProjectStatusLabel,
   formatPublicLabel,
   formatTemaLabel,
@@ -58,6 +56,8 @@ import {
   resolveExecutiveLegislationInventoryScope,
 } from "@/lib/legislacao-profile-groups"
 import { sanitizePtBrText } from "@/lib/ptbr-text"
+import { sanitizePublicText } from "@/lib/public-text"
+import { buildFinancingComposition } from "@/lib/financiamento-display"
 
 const LEGISLACAO_PAGE_SIZE = 25
 
@@ -71,6 +71,7 @@ const FINANCING_COLORS: Record<FinancingBreakdownKey, string> = {
   fundo_partidario: "#525252",
   pessoa_fisica: "#a3a3a3",
   recursos_proprios: "#d4d4d4",
+  outros_recursos: "#e5e5e5",
 }
 
 const PROJECT_STATUS_BADGES: Record<
@@ -87,6 +88,78 @@ function formatYearList(years: number[]) {
   return `${years.slice(0, -1).join(", ")} e ${years.at(-1)}`
 }
 
+/**
+ * Linha de eleição (>= 2006) cujo patrimônio não está publicado. Ausência não
+ * pode parecer ficha limpa nem ano oculto: vazio_confirmado mostra a fonte
+ * oficial conferida e a data da verificação; nao_coletado exibe a pendência
+ * sem insinuar que o candidato não tinha bens.
+ */
+function PatrimonioEleicaoSemDadoRow({ eleicao }: { eleicao: PatrimonioEleicaoPublico }) {
+  const fonteHref = safeHref(eleicao.fonte_url)
+  const verificadoEm = eleicao.verificado_em ? formatDate(eleicao.verificado_em) : null
+
+  return (
+    <div
+      data-pf-patrimonio-eleicao={eleicao.ano}
+      data-pf-patrimonio-eleicao-estado={eleicao.estado}
+      className="rounded-[12px] border border-border/60 bg-card px-4 py-3"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
+          {eleicao.ano}
+        </span>
+        <MetaBadge tone={eleicao.estado === "vazio_confirmado" ? "neutral" : "muted"}>
+          {formatPatrimonioEleicaoEstadoLabel(eleicao.estado)}
+        </MetaBadge>
+      </div>
+      <p className="mt-1.5 text-[length:var(--text-body-sm)] font-medium leading-relaxed text-muted-foreground">
+        {eleicao.estado === "vazio_confirmado"
+          ? `Sem bens declarados ao TSE em ${eleicao.ano}. O pacote oficial de bens desta eleição foi conferido e não traz registros para este candidato.`
+          : `A coleta de bens da eleição de ${eleicao.ano} ainda não foi realizada. A ausência de dados aqui não significa ausência de bens.`}
+      </p>
+      {eleicao.estado === "vazio_confirmado" && (verificadoEm || fonteHref) && (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[length:var(--text-caption)] font-semibold text-muted-foreground">
+          {verificadoEm && <span>Verificado em {verificadoEm}</span>}
+          {fonteHref && (
+            <a
+              href={fonteHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-foreground underline"
+            >
+              Fonte oficial <ExternalLink className="size-3 shrink-0" />
+            </a>
+          )}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function PatrimonioEleicoesSemDado({
+  eleicoes,
+}: {
+  eleicoes: PatrimonioEleicaoPublico[]
+}) {
+  const semDadoPublicado = eleicoes
+    .filter((eleicao) => eleicao.estado !== "publicado")
+    .sort((a, b) => b.ano - a.ano)
+  if (semDadoPublicado.length === 0) return null
+
+  return (
+    <div data-pf-patrimonio-eleicoes-sem-dado={semDadoPublicado.length}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        Eleições sem dado publicado
+      </p>
+      <div className="mt-2 space-y-3">
+        {semDadoPublicado.map((eleicao) => (
+          <PatrimonioEleicaoSemDadoRow key={eleicao.ano} eleicao={eleicao} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface MoneyTabSectionProps {
   patrimonio: Patrimonio[]
   financiamento: Financiamento[]
@@ -95,6 +168,12 @@ interface MoneyTabSectionProps {
   gastos: GastoParlamentar[]
   historicoLength: number
   suggestion: SuggestAction | null
+  /**
+   * Série pública de patrimônio por eleição aplicável (>= 2006), mais recente
+   * primeiro, no formato do DTO público. Pleitos sem dado publicado
+   * (vazio_confirmado ou nao_coletado) são exibidos com estado explícito.
+   */
+  patrimonioEleicoes?: PatrimonioEleicaoPublico[] | null
   /** Id do evento na timeline (`patrimonio-…`, `gasto-…`) para abrir card e permitir scroll/highlight. */
   highlightTimelineRef?: string | null
   freshness?: {
@@ -111,9 +190,11 @@ export function MoneyTabSection({
   gastos,
   historicoLength,
   suggestion,
+  patrimonioEleicoes,
   highlightTimelineRef,
   freshness,
 }: MoneyTabSectionProps) {
+  const patrimonioEleicoesSemDado = patrimonioEleicoes ?? []
   return (
     <div className="space-y-12">
       {patrimonio.length > 0 && (
@@ -151,10 +232,10 @@ export function MoneyTabSection({
                       >
                         <div>
                           <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-                            {bem.tipo}
+                            {sanitizePublicText(bem.tipo) || "Tipo não informado"}
                           </span>
                           <p className="text-[length:var(--text-body-sm)] font-medium text-foreground">
-                            {bem.descricao}
+                            {sanitizePublicText(bem.descricao) || "Descrição não informada"}
                           </p>
                         </div>
                         <span className="ml-3 shrink-0 text-[length:var(--text-body)] font-bold tabular-nums text-foreground">
@@ -167,6 +248,11 @@ export function MoneyTabSection({
                 </div>
               ))}
           </div>
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
         </div>
       )}
 
@@ -200,20 +286,24 @@ export function MoneyTabSection({
                       {formatBRL(item.total_arrecadado)}
                     </span>
                   </div>
-                  <StackedBar
-                    segments={FINANCING_BREAKDOWN_KEYS.map((key) => ({
-                      label: formatFinancingLabel(key),
-                      value:
-                        key === "fundo_eleitoral"
-                          ? item.total_fundo_eleitoral
-                          : key === "fundo_partidario"
-                            ? item.total_fundo_partidario
-                            : key === "pessoa_fisica"
-                              ? item.total_pessoa_fisica
-                              : item.total_recursos_proprios,
-                      color: FINANCING_COLORS[key],
-                    }))}
-                  />
+                  {(() => {
+                    const composition = buildFinancingComposition(item)
+                    return composition.chartIsSafe ? (
+                      <StackedBar
+                        segments={composition.segments.map(({ key, value }) => ({
+                          label: formatFinancingLabel(key),
+                          value,
+                          color: FINANCING_COLORS[key],
+                        }))}
+                      />
+                    ) : (
+                      <NoticePanel
+                        tone="caution"
+                        eyebrow="Composição em revisão"
+                        description="As categorias disponíveis somam mais que o total registrado. O gráfico fica oculto até a reconciliação com a prestação oficial."
+                      />
+                    )
+                  })()}
                   {(item.maiores_doadores ?? []).length > 0 && (
                     <div className="mt-3 border-t border-border/50 pt-3">
                       <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
@@ -254,10 +344,22 @@ export function MoneyTabSection({
             suggestLabel={suggestion?.label}
             onSuggest={suggestion?.go}
           />
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
         </div>
       )}
       {patrimonio.length === 0 && financiamento.length > 0 && (
-        <EmptyState {...getPatrimonioEmptyState(historicoLength > 0)} />
+        <div>
+          <EmptyState {...getPatrimonioEmptyState(historicoLength > 0)} />
+          {patrimonioEleicoesSemDado.length > 0 && (
+            <div className="mt-6">
+              <PatrimonioEleicoesSemDado eleicoes={patrimonioEleicoesSemDado} />
+            </div>
+          )}
+        </div>
       )}
       {financiamento.length === 0 && patrimonio.length > 0 && (
         <EmptyState {...getFinanciamentoEmptyState()} />
@@ -344,7 +446,7 @@ export function TrajectoryTabSection({
   freshness,
 }: TrajectoryTabSectionProps) {
   const historicoOrdenado = prepareHistoricoPoliticoPublicDisplayList(historico)
-  const mudancasLinhasTimeline = mudancasPartidoLinhasPublicas(mudancas)
+  const mudancasEfetivas = countPartySwitches(mudancas)
   const currentPartyLabel = [partidoAtualSigla, partidoAtualNome]
     .filter((value): value is string => Boolean(value) && !isUncertainParty(value))
     .join(" · ")
@@ -412,7 +514,7 @@ export function TrajectoryTabSection({
               eyebrow="Seção em curadoria"
               description={
                 <p>
-                  Detectamos uma row ampla de carreira convivendo com dois ou
+                  Detectamos um registro amplo de carreira convivendo com dois ou
                   mais mandatos segmentados do mesmo cargo. Ocultamos a lista
                   até a curadoria reconciliar os períodos.
                 </p>
@@ -470,7 +572,7 @@ export function TrajectoryTabSection({
 
       {shouldShowPartySection && partyTimelineBlocked && (
         <div data-pf-partidos-blocked="same-year-reversal">
-          <SectionLabel>Trocas de partido</SectionLabel>
+          <SectionLabel>Histórico partidário</SectionLabel>
           <SectionTitle>Histórico partidário</SectionTitle>
           <div className="mt-4">
             <NoticePanel
@@ -490,9 +592,15 @@ export function TrajectoryTabSection({
       )}
 
       {shouldShowPartySection && !partyTimelineBlocked && (
-        <div data-pf-partidos-count={mudancasLinhasTimeline}>
-          <SectionLabel>Trocas de partido ({mudancasLinhasTimeline})</SectionLabel>
-          <SectionTitle>Histórico partidário</SectionTitle>
+        <div data-pf-partidos-count={mudancasEfetivas}>
+          <SectionLabel>Histórico partidário</SectionLabel>
+          <SectionTitle>
+            {mudancasEfetivas === 0
+              ? "Partidos confirmados"
+              : mudancasEfetivas === 1
+                ? "1 troca de partido"
+                : `${mudancasEfetivas} trocas de partido`}
+          </SectionTitle>
           {mudancas.length > 0 ? (
             <>
               <div className="mt-4">
@@ -656,11 +764,13 @@ function ExecutiveLegislationList({
   label = `Atos do Executivo no mandato (${items.length})`,
   title = "Legislação do Executivo",
   description = resolveExecutiveLegislationInventoryScope(items).listDescription,
+  featured = false,
 }: {
   items: LegislacaoMandatoExecutivo[]
   label?: string
   title?: string
   description?: string
+  featured?: boolean
 }) {
   const [page, setPage] = useState(1)
   const totalPages = Math.max(1, Math.ceil(items.length / LEGISLACAO_PAGE_SIZE))
@@ -713,12 +823,17 @@ function ExecutiveLegislationList({
               key={lei.id}
               data-pf-timeline-ref={`lme-${lei.id}`}
               data-pf-executive-legislation-card
-              className="max-w-full overflow-hidden rounded-[12px] border border-border/50 bg-card px-4 py-4 sm:px-5"
+              className={`max-w-full overflow-hidden rounded-[12px] border px-4 py-4 transition-colors sm:px-5 ${
+                featured
+                  ? "border-foreground/20 border-l-[4px] border-l-foreground bg-foreground/[0.025] shadow-[0_10px_24px_-20px_rgba(0,0,0,0.5)]"
+                  : "border-border/50 bg-card"
+              }`}
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="min-w-0 break-words text-[length:var(--text-body)] font-bold text-foreground">
                   {identifier || "Norma"}
                 </span>
+                {featured && <MetaBadge tone="neutral">Destaque editorial</MetaBadge>}
                 <MetaBadge tone="muted">{tipoRelacaoLabel}</MetaBadge>
                 {lei.data_norma && (
                   <span className="text-[10px] font-semibold text-muted-foreground">
@@ -907,7 +1022,7 @@ function ProjetoLeiList({
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex max-w-full items-center gap-1 break-words text-[length:var(--text-caption)] font-semibold text-foreground underline"
                   >
-                    Inteiro teor <ExternalLink className="size-3 shrink-0" />
+                    Página oficial da proposta <ExternalLink className="size-3 shrink-0" />
                   </a>
                 )}
               </div>
@@ -1098,6 +1213,7 @@ export function LegislationTabSection({
             label={`Destaques do Executivo (${groups.destaquesExecutivo.length})`}
             title="Destaques legislativos"
             description={groups.inventoryScope.featuredDescription}
+            featured
           />
           {groups.destaquesParlamentares.length > 0 && (
             <ProjetoLeiList

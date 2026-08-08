@@ -134,8 +134,24 @@ describe("extractCardData", () => {
     assert.deepStrictEqual(data.topVotos, [])
   })
 
-  test("counts alertas graves from pontos_atencao", () => {
-    const data = extractCardData(makeFicha(), null)
+  test("counts all destaques from pontos_atencao", () => {
+    const data = extractCardData(makeFicha({
+      pontos_atencao: [
+        ...makeFicha().pontos_atencao!,
+        {
+          id: "pa2",
+          candidato_id: "test-id",
+          categoria: "feito_positivo",
+          titulo: "Atuação relevante",
+          descricao: "Desc",
+          fontes: [],
+          gravidade: "baixa",
+          verificado: true,
+          gerado_por: "curadoria",
+        },
+      ],
+    }), null)
+    assert.equal(data.destaques, 2)
     assert.equal(data.alertasGraves, 1)
   })
 
@@ -146,6 +162,7 @@ describe("extractCardData", () => {
 
   test("handles empty pontos_atencao", () => {
     const data = extractCardData(makeFicha({ pontos_atencao: [] }), null)
+    assert.equal(data.destaques, 0)
     assert.equal(data.alertasGraves, 0)
   })
 

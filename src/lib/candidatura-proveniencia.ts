@@ -17,7 +17,10 @@
  * Modulo puro: sem import de next/*, server-only, fs ou Supabase.
  */
 
-export type CargoDisputadoProveniencia = "declaracao_editorial" | "registro_tse"
+export type CargoDisputadoProveniencia =
+  | "declaracao_editorial"
+  | "registro_tse_pendente"
+  | "registro_tse"
 
 /**
  * Tokens de `status`/`situacao_candidatura` que significam candidatura ja
@@ -53,6 +56,10 @@ export function resolveCargoDisputadoProveniencia(
   const status = normalizeToken(input.status)
   const situacao = normalizeToken(input.situacao_candidatura)
 
+  if (situacao.includes("aguardando julgamento") || situacao.includes("pedido de registro")) {
+    return "registro_tse_pendente"
+  }
+
   if (TOKENS_REGISTRO_TSE.has(status) || TOKENS_REGISTRO_TSE.has(situacao)) {
     return "registro_tse"
   }
@@ -63,6 +70,7 @@ export function resolveCargoDisputadoProveniencia(
 /** Rotulo curto, para badge ao lado do cargo. */
 const CARGO_DISPUTADO_PROVENIENCIA_LABEL: Record<CargoDisputadoProveniencia, string> = {
   declaracao_editorial: "Pré-candidatura declarada",
+  registro_tse_pendente: "Pedido de registro no TSE",
   registro_tse: "Candidatura registrada no TSE",
 }
 
@@ -70,6 +78,8 @@ const CARGO_DISPUTADO_PROVENIENCIA_LABEL: Record<CargoDisputadoProveniencia, str
 const CARGO_DISPUTADO_PROVENIENCIA_NOTA: Record<CargoDisputadoProveniencia, string> = {
   declaracao_editorial:
     "Pleito declarado publicamente e apurado pela equipe editorial. Não é registro de candidatura deferido pelo TSE.",
+  registro_tse_pendente:
+    "O pedido de registro consta no TSE e aguarda julgamento. Isso não equivale a candidatura deferida.",
   registro_tse: "Candidatura registrada no TSE.",
 }
 

@@ -1,4 +1,6 @@
 import { ArrowRight } from "lucide-react"
+import type { ProcessosVerificacao } from "@/lib/types"
+import { formatDate } from "@/lib/utils"
 import { NoticePanel } from "./NoticePanel"
 
 interface EmptyStateProps {
@@ -58,11 +60,48 @@ export function getPatrimonioEmptyState(hasHistorico: boolean) {
  * ("não foram encontrados... nas bases consultadas") afirmava uma consulta
  * que nunca aconteceu, e deixava o leitor inferir ficha limpa.
  */
-export function getProcessosEmptyState() {
+export function getProcessosEmptyState(verificacao?: ProcessosVerificacao | null) {
+  const data = verificacao?.executado_em ? formatDate(verificacao.executado_em) : null
+
+  if (verificacao?.resultado === "vazio_confirmado") {
+    return {
+      title: "Nenhum processo confirmado no escopo consultado",
+      description: `A busca concluída${data ? ` em ${data}` : ""} não encontrou processo publicável nas fontes verificadas. O resultado vale apenas para esse escopo e não equivale a uma certidão de ficha limpa.`,
+      type: "neutral" as const,
+    }
+  }
+
+  if (verificacao?.resultado === "encontrado") {
+    return {
+      title: "Ocorrências judiciais em revisão",
+      description:
+        "A busca encontrou ocorrências, mas nenhuma está pronta para exibição nesta ficha. Identidade, estado atual e redação editorial precisam ser confirmados antes da publicação.",
+      type: "neutral" as const,
+    }
+  }
+
+  if (verificacao?.resultado === "indeterminado") {
+    return {
+      title: "Busca judicial inconclusiva",
+      description:
+        "A consulta realizada não permitiu confirmar presença nem ausência de processos com segurança. A ausência de registros aqui não significa ficha limpa.",
+      type: "neutral" as const,
+    }
+  }
+
+  if (verificacao?.resultado === "erro") {
+    return {
+      title: "Não foi possível concluir a busca judicial",
+      description:
+        "Uma fonte ou etapa de identificação falhou. O resultado permanece pendente e não pode ser interpretado como ausência de processos.",
+      type: "neutral" as const,
+    }
+  }
+
   return {
     title: "Processos judiciais ainda não verificados",
     description:
-      "Ainda não fizemos busca ativa de processos para esta ficha. Os processos exibidos no site vêm de verificação manual em fontes públicas (tribunais superiores, Ministério Público e imprensa) para parte dos candidatos, porque não existe base pública que permita buscar processos por pessoa. A ausência de registros aqui não significa ficha limpa.",
+      "Ainda não há uma tentativa de busca com resultado registrado para esta ficha. A ausência de registros aqui não significa ficha limpa.",
     type: "neutral" as const,
   }
 }

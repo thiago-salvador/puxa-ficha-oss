@@ -9,13 +9,13 @@ export function DonutChart({
   size = 160,
   strokeWidth = 24,
   centerLabel,
-  centerValue,
+  showLegend = true,
 }: {
   segments: Segment[]
   size?: number
   strokeWidth?: number
   centerLabel?: string
-  centerValue?: string
+  showLegend?: boolean
 }) {
   const total = segments.reduce((acc, s) => acc + s.value, 0)
   if (total === 0) return null
@@ -73,33 +73,25 @@ export function DonutChart({
             />
           ))}
         </svg>
-        {/* Center text */}
-        {(centerLabel || centerValue) && (
+        {/* Center label */}
+        {centerLabel && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            {centerValue && (
-              <span className="text-[18px] font-bold leading-none tracking-tight text-foreground sm:text-[22px]">
-                {centerValue}
-              </span>
-            )}
-            {centerLabel && (
-              <span className="mt-0.5 text-[10px] font-semibold text-muted-foreground">
-                {centerLabel}
-              </span>
-            )}
+            <span className="text-[10px] font-semibold text-muted-foreground">{centerLabel}</span>
           </div>
         )}
       </div>
-      {/* Legend */}
-      <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
-        {arcs.map((arc) => (
-          <div key={arc.label} className="flex items-center gap-1.5">
-            <div className="size-2.5 rounded-full" style={{ backgroundColor: arc.color }} />
-            <span className="text-[10px] font-semibold text-muted-foreground sm:text-[length:var(--text-caption)]">
-              {arc.label} ({Math.round(arc.percent * 100)}%)
-            </span>
-          </div>
-        ))}
-      </div>
+      {showLegend && (
+        <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
+          {arcs.map((arc) => (
+            <div key={arc.label} className="flex items-center gap-1.5">
+              <div className="size-2.5 rounded-full" style={{ backgroundColor: arc.color }} />
+              <span className="text-[10px] font-semibold text-muted-foreground sm:text-[length:var(--text-caption)]">
+                {arc.label} ({Math.round(arc.percent * 100)}%)
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

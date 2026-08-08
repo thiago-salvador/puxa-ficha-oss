@@ -75,7 +75,7 @@ export function QuizDetailPanel({
 
       {plEntries.length > 0 ? (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-foreground">Exemplo de projeto por tema (inteiro teor)</p>
+          <p className="text-xs font-semibold text-foreground">Exemplo de projeto por tema (página oficial)</p>
           <ul className="space-y-1 text-xs">
             {plEntries.map(([tema, url]) => (
               <li key={tema}>
@@ -150,7 +150,7 @@ export function QuizDetailPanel({
 
       {detalhe.alertas_contradicao.length > 0 ? (
         <div className="space-y-1 rounded-md border border-border/60 bg-muted/20 p-2">
-          <p className="text-xs font-semibold text-foreground">Alertas editoriais (contradições)</p>
+          <p className="text-xs font-semibold text-foreground">Destaques editoriais (contradições)</p>
           <ul className="space-y-2 text-xs text-muted-foreground">
             {detalhe.alertas_contradicao.map((a, i) => (
               <li key={`${a.votacao_titulo}-${i}`}>

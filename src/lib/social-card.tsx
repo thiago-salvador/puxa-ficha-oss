@@ -119,6 +119,7 @@ interface CardData {
   processosCriminais: number
   trocasPartido: number
   votacoes: number
+  destaques: number
   alertasGraves: number
   attentionHighlights: string[]
   topVotos: { titulo: string; voto: string }[]
@@ -135,7 +136,7 @@ export function extractCardData(
   const pontos = ficha.pontos_atencao ?? []
   const { alertasGraves } = classifyAttentionPoints(pontos)
   const votos = ficha.votos ?? []
-  const destaquePontos = (alertasGraves.length > 0 ? alertasGraves : pontos)
+  const destaquePontos = pontos
     .filter((p) => p.titulo)
     .slice(0, 3)
     .map((p) => sanitizePtBrText(p.titulo))
@@ -152,6 +153,7 @@ export function extractCardData(
     processosCriminais: ficha.processos_criminais ?? 0,
     trocasPartido: ficha.total_mudancas_partido ?? 0,
     votacoes: votos.length,
+    destaques: pontos.length,
     alertasGraves: alertasGraves.length,
     attentionHighlights: destaquePontos,
     topVotos: votos
@@ -539,12 +541,14 @@ export function buildSocialCardJsx(data: CardData, format: CardFormat) {
     .filter(Boolean)
     .join(" · ")
 
-  const attentionTitle = data.alertasGraves > 0
-    ? `${data.alertasGraves} alerta${data.alertasGraves > 1 ? "s" : ""} grave${data.alertasGraves > 1 ? "s" : ""}`
-    : "Sem alertas graves"
+  const attentionTitle = data.destaques > 0
+    ? `${data.destaques} destaque${data.destaques > 1 ? "s" : ""}`
+    : "Sem destaques"
   const attentionDescription = data.alertasGraves > 0
-    ? "Há pontos de atenção editoriais públicos visíveis na ficha pública."
-    : "Os principais dados públicos seguem organizados na ficha pública."
+    ? "Há destaques editoriais públicos visíveis na ficha pública."
+    : data.destaques > 0
+      ? "Há destaques editoriais públicos, incluindo pontos positivos, na ficha pública."
+      : "Os principais dados públicos seguem organizados na ficha pública."
 
   const voteItems = data.topVotos.slice(0, isStory ? 3 : 2)
   const attentionItems = data.attentionHighlights.slice(0, 3)
@@ -555,7 +559,7 @@ export function buildSocialCardJsx(data: CardData, format: CardFormat) {
       ? `${data.processos} processo${data.processos > 1 ? "s" : ""}`
       : "Sem ocorrências"
   const emptyAttentionFacts = [
-    <FactRow key="status" label="Status" value="Sem alertas graves públicos" />,
+    <FactRow key="status" label="Status" value="Sem destaques públicos" />,
     <FactRow key="leitura" label="Leitura" value="A ficha pública traz outros recortes editoriais" />,
     <FactRow key="escopo" label="Escopo" value="Patrimônio, processos e trajetória no mesmo perfil" />,
   ]
@@ -732,7 +736,7 @@ export function buildSocialCardJsx(data: CardData, format: CardFormat) {
               }}
             >
               <SectionPanel
-                eyebrow="Pontos de atenção"
+                eyebrow="Destaques"
                 title={attentionTitle}
                 description={attentionDescription}
                 tone={data.alertasGraves > 0 ? "critical" : "neutral"}
@@ -1002,7 +1006,7 @@ export function buildSocialCardJsx(data: CardData, format: CardFormat) {
             </div>
 
           <SectionPanel
-            eyebrow="Pontos de atenção"
+            eyebrow="Destaques"
             title={attentionTitle}
             description={attentionDescription}
             tone={data.alertasGraves > 0 ? "critical" : "neutral"}

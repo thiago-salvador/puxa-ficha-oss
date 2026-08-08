@@ -14,6 +14,13 @@ República e governos estaduais, incluindo os vices das chapas.
 
 **Produção:** https://puxaficha.com.br
 
+## Configuração operacional
+
+Objetivo, arquitetura, fontes, dados, workflows, automações, ambientes, versões,
+comportamento esperado e status atual estão em
+[Settings/README.md](Settings/README.md). Leia essa camada antes de alterar o
+produto ou executar pipelines.
+
 ## Stack
 
 - **Next.js 16** (App Router, renderização sob demanda)

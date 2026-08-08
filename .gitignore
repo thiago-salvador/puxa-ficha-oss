@@ -68,8 +68,10 @@ supabase/.branches/
 .claude/
 .codex/
 .cursor/
-CLAUDE.md
-AGENTS.md
+**/CLAUDE.md
+**/AGENTS.md
+!/CLAUDE.md
+!/AGENTS.md
 
 # Saida temporaria do browser tooling (Playwright MCP)
 .playwright-mcp/

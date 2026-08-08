@@ -320,7 +320,7 @@ export default function PrivacidadePage() {
         <SectionTitle>Uso de inteligência artificial</SectionTitle>
         <div className="mt-6 max-w-2xl space-y-5 sm:mt-8">
           <P>
-            Parte dos alertas editoriais (pontos de atenção) é gerada ou estruturada com auxílio
+            Parte dos destaques editoriais (pontos de atenção) é gerada ou estruturada com auxílio
             de inteligência artificial. Quando a origem é automatizada, isso é identificado na
             interface. Pontos gerados por IA só entram na superfície pública depois de checagem
             editorial por fonte, e o sistema mantém flags internas para distinguir itens já

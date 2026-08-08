@@ -1,9 +1,8 @@
 import type { FichaCandidato } from "@/lib/types"
 import type { CandidatoProfileTabId } from "@/lib/candidato-profile-tabs"
 import { hasWideManualOverlappingSegmentedMandates } from "@/lib/historico-dedupe"
-import { hasSameYearPartyReversal } from "@/lib/party-switches"
+import { countPartySwitches, hasSameYearPartyReversal } from "@/lib/party-switches"
 import {
-  mudancasPartidoLinhasPublicas,
   prepareHistoricoPoliticoPublicDisplayList,
 } from "@/lib/trajetoria-public-display"
 import { DeferredCandidatoProfileClient } from "@/components/DeferredCandidatoProfileClient"
@@ -23,7 +22,7 @@ export function DeferredCandidatoProfile({
   const partySwitchCountValue =
     (mudancas.length > 0 || Boolean(ficha.partido_sigla) || Boolean(ficha.partido_atual)) &&
     !hasSameYearPartyReversal(mudancas)
-      ? mudancasPartidoLinhasPublicas(mudancas)
+      ? countPartySwitches(mudancas)
       : null
   const patrimonioMaisRecente = [...(ficha.patrimonio ?? [])]
     .sort((a, b) => Number(b.ano_eleicao) - Number(a.ano_eleicao))[0]
@@ -41,6 +40,7 @@ export function DeferredCandidatoProfile({
         initialTab={initialTab}
         overview={{
           processos: ficha.total_processos ?? 0,
+          processosVerificacao: ficha.processos_verificacao,
           patrimonio: patrimonioMaisRecente?.valor_total ?? null,
           mudancas: ficha.total_mudancas_partido ?? 0,
         }}

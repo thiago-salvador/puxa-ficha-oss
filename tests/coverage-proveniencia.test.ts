@@ -13,7 +13,8 @@
  */
 
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 
@@ -21,14 +22,17 @@ import {
   COLUNAS,
   COLUNAS_DO_INDICE,
   FONTES_POR_COLUNA,
+  PATRIMONIO_ANO_INICIAL_APLICAVEL,
   calcularCelulas,
   calcularFontesNaoAplicaveis,
+  patrimonioPorEleicao,
   provenienciaDoZero,
   type CandidatoCoverage,
   type ColetaPorFonte
 } from "../scripts/audit/lib/coverage-model"
 import type { UltimaColeta } from "../scripts/audit/lib/coleta-proveniencia"
-import { removerBlocoDeColeta } from "../scripts/audit/lib/snapshot-fetch"
+import { removerBlocoDeAusencias, removerBlocoDeColeta } from "../scripts/audit/lib/snapshot-fetch"
+import { lerSnapshot } from "../scripts/audit/coverage-report"
 
 /** Candidato mínimo: tudo vazio, que é o cenário em que a procedência importa. */
 function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
@@ -53,6 +57,7 @@ function candidato(over: Partial<CandidatoCoverage> = {}): CandidatoCoverage {
     mudancas: 0,
     patrimonioAnos: [],
     patrimonioAnosComBens: [],
+    patrimonioAusenciasOficiais: [],
     financiamentoAnos: [],
     financiamentoAnosComDoadores: [],
     votos: 0,
@@ -176,6 +181,20 @@ test("célula com dado não recebe procedência", () => {
   const cel = calcularCelulas(candidato({ sancoes: 2 }))
   assert.equal(cel.sancoes.state, "ok")
   assert.equal(cel.sancoes.proveniencia, undefined)
+})
+
+test("candidatura sem mandato continua sendo trajetória preenchida", () => {
+  const cel = calcularCelulas(candidato({
+    historico: [{
+      cargo_canonico: "Presidente",
+      tipo_evento: "candidatura",
+      periodo_inicio: 2022,
+      periodo_fim: 2022,
+    }],
+  })).cargos
+
+  assert.equal(cel.state, "ok")
+  assert.equal(cel.text, "0 mandatos · 1 candidatura")
 })
 
 test("origem técnica da foto não altera o índice nem presume direitos", () => {
@@ -302,4 +321,266 @@ test("o mapa lista todo ingest que escreve na tabela da coluna", () => {
     ["jarbas", "tcu", "transparencia-sanctions"],
     "pontos_atencao é escrita por três ingests, não é coluna derivada"
   )
+})
+
+// ── Patrimônio por eleição aplicável (2026-08-07) ───────────────────
+//
+// Até aqui a célula de patrimônio dizia "ok" para qualquer bem publicado e
+// escondia eleições aplicáveis sem dado: quem publicou 2006 e 2010 saía
+// completo mesmo com a candidatura de 2014 sem registro em lugar nenhum. A
+// régua passa a medir cobertos/aplicáveis, com ausência oficial confirmada
+// contando como cobertura.
+
+test("patrimônio: publicado + vazio confirmado sem lacunas = ok", () => {
+  // Caso real que motivou a régua nova: rui-costa-pimenta tem bens 2006/2010
+  // publicados e a eleição de 2014 confirmada sem bens no pacote oficial do
+  // TSE. As três eleições ficam cobertas.
+  const cel = calcularCelulas(
+    candidato({
+      temSqNoSeed: true,
+      patrimonioAnos: [2006, 2010],
+      patrimonioAnosComBens: [2006, 2010],
+      patrimonioAusenciasOficiais: [2014]
+    })
+  ).patrimonio
+
+  assert.equal(cel.state, "ok")
+  assert.equal(cel.text, "3/3 · 1 ausência confirmada")
+  assert.match(cel.tip ?? "", /2014/)
+  assert.match(cel.tip ?? "", /pacote oficial/)
+})
+
+test("patrimônio: publicado com lacuna = parcial, e a lacuna aparece", () => {
+  // Candidatura registrada no TSE em 2018 sem dado publicado: a régua antiga
+  // dizia "1 ano" (ok); a nova cobra a eleição faltante.
+  const cel = calcularCelulas(
+    candidato({
+      historico: [
+        {
+          cargo_canonico: "Deputado Federal",
+          tipo_evento: "candidatura",
+          periodo_inicio: 2018,
+          periodo_fim: 2018,
+          proveniencia: "tse"
+        }
+      ],
+      patrimonioAnos: [2006],
+      patrimonioAnosComBens: [2006]
+    })
+  ).patrimonio
+
+  assert.equal(cel.state, "partial")
+  assert.equal(cel.text, "1/2")
+  assert.match(cel.tip ?? "", /sem dado nem confirmação: 2018/)
+})
+
+test("eleição com ausência oficial conta como cobertura mesmo sem histórico", () => {
+  // A ausência confirmada entra na união das eleições aplicáveis: não depende
+  // de a eleição estar no histórico para contar.
+  const cel = calcularCelulas(
+    candidato({
+      temSqNoSeed: true,
+      patrimonioAusenciasOficiais: [2018]
+    })
+  )
+
+  assert.equal(cel.patrimonio.state, "ok")
+  assert.equal(cel.patrimonio.text, "1/1 · 1 ausência confirmada")
+  // Sem conjunto publicado e sem lacuna, evolução e bens não têm o que medir:
+  // n/a, nunca lacuna (o vazio foi confirmado na fonte oficial).
+  assert.equal(cel.evolucao.state, "na")
+  assert.equal(cel.bens.state, "na")
+})
+
+test("ausência confirmada sem mais nada publicado não vira parcial", () => {
+  // Publicada nenhuma + lacunas: é missing, porque parcial exige publicado.
+  const cel = calcularCelulas(
+    candidato({
+      temSqNoSeed: true,
+      patrimonioAusenciasOficiais: [2018],
+      historico: [
+        {
+          cargo_canonico: "Governador",
+          tipo_evento: "candidatura",
+          periodo_inicio: 2022,
+          periodo_fim: 2022,
+          proveniencia: "tse"
+        }
+      ]
+    })
+  ).patrimonio
+
+  assert.equal(cel.state, "missing")
+  assert.equal(cel.text, "1/2 · 1 ausência confirmada")
+})
+
+test("eleição anterior a 2006 não entra na régua de patrimônio", () => {
+  assert.equal(PATRIMONIO_ANO_INICIAL_APLICAVEL, 2006)
+
+  const r = patrimonioPorEleicao(
+    candidato({
+      historico: [
+        {
+          cargo_canonico: "Deputado Estadual",
+          tipo_evento: "mandato",
+          periodo_inicio: 2002,
+          periodo_fim: 2006,
+          proveniencia: "tse"
+        }
+      ],
+      patrimonioAnos: [2004],
+      patrimonioAusenciasOficiais: [2004]
+    })
+  )
+  assert.deepEqual(r.aplicaveis, [])
+})
+
+test("sem eleições aplicáveis mantém n/a", () => {
+  // Quem nunca declarou: o gate antigo continua valendo.
+  assert.equal(calcularCelulas(candidato()).patrimonio.state, "na")
+
+  // Quem declarou só antes de 2006: janela não cobre nada, n/a em vez de lacuna.
+  const pre2006 = calcularCelulas(
+    candidato({
+      historico: [
+        {
+          cargo_canonico: "Deputado Estadual",
+          tipo_evento: "mandato",
+          periodo_inicio: 1999,
+          periodo_fim: 2003,
+          proveniencia: "tse"
+        }
+      ]
+    })
+  )
+  assert.equal(pre2006.patrimonio.state, "na")
+  assert.match(pre2006.patrimonio.tip ?? "", /nenhuma eleição aplicável/)
+})
+
+test("eleições aplicáveis: união deduplicada, proveniência tse e janela >= 2006", () => {
+  const r = patrimonioPorEleicao(
+    candidato({
+      historico: [
+        {
+          cargo_canonico: "Governador",
+          tipo_evento: "candidatura",
+          periodo_inicio: 2014,
+          periodo_fim: 2014,
+          proveniencia: "tse"
+        },
+        {
+          cargo_canonico: "Governador",
+          tipo_evento: "candidatura",
+          periodo_inicio: 2004,
+          periodo_fim: 2004,
+          proveniencia: "tse"
+        },
+        {
+          cargo_canonico: "Senador",
+          tipo_evento: "mandato",
+          periodo_inicio: 2015,
+          periodo_fim: 2023,
+          proveniencia: "wikidata"
+        }
+      ],
+      patrimonioAnos: [2014, 2018],
+      patrimonioAusenciasOficiais: [2018, 2022]
+    })
+  )
+
+  // 2004 cai pela janela; wikidata não cria eleição; 2014 e 2018 deduplicam.
+  assert.deepEqual(r.aplicaveis, [2014, 2018, 2022])
+  // Publicado precede ausência confirmada no mesmo ano.
+  assert.deepEqual(r.publicados, [2014, 2018])
+  assert.deepEqual(r.ausenciasConfirmadas, [2022])
+  assert.deepEqual(r.lacunas, [])
+})
+
+test("histórico sem proveniência (snapshot antigo) não cria eleição aplicável", () => {
+  const cel = calcularCelulas(
+    candidato({
+      temSqNoSeed: true,
+      historico: [
+        {
+          cargo_canonico: "Presidente",
+          tipo_evento: "candidatura",
+          periodo_inicio: 2014,
+          periodo_fim: 2014
+        }
+      ]
+    })
+  ).patrimonio
+
+  // Declarou ao TSE (SQ no seed), mas sem proveniência conhecida não há
+  // eleição aplicável: n/a, nunca lacuna inventada.
+  assert.equal(cel.state, "na")
+})
+
+test("o bloco de ausências oficiais do SQL é removível, para banco sem a migration", () => {
+  // A tabela patrimonio_ausencia_oficial só existe depois do apply; o relatório
+  // continua funcionando hoje porque o bloco sai do SQL antes do envio, pelo
+  // mesmo mecanismo do bloco de coleta.
+  const sql = readFileSync(
+    join(import.meta.dirname, "..", "scripts", "audit", "coverage-snapshot.sql"),
+    "utf8"
+  )
+  assert.ok(sql.includes("from patrimonio_ausencia_oficial"), "o SQL completo lê a tabela")
+
+  const semAusencias = removerBlocoDeAusencias(sql)
+  assert.ok(
+    !semAusencias.includes("from patrimonio_ausencia_oficial"),
+    "sem a migration, a tabela não pode ser referenciada por nenhuma cláusula"
+  )
+  assert.ok(semAusencias.includes("'patrimonioAnosComBens'"), "o resto do snapshot continua inteiro")
+  assert.ok(semAusencias.includes("'financiamentoAnos'"))
+  assert.throws(() => removerBlocoDeAusencias("select 1"), /marcadores/)
+
+  // Os dois blocos opcionais saem juntos sem quebrar o restante.
+  const semNenhum = removerBlocoDeAusencias(removerBlocoDeColeta(sql))
+  assert.ok(!semNenhum.includes("from coleta_log_ultima"))
+  assert.ok(!semNenhum.includes("from patrimonio_ausencia_oficial"))
+  assert.ok(semNenhum.includes("'historico'"))
+})
+
+test("o histórico do snapshot carrega a proveniência, insumo da régua por eleição", () => {
+  // Sem esta linha no SQL, o modelo não distingue linha tse de curadoria e a
+  // régua por eleição perde o denominador inteiro (silenciosamente).
+  const sql = readFileSync(
+    join(import.meta.dirname, "..", "scripts", "audit", "coverage-snapshot.sql"),
+    "utf8"
+  )
+  assert.match(sql, /'proveniencia', h\.proveniencia/)
+})
+
+test("snapshot sem a chave de ausências oficiais degrada para lista vazia", () => {
+  const dir = mkdtempSync(join(tmpdir(), "regua-cobertura-"))
+  const caminho = join(dir, "snapshot.json")
+  writeFileSync(
+    caminho,
+    JSON.stringify([
+      {
+        slug: "fulano",
+        nome_urna: "Fulano",
+        partido_sigla: "XPTO",
+        cargo_disputado: "Governador",
+        estado: "SP",
+        historico: [],
+        patrimonioAnos: [],
+        patrimonioAusenciasOficiais: [2018, "x", null]
+      },
+      {
+        slug: "ciclano",
+        nome_urna: "Ciclano",
+        partido_sigla: "XPTO",
+        cargo_disputado: "Governador",
+        estado: "SP",
+        historico: [],
+        patrimonioAnos: []
+      }
+    ])
+  )
+
+  const [comLista, semLista] = lerSnapshot(caminho)
+  assert.deepEqual(comLista.patrimonioAusenciasOficiais, [2018])
+  assert.deepEqual(semLista.patrimonioAusenciasOficiais, [])
 })

@@ -13,6 +13,8 @@ const SOCIAL_ICONS: Record<string, { label: string; urlPrefix: string }> = {
   // era gravado e a ficha nao mostrava nada: `SOCIAL_ICONS[platform]` ausente
   // faz o link ser descartado em silencio no map abaixo.
   linkedin: { label: "LinkedIn", urlPrefix: "https://linkedin.com/in/" },
+  telegram: { label: "Telegram", urlPrefix: "https://t.me/" },
+  kwai: { label: "Kwai", urlPrefix: "https://kwai.com/@" },
 }
 
 export function SocialLinks({

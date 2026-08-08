@@ -1,6 +1,6 @@
 import Link from "next/link"
 import type { FichaCandidato } from "@/lib/types"
-import { classifyAttentionPoints } from "@/lib/attention-points"
+import { buildPatrimonioEleicoes, type PatrimonioEleicaoPublico } from "@/lib/public-profile-dto"
 import { formatCompact } from "@/lib/utils"
 import { CandidatePhoto } from "@/components/CandidatePhoto"
 import { SITE_ORIGIN } from "@/lib/metadata"
@@ -37,12 +37,36 @@ function StatRow({
   )
 }
 
+/**
+ * Sub do patrimônio quando não há valor publicado: a eleição aplicável
+ * (>= 2006) continua visível com estado explícito, para ausência não parecer
+ * ficha limpa nem dado oculto no embed.
+ */
+function buildPatrimonioEmbedSub(
+  latestPatrimonio: FichaCandidato["patrimonio"][number] | null,
+  eleicoesSemDado: PatrimonioEleicaoPublico[],
+): string | undefined {
+  if (latestPatrimonio) return `Ano ${latestPatrimonio.ano_eleicao}`
+  const maisRecente = eleicoesSemDado[0]
+  if (!maisRecente) return undefined
+  return maisRecente.estado === "vazio_confirmado"
+    ? `${maisRecente.ano}: sem bens declarados ao TSE`
+    : `${maisRecente.ano}: coleta de bens ainda não realizada`
+}
+
 export function EmbedWidget({ ficha }: { ficha: FichaCandidato }) {
   const patrimonio = ficha.patrimonio ?? []
   const patrimonioSorted = [...patrimonio].sort((a, b) => a.ano_eleicao - b.ano_eleicao)
   const latestPatrimonio = patrimonioSorted.at(-1) ?? null
+  const patrimonioEleicoes = buildPatrimonioEleicoes(
+    patrimonio,
+    ficha.patrimonio_ausencias_oficiais ?? [],
+    ficha.historico ?? [],
+  )
+  const patrimonioEleicoesSemDado = patrimonioEleicoes.filter(
+    (eleicao) => eleicao.estado !== "publicado",
+  )
   const pontos = ficha.pontos_atencao ?? []
-  const { alertasGraves } = classifyAttentionPoints(pontos)
   const historico = ficha.historico ?? []
   const fichaUrl = `${SITE_ORIGIN}/candidato/${ficha.slug}`
 
@@ -72,7 +96,7 @@ export function EmbedWidget({ ficha }: { ficha: FichaCandidato }) {
         <StatRow
           label="Patrimônio declarado"
           value={latestPatrimonio ? formatCompact(latestPatrimonio.valor_total) : "N/D"}
-          sub={latestPatrimonio ? `Ano ${latestPatrimonio.ano_eleicao}` : undefined}
+          sub={buildPatrimonioEmbedSub(latestPatrimonio, patrimonioEleicoesSemDado)}
         />
         <StatRow
           label="Processos"
@@ -85,11 +109,11 @@ export function EmbedWidget({ ficha }: { ficha: FichaCandidato }) {
         />
         <StatRow label="Trocas de partido" value={ficha.total_mudancas_partido ?? 0} />
         <StatRow label="Histórico político (registros)" value={historico.length} />
-        {alertasGraves.length > 0 ? (
+        {pontos.length > 0 ? (
           <StatRow
-            label="Alertas graves"
-            value={alertasGraves.length}
-            sub="Pontos de atenção públicos"
+            label="Destaques"
+            value={pontos.length}
+            sub="Destaques editoriais públicos"
           />
         ) : null}
       </div>
